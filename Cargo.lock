@@ -192,6 +192,7 @@ dependencies = [
  "esp32p4",
  "esp32p4-pac",
  "esp32p4-rt",
+ "esp32p4-usb",
 ]
 
 [[package]]
@@ -210,6 +211,14 @@ version = "0.1.0"
 [[package]]
 name = "esp32p4-rt"
 version = "0.1.0"
+
+[[package]]
+name = "esp32p4-usb"
+version = "0.1.0"
+dependencies = [
+ "defmt",
+ "esp32p4-pac",
+]
 
 [[package]]
 name = "hash32"

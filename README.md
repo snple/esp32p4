@@ -14,10 +14,11 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | [`esp32p4-rt`](esp32p4-rt/) | **运行时**：`_start`、trap 入口、`link.x`、CSR/汇编封装 |
 | [`esp32p4-macro`](esp32p4-macro/) | **过程宏**：`#[main]` |
 | [`esp32p4`](esp32p4/) | **HAL**：GPIO / IO MUX、SYSTIMER 延时、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
-| [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、PSRAM 初始化与分区、USB Serial/JTAG |
+| [`esp32p4-usb`](esp32p4-usb/) | **USB 设备栈**：DWC OTG 全速/高速控制器（slave 模式、轮询）、标准请求与描述符、CDC-ACM 虚拟串口、自定义类 |
+| [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC |
 | [`xtask`](xtask/) | 构建辅助：`cargo xtask gen-pac` |
 
-依赖方向是单向的：`macro` / `rt` → `pac` → `esp32p4` → `examples`。
+依赖方向是单向的：`macro` / `rt` → `pac` → `esp32p4` / `esp32p4-usb` → `examples`。
 
 ## 示例
 
@@ -28,6 +29,8 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `psram_split` | 把 PSRAM 分成「cached 全局堆 + uncached DMA 池」两部分 |
 | `defmt_log` | 用 `defmt-rtt` 输出日志（需 `--features defmt`，JTAG 读取） |
 | `usb_serial` | 通过 USB Serial/JTAG 打印并回显，同时翻转 GPIO2（两个驱动共享 `HP_SYS_CLKRST`） |
+| `usb_cdc` | 全速 OTG（GPIO26/27）上的 CDC-ACM 虚拟串口，回显主机发来的字节 |
+| `usb_cdc_hs` | 高速 OTG（内部 UTMI+ PHY）上的 CDC-ACM，512 字节 bulk 包 |
 | `emac` | 初始化 RMII 以太网、自动协商、打印链路状态并收发 ARP 帧 |
 | `net_tcp_echo` | DHCP + TCP echo 服务器（需 `--features net`，无堆、无 async） |
 | `defmt_usb` | `defmt` 日志直接走 USB Serial/JTAG（需 `--features defmt-usb`，`espflash monitor` 可见） |
@@ -124,6 +127,82 @@ cargo run --bin defmt_usb --features defmt-usb
 
 HAL 的 `defmt-usb-logger` feature 会注册成全局 logger，因此不能和 `defmt-rtt`
 同时启用。时钟未打开时 logger 丢弃日志而不是访问未上时钟的寄存器。
+
+## USB OTG（设备模式）
+
+P4 有两个独立的 DesignWare OTG 控制器，`esp32p4-usb` 把它们都做成**设备模式**、
+**slave 模式**（CPU 搬 FIFO，无 DMA）、**轮询**（无中断、无 async）的驱动：
+
+| 控制器 | 基地址 | 速率 | PHY |
+|--------|--------|------|-----|
+| `USB_OTG11` | `0x5004_0000` | 全速 12 Mbit/s | 内部全速 PHY，D+/D- 在 GPIO27/26 |
+| `USB_OTG20` | `0x5000_0000` | 高速 480 Mbit/s | 内部 UTMI+ PHY，不占 GPIO |
+
+```rust
+use esp32p4_usb::class::cdc_acm::CdcAcm;
+use esp32p4_usb::p4::{FsResources, UsbFs};
+use esp32p4_usb::{UsbBusAllocator, UsbDeviceBuilder};
+
+let allocator = UsbBusAllocator::new(UsbFs::new(FsResources {
+    clkrst: &dp.HP_SYS_CLKRST,
+    lp_aon_clkrst: &dp.LP_AON_CLKRST,
+    usb_wrap: &dp.USB_WRAP,
+    gpio: &dp.GPIO,
+    io_mux: &dp.IO_MUX,
+}));
+let mut serial = CdcAcm::new(&allocator, 64);          // 全速 bulk 包 64 字节
+let mut device = UsbDeviceBuilder::new(&allocator, 0x303a, 0x1001)
+    .manufacturer("Espressif")
+    .product("ESP32-P4 CDC")
+    .build();
+
+loop {
+    device.poll(&mut [&mut serial]);                    // 收发一帧，建议 ≥ 每 5 ms 一次
+    let mut buffer = [0u8; 64];
+    if let Ok(n) = serial.read(&mut buffer) {
+        serial.write_all(&buffer[..n], 1_000_000);      // 预算用完就丢弃，不死等主机
+    }
+}
+```
+
+层次：
+
+```text
+class::cdc_acm::CdcAcm        你的 UsbClass：接口描述符 + 端点回调
+device::UsbDevice             枚举状态机、标准请求、EP0 控制传输
+bus::UsbBus                   allocate / poll / read / write
+p4::UsbFs / p4::UsbHs         DWC OTG 寄存器、FIFO 分配、复位与枚举
+```
+
+要点：
+
+- **寄存器不来自 SVD**：DWC 的寄存器手册由 IP 厂商 NDA 限制，SVD 里没有
+  `USB_OTG11`/`USB_OTG20`，因此 `src/dwc.rs` 按 ESP-IDF 的
+  `soc/usb_dwc_struct.h` 手写了设备模式子集（偏移 + 位域常量），其余寄存器一律
+  仍走 PAC。
+- **FIFO**：共享数据 FIFO 全速 200 words、高速 896 words（运行时从
+  `GHWCFG3.DFIFODEPTH` 读）。`alloc_ep` 按 MPS 预留：每个 IN 端点至少 16 words
+  的专用 TX FIFO，OUT 端点占 RX FIFO，剩下的都归 RX；装不下直接返回
+  `EndpointMemoryOverflow`。
+- **OUT 暂存**：轮询把收到的包搬进 1 KiB 的暂存池（`OUT_STAGING_BYTES`），
+  `read()` 再从池里取；因此 `UsbBusAllocator` 只有 ~1.3 KiB，可以安全放在
+  `main` 的栈上（栈 16 KiB）。
+- **控制传输**：EP0 支持多包数据阶段、ZLP 规则和状态阶段；控制端点的 MPS
+  必须是 8/16/32/64，描述符与寄存器保持一致。
+- **地址**：DWC 要求 `SET_ADDRESS` 的地址在状态阶段之前写入 `DCFG.DAD`，
+  所以 `UsbBus::SET_ADDRESS_BEFORE_STATUS = true`。
+- **全速口的 OTG 输入**：`USB_OTG11` 通过 GPIO matrix 取 `IDDIG`/`AVALID`/
+  `BVALID`/`VBUSVALID`/`SESSEND`，驱动把它们固定成「已上电的总线上的外设」
+  电平；同时用 `GOTGCTL.BVALIDOVEN` 强制 B 会话有效（板子不把 VBUS 引到 PHY，
+  总线供电的设备掉电后本来也无法工作）。
+- **高速口的 PHY**：需要 `HP_SYS.OTG_SUSPENDM=1` 才能检测拔插；芯片 3.0 起
+  D+/D- 的 15 kΩ 下拉由软件控制（`LP_SYS + 0x204` 的 bit1/2 清零），更早的
+  版本由 OTG 核自己管，写入被忽略。
+- **与 USB Serial/JTAG 共存**：两个全速控制器分时复用两个内部 PHY，默认
+  OTG FS 用 PHY2（GPIO26/27），USB Serial/JTAG 用 PHY1（GPIO24/25）；需要交换时
+  调 `UsbSerialJtag::select_phy`，OTG 驱动不碰这个选择。
+- **限制**：事务级传输（一次 `read`/`write` 一个包），等时端点不支持
+  （分配时返回 `Unsupported`）——等时还需要按帧翻转 PID、丢弃未发出的包。
 
 ## 以太网 MAC
 

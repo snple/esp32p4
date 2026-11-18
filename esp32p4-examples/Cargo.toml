@@ -12,11 +12,11 @@ autobins = false
 [features]
 default = []
 # Enables defmt logging in the HAL and provides an RTT logger.
-defmt = ["esp32p4/defmt", "dep:defmt", "dep:defmt-rtt"]
+defmt = ["esp32p4/defmt", "esp32p4-usb/defmt", "dep:defmt", "dep:defmt-rtt"]
 # Enables defmt logging in the HAL and lets it own the global logger, writing to
 # the USB Serial/JTAG port that `espflash monitor` already watches. Mutually
 # exclusive with `defmt`, which installs an RTT logger.
-defmt-usb = ["esp32p4/defmt-usb-logger", "dep:defmt"]
+defmt-usb = ["esp32p4/defmt-usb-logger", "esp32p4-usb/defmt", "dep:defmt"]
 # Synchronous TCP/IP over the EMAC (smoltcp), heap-free.
 net = ["esp32p4/net"]
 # Same, but with the socket table allocated from the global allocator.
@@ -24,6 +24,7 @@ net-alloc = ["esp32p4/net-alloc", "net"]
 
 [dependencies]
 esp32p4.workspace = true
+esp32p4-usb.workspace = true
 esp32p4-pac.workspace = true
 esp32p4-rt.workspace = true
 defmt = { workspace = true, optional = true }
@@ -58,6 +59,14 @@ required-features = ["net"]
 [[bin]]
 name = "usb_serial"
 path = "src/usb_serial.rs"
+
+[[bin]]
+name = "usb_cdc"
+path = "src/usb_cdc.rs"
+
+[[bin]]
+name = "usb_cdc_hs"
+path = "src/usb_cdc_hs.rs"
 
 [[bin]]
 name = "defmt_usb"

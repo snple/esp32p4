@@ -1,0 +1,23 @@
+[package]
+name = "esp32p4-usb"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "USB device stack for the ESP32-P4 on-chip OTG controllers"
+keywords = ["esp32p4", "usb", "embedded", "no-std", "otg"]
+categories = ["embedded", "hardware-support", "no-std"]
+
+[features]
+default = []
+# `defmt::Format` implementations and trace logging.
+defmt = ["dep:defmt"]
+
+[dependencies]
+esp32p4-pac.workspace = true
+defmt = { workspace = true, optional = true }
+
+[package.metadata.docs.rs]
+features = ["defmt"]
+targets = ["riscv32imafc-unknown-none-elf"]
