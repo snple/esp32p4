@@ -430,10 +430,9 @@ TimerGroup1 ─┬─ Timer<1, 0>   TG1_T0
              └─ Watchdog<1>   TG1_WDT
 ```
 
-`TimerGroup0::new(dp.TIMG0, &clkrst)` 打开时钟门、把两路计数器和看门狗复位到已知状态；
-之后用 `group.timer::<0>()` / `group.timer::<1>()` / `group.wdt()` 取出那三个外设的句柄
-（和 rp2350 的 `pwm.slice::<N>()` 同一个模式：句柄是“视图”，不写寄存器、可以 `steal`），
-计时器的方法全部取 `&self`：
+`TimerGroup0::new(dp.TIMG0, &clkrst)` 打开时钟门、把两路计数器和看门狗复位到已知状态，
+然后像硬件那样把部件作为**公开字段**持有——`group.timer0`、`group.timer1`、`group.wdt`，
+每个部件是独立类型，寄存器、矩阵源和中断接线都在编译期定死。计时器的方法全部取 `&self`：
 
 - 时钟源可选 `XTAL_CLK` 40 MHz、`RC_FAST_CLK`（约 17.5 MHz）、`PLL_F80M_CLK` 80 MHz，
   16 位预分频（2..=65536）；默认 40 → 1 tick = 1 µs。`timer.ticks(Duration)` 负责把时间段
@@ -448,9 +447,9 @@ TimerGroup1 ─┬─ Timer<1, 0>   TG1_T0
   `interrupt::claim`，线被占用会 panic。
 
 ```rust
-let mut group = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST);
-let fast = group.timer::<0>();
-let slow = group.timer::<1>();
+let group = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST);
+let fast = &group.timer0;
+let slow = &group.timer1;
 
 // 100 ms 周期中断
 fast.enable_interrupt(CpuInterrupt::new(21), tick);
@@ -474,7 +473,7 @@ unsafe { interrupt::enable() };
 （和 `Pin::<N>::steal()` 一个模式）：一个寄存器都不写，不启动计数、不持有 CPU 线，
 drop 它也不会影响 owner。
 
-`Watchdog<G>` 是 MWDT，由 `group.wdt()` 取出：`set_timeout(MwdtStage::Stage0,
+`Watchdog<G>` 是 MWDT，就是 `group.wdt`：`set_timeout(MwdtStage::Stage0,
 Duration::from_secs(1))` 配合 `set_stage_action(stage, MwdtStageAction::ResetSystem)`，
 然后 `enable()`；之后必须在超时前 `feed()`，否则系统复位。它也有 `steal()`，因此在别处
 喂狗不需要持有 group。`startup::init` 已经把 bootloader 留下的看门狗关掉了，所以不碰它的

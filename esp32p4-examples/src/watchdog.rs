@@ -35,10 +35,10 @@ fn main() -> ! {
     led.into_output();
     let delay = Delay::init(dp.SYSTIMER);
 
-    let mut group = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST);
+    let group = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST);
 
     // One second at 40 MHz. Anything slower than that resets the chip.
-    let wdt = group.wdt();
+    let wdt = &group.wdt;
     wdt.set_stage_action(MwdtStage::Stage0, MwdtStageAction::ResetSystem);
     wdt.set_timeout(MwdtStage::Stage0, Duration::from_secs(1));
     wdt.enable();

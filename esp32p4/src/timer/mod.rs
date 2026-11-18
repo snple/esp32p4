@@ -18,9 +18,10 @@
 //!
 //! # Using a timer
 //!
-//! [`TimerGroup0::new`] brings the group into a known state; its parts come out
-//! of [`timer`](TimerGroup0::timer) and [`wdt`](TimerGroup0::wdt). Nothing
-//! starts on its own: configure the counter, then call [`Timer::start`].
+//! [`TimerGroup0::new`] brings the group into a known state and hands out its
+//! parts the way the hardware has them: `group.timer0`, `group.timer1` and
+//! `group.wdt`. Nothing starts on its own: configure the counter, then call
+//! [`Timer::start`].
 //!
 //! ```ignore
 //! use esp32p4::interrupt::{self, CpuInterrupt};
@@ -31,8 +32,8 @@
 //!     // Runs in interrupt context: keep it short.
 //! }
 //!
-//! let mut group = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST);
-//! let timer = group.timer::<0>();
+//! let group = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST);
+//! let timer = &group.timer0;
 //!
 //! timer.enable_interrupt(CpuInterrupt::new(21), tick);  // CPU line 21
 //! timer.set_reload_value(0);                            // restart from here
@@ -468,7 +469,18 @@ fn init_group(group: u8, clkrst: &hp_sys_clkrst::RegisterBlock) {
 // ============================================================================
 
 /// `TIMG0`: two general-purpose timers and the main system watchdog.
+///
+/// The group owns its parts, the way the hardware does: [`timer0`](Self::timer0)
+/// and [`timer1`](Self::timer1) are the two counters and [`wdt`](Self::wdt) is
+/// the watchdog, each with its own type so the register, matrix source and
+/// interrupt plumbing are resolved at compile time.
 pub struct TimerGroup0 {
+    /// General-purpose timer 0, the source of `TG0_T0`.
+    pub timer0: Timer<0, 0>,
+    /// General-purpose timer 1, the source of `TG0_T1`.
+    pub timer1: Timer<0, 1>,
+    /// The group's main system watchdog.
+    pub wdt: Watchdog<0>,
     _timg: TIMG0,
 }
 
@@ -481,27 +493,32 @@ impl TimerGroup0 {
     /// [`crate::startup`]); this does not re-enable them.
     pub fn new(timg: TIMG0, clkrst: &hp_sys_clkrst::RegisterBlock) -> Self {
         init_group(0, clkrst);
-        Self { _timg: timg }
+        Self {
+            timer0: Timer::new(),
+            timer1: Timer::new(),
+            wdt: Watchdog::new(),
+            _timg: timg,
+        }
     }
 
-    /// A handle to timer `N` of this group.
-    ///
-    /// The handle is a view of the counter, not a borrow of the group: like
-    /// [`Timer::steal`], it writes nothing, so taking it never disturbs a
-    /// running timer. Take it once per timer.
-    pub fn timer<const N: u8>(&mut self) -> Timer<0, N> {
-        const { assert!(N < 2, "the group has two timers") };
-        Timer::new()
-    }
-
-    /// A handle to this group's main system watchdog.
-    pub fn wdt(&mut self) -> Watchdog<0> {
-        Watchdog::new()
+    /// Give the group's parts back.
+    #[inline]
+    pub fn release(self) -> TIMG0 {
+        self._timg
     }
 }
 
 /// `TIMG1`: two general-purpose timers and the main system watchdog.
+///
+/// See [`TimerGroup0`]; the parts are `Timer<1, 0>`, `Timer<1, 1>` and
+/// `Watchdog<1>`.
 pub struct TimerGroup1 {
+    /// General-purpose timer 0, the source of `TG1_T0`.
+    pub timer0: Timer<1, 0>,
+    /// General-purpose timer 1, the source of `TG1_T1`.
+    pub timer1: Timer<1, 1>,
+    /// The group's main system watchdog.
+    pub wdt: Watchdog<1>,
     _timg: TIMG1,
 }
 
@@ -511,20 +528,18 @@ impl TimerGroup1 {
     /// See [`TimerGroup0::new`].
     pub fn new(timg: TIMG1, clkrst: &hp_sys_clkrst::RegisterBlock) -> Self {
         init_group(1, clkrst);
-        Self { _timg: timg }
+        Self {
+            timer0: Timer::new(),
+            timer1: Timer::new(),
+            wdt: Watchdog::new(),
+            _timg: timg,
+        }
     }
 
-    /// A handle to timer `N` of this group.
-    ///
-    /// See [`TimerGroup0::timer`].
-    pub fn timer<const N: u8>(&mut self) -> Timer<1, N> {
-        const { assert!(N < 2, "the group has two timers") };
-        Timer::new()
-    }
-
-    /// A handle to this group's main system watchdog.
-    pub fn wdt(&mut self) -> Watchdog<1> {
-        Watchdog::new()
+    /// Give the group's parts back.
+    #[inline]
+    pub fn release(self) -> TIMG1 {
+        self._timg
     }
 }
 
