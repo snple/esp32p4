@@ -162,8 +162,12 @@ impl Delay {
             .target0_hi
             .write_timer_target0_hi((deadline >> 32) as u32);
         // Unit 0 counts, and the comparator is single-shot (`PERIOD = 0`).
+        // `TARGET0_WORK_EN` resets to zero, so the comparator does nothing
+        // until it is set here — without it the `wfi` below would only wake on
+        // some other interrupt.
         self.systimer.target0_conf.clr_target0_timer_unit_sel();
         self.systimer.target0_conf.clr_target0_period_mode();
+        self.systimer.conf.set_target0_work_en();
         self.systimer.comp0_load.trigger_timer_comp0_load();
         self.systimer.int_ena.set_target0_int_ena();
 
@@ -188,7 +192,21 @@ impl Delay {
         }
 
         self.systimer.int_ena.clr_target0_int_ena();
+        self.systimer.conf.clr_target0_work_en();
         elapsed
+    }
+
+    /// Sleep until `deadline`, waking early on any interrupt.
+    ///
+    /// Same contract as [`Delay::sleep_ticks`]: `true` if the deadline was
+    /// reached, `false` if an interrupt woke the core first. A deadline that
+    /// has already passed returns immediately.
+    pub fn sleep_until(&self, deadline: crate::time::Instant) -> bool {
+        let now = self.ticks();
+        match deadline.as_ticks().checked_sub(now) {
+            Some(ticks) => self.sleep_ticks(ticks),
+            None => true,
+        }
     }
 
     /// Release the underlying `SYSTIMER` peripheral.
