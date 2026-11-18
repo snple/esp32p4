@@ -1,0 +1,13 @@
+[package]
+name = "esp32p4-pac"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Peripheral Access Crate for ESP32-P4"
+keywords = ["esp32p4", "pac", "embedded", "riscv", "no-std"]
+categories = ["embedded", "hardware-support", "no-std"]
+
+[package.metadata.docs.rs]
+targets = ["riscv32imafc-unknown-none-elf"]

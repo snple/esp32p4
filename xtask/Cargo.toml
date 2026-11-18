@@ -1,0 +1,13 @@
+[package]
+name = "xtask"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Build automation tasks for esp32p4"
+publish = false
+
+[dependencies]
+clap = { version = "4.6", features = ["derive"] }
+anyhow = "1.0"
+heck = "0.5"
+roxmltree = "0.21"
