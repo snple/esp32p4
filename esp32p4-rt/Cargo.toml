@@ -1,0 +1,18 @@
+[package]
+name = "esp32p4-rt"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Runtime support for ESP32-P4 RISC-V microcontrollers"
+keywords = ["esp32p4", "riscv", "runtime", "embedded", "no-std"]
+categories = ["embedded", "hardware-support", "no-std"]
+
+[features]
+default = ["rt"]
+rt = []
+
+[package.metadata.docs.rs]
+features = ["rt"]
+targets = ["riscv32imafc-unknown-none-elf"]
