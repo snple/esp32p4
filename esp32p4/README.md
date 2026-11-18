@@ -10,6 +10,7 @@ ESP32-P4 的最小硬件抽象层。
 | `gpio` | `Pins` 控制器、`Pin<N>` 句柄（输入/输出/上拉/驱动强度）；GPIO0–GPIO53 |
 | `delay` | 基于 `SYSTIMER` unit 0 的 `delay_us` / `delay_ms` |
 | `system` | `Cpu`/`ResetReason` 枚举、`reset_reason`、`software_reset`、`software_reset_cpu` |
+| `regi2c` | 模拟 I2C 主控：用 `Register`/`Field` 描述 PLL/PHY/ADC 校准寄存器（含 `mpll` 等 block 常量、时钟管理、临界区） |
 | `psram` | 封装内 PSRAM 初始化（MPLL 250 MHz、16/32 MB 自动检测、MMU 映射）与 `PsramAllocator` |
 
 `lib.rs` 统一重导出：
@@ -107,7 +108,7 @@ let mut buf: Vec<u8, &PsramAllocator> = Vec::new_in(&DMA_POOL);        // 无需
 ```
 
 - 时钟：MPLL 500 MHz → 总线 250 MHz（`psram_clk_src_sel = MPLL`）。MPLL 的倍频写在
-  模拟寄存器里，由 `psram::regi2c`（`LP_I2C_ANA_MST`）写入，不依赖 ROM。
+  模拟寄存器里，由 [`regi2c`](src/regi2c.rs)（`LP_I2C_ANA_MST`）写入，不依赖 ROM。
 - Mode Register（MR0/MR2/MR4/MR8）读写走 `SPI1` 直接命令，需要 ROM 的
   `esp_rom_spi_set_op_mode` / `esp_rom_spi_cmd_config`（在 `link.x` 里 `PROVIDE` 为固定地址）。
 - `PsramConfig::rev3_workaround`：ESP32-P4 v3.0（ECO5）需要，默认关闭。

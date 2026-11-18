@@ -80,5 +80,6 @@ pub use esp32p4_rt as rt;
 pub mod delay;
 pub mod gpio;
 pub mod psram;
+pub mod regi2c;
 pub mod startup;
 pub mod system;

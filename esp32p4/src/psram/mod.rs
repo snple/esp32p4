@@ -39,7 +39,6 @@ mod alloc;
 mod mpll;
 mod mspi;
 mod pads;
-mod regi2c;
 
 pub use alloc::PsramAllocator;
 
