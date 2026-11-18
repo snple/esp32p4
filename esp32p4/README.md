@@ -193,6 +193,16 @@ probe-rs run --chip esp32p4 target/riscv32imafc-unknown-none-elf/debug/defmt_log
 
 `espflash monitor` 走的是 UART，看不到 RTT 数据。
 
+在自己的项目里开启 `defmt` 时，还要把 defmt 的链接脚本挂上，否则格式字符串会散落在
+多个独立段里，主机端无法解码：
+
+```rust
+// build.rs
+println!("cargo:rustc-link-arg=-Tdefmt.x");
+```
+
+`defmt.x` 由 `defmt` crate 的 build script 生成，并自动加入链接搜索路径。
+
 ## 当前限制
 
 - 只支持简单 GPIO 输出/输入；GPIO 中断、滤波、同步阶段尚未封装。
