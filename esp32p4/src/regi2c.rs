@@ -59,6 +59,7 @@ use esp32p4_rt::register::mstatus;
 
 /// An analog block, i.e. one I2C slave on the analog bus.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Block(u8);
 
 impl Block {
@@ -110,6 +111,7 @@ impl Block {
 
 /// A byte register inside an analog block.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Register {
     block: Block,
     addr: u8,
@@ -177,6 +179,7 @@ impl Register {
 
 /// A bit field inside a register, `lsb..=msb`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Field {
     register: Register,
     msb: u8,
@@ -263,6 +266,7 @@ pub mod mpll {
 
 /// Errors reported by the `try_*` functions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Error {
     /// The block id does not correspond to any analog slave.
     UnknownBlock(u8),
@@ -453,6 +457,15 @@ fn panic_regi2c(err: Error, register: Register) -> ! {
 
 #[cold]
 fn panic_raw(err: Error, block: Block, addr: u8) -> ! {
+    error!(
+        "regi2c: block {:#x} register {:#x}: {}",
+        block.id(),
+        addr,
+        match err {
+            Error::UnknownBlock(_) => "unknown analog block",
+            Error::Timeout => "transaction timed out",
+        }
+    );
     match err {
         Error::UnknownBlock(id) => panic!("regi2c: unknown analog block {id:#04x}"),
         Error::Timeout => panic!(

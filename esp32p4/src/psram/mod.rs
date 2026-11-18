@@ -46,6 +46,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 /// PSRAM bus width.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PsramMode {
     /// 16-line DDR, the interface used by the in-package dies.
     #[default]
@@ -56,6 +57,7 @@ pub enum PsramMode {
 
 /// Requested PSRAM size.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PsramSize {
     /// Ask the die through mode register 2.
     #[default]
@@ -66,6 +68,7 @@ pub enum PsramSize {
 
 /// PSRAM configuration.
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PsramConfig {
     /// Bus width.
     pub mode: PsramMode,
@@ -93,6 +96,7 @@ impl Default for PsramConfig {
 
 /// Errors reported by [`Psram::init`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Error {
     /// The PSRAM configuration registers did not answer in time.
     Timeout,
@@ -121,6 +125,11 @@ impl Psram {
             return Err(Error::AlreadyInitialized);
         }
 
+        debug!(
+            "PSRAM: initialising ({}, rev3 workaround: {})",
+            config.mode, config.rev3_workaround
+        );
+
         mpll::enable();
 
         let is_hex = matches!(config.mode, PsramMode::Hex);
@@ -136,6 +145,7 @@ impl Psram {
             PsramSize::Bytes(bytes) => bytes.min(detected),
         };
         mspi::map(size);
+        info!("PSRAM: {} bytes mapped at {:#x}", size, mspi::BASE);
 
         let psram = Self {
             start: mspi::BASE,
@@ -143,6 +153,7 @@ impl Psram {
         };
 
         if config.verify && !psram.check() {
+            warn!("PSRAM: read-back check failed");
             INITIALIZED.store(false, Ordering::Release);
             return Err(Error::VerifyFailed);
         }

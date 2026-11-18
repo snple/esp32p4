@@ -6,6 +6,13 @@
 #![no_std]
 #![no_main]
 
+// `--features defmt` turns on the HAL's log statements for every binary, so
+// each of them needs a logger and a timestamp source of its own.
+#[cfg(feature = "defmt")]
+use defmt_rtt as _;
+#[cfg(feature = "defmt")]
+defmt::timestamp!("{=u64:us}", esp32p4::delay::micros());
+
 extern crate alloc;
 
 use alloc::vec::Vec;

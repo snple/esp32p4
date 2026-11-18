@@ -50,6 +50,7 @@ use esp32p4_rt::register::mhartid;
 
 /// One of the two HP cores.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u32)]
 pub enum Cpu {
     /// HP core 0 — the core the ROM boots and the one `#[main]` runs on.
@@ -83,6 +84,7 @@ impl Cpu {
 ///
 /// Discriminants are the raw `LP_AON_CLKRST.RESET_CAUSE` codes.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u32)]
 pub enum ResetReason {
     /// `0x01` — power-on or brown-out chip reset that restarted the whole chip.
@@ -185,6 +187,8 @@ pub fn reset_reason(cpu: Cpu) -> Option<ResetReason> {
 /// is lost, so drivers do not need to clean up before calling this.
 #[inline]
 pub fn software_reset() -> ! {
+    info!("reset: HP core software reset requested");
+
     // SAFETY: a system reset is not owned by any driver, and this never returns.
     unsafe { LP_SYS::steal() }.sys_ctrl.trigger_sys_sw_rst();
 

@@ -24,6 +24,7 @@ pub fn init() {
     disable_watchdogs();
     park_core1();
     enable_branch_predictor();
+    debug!("startup: watchdogs off, core 1 parked, branch predictor on");
 }
 
 /// Stops the watchdogs the bootloader leaves running.

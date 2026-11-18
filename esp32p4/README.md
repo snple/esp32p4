@@ -165,6 +165,33 @@ delay.delay_ms(500);
 - `rt`（默认）：链接 `esp32p4-rt`。
 - `panic-handler`（默认）：提供停核式 `#[panic_handler]`；应用要自定义 panic
   处理时关闭它。
+- `critical-section-impl`（默认）：基于 `mstatus.MIE` 的 `critical-section` 实现，
+  `defmt-rtt` 等需要它的库可以直接用。
+- `defmt`：为公开类型实现 `defmt::Format`，并在启动、复位、PSRAM 初始化、regi2c
+  关键路径输出 `debug`/`info`/`warn`/`error` 日志。日志传输由最终二进制提供
+  （例如 `defmt-rtt`）；不开启时所有日志语句展开为空。
+
+## 日志（defmt）
+
+```rust
+use defmt_rtt as _;                     // logger，只能在一个二进制里出现一次
+
+defmt::timestamp!("{=u64:us}", esp32p4::delay::micros());
+
+#[esp32p4::main]
+fn main() -> ! {
+    defmt::info!("hello from ESP32-P4");   // HAL 自己的日志走同一通道
+    loop {}
+}
+```
+
+```bash
+cargo run --features defmt --bin defmt_log
+# 读取 RTT 需要调试器（JTAG）：
+probe-rs run --chip esp32p4 target/riscv32imafc-unknown-none-elf/debug/defmt_log
+```
+
+`espflash monitor` 走的是 UART，看不到 RTT 数据。
 
 ## 当前限制
 

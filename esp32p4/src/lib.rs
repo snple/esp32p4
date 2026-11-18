@@ -33,8 +33,79 @@
 
 #![no_std]
 
+// ============================================================================
+// Logging
+// ============================================================================
+
+/// Logs a message when the `defmt` feature is enabled.
+///
+/// The statements expand to nothing otherwise, so hot paths can be annotated
+/// without a `#[cfg]` at every call site.
+macro_rules! info {
+    ($($arg:tt)*) => {
+        #[cfg(feature = "defmt")]
+        ::defmt::info!($($arg)*);
+    };
+}
+
+macro_rules! debug {
+    ($($arg:tt)*) => {
+        #[cfg(feature = "defmt")]
+        ::defmt::debug!($($arg)*);
+    };
+}
+
+macro_rules! warn {
+    ($($arg:tt)*) => {
+        #[cfg(feature = "defmt")]
+        ::defmt::warn!($($arg)*);
+    };
+}
+
+macro_rules! error {
+    ($($arg:tt)*) => {
+        #[cfg(feature = "defmt")]
+        ::defmt::error!($($arg)*);
+    };
+}
+
 #[cfg(feature = "panic-handler")]
 mod panic_handler;
+
+// ============================================================================
+// `critical-section` implementation
+// ============================================================================
+
+/// `critical-section` backend: mask machine interrupts.
+///
+/// The token remembers whether interrupts were enabled, so nested critical
+/// sections behave correctly; only `mstatus.MIE` is touched, leaving the FPU
+/// state and the rest of `mstatus` alone.
+#[cfg(feature = "critical-section-impl")]
+struct SingleCoreCriticalSection;
+
+#[cfg(feature = "critical-section-impl")]
+critical_section::set_impl!(SingleCoreCriticalSection);
+
+#[cfg(feature = "critical-section-impl")]
+unsafe impl critical_section::Impl for SingleCoreCriticalSection {
+    unsafe fn acquire() -> critical_section::RawRestoreState {
+        use esp32p4_rt::register::mstatus;
+
+        let was_enabled = mstatus::mie();
+        mstatus::clear_mie();
+        was_enabled
+    }
+
+    unsafe fn release(restore_state: critical_section::RawRestoreState) {
+        use esp32p4_rt::register::mstatus;
+
+        if restore_state {
+            // SAFETY: interrupts were enabled when the section started.
+            unsafe { mstatus::set_mie() };
+        }
+    }
+}
 
 // ============================================================================
 // Steal wrapper — returned by `steal()` methods across HAL drivers

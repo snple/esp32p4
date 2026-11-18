@@ -36,6 +36,8 @@ pub(crate) fn enable() {
     let clkrst = unsafe { esp32p4_pac::HP_SYS_CLKRST::steal() };
     let pll_ctrl = &clkrst.ana_pll_ctrl0;
 
+    debug!("MPLL: starting at {} MHz", FREQUENCY_MHZ);
+
     // Calibration starts before the analog configuration is written and stops
     // once the PLL reports that it finished.
     pll_ctrl.clr_reg_mspi_cal_stop();

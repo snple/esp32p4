@@ -26,6 +26,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `blink` | GPIO2 每 500 ms 翻转一次 |
 | `psram` | 初始化封装内 PSRAM，整体作为全局堆使用 |
 | `psram_split` | 把 PSRAM 分成「cached 全局堆 + uncached DMA 池」两部分 |
+| `defmt_log` | 用 `defmt-rtt` 输出日志（需 `--features defmt`，JTAG 读取） |
 
 ## 快速开始
 
@@ -140,6 +141,8 @@ espflash save-image --chip esp32p4 \
 - SYSTIMER 阻塞延时
 - 复位控制与复位原因（`system::software_reset` / `software_reset_cpu` / `reset_reason`，纯寄存器实现）
 - 封装内 PSRAM 初始化（MPLL 250 MHz、16/32 MB 自动检测、MMU 映射、`PsramAllocator`）
+- `defmt` 日志支持（`Format` 实现 + 关键路径日志 + 基于 `mstatus.MIE` 的
+  `critical-section` 实现）
 - `#[main]`（注入 `startup::init()`：关 bootloader 遗留的 RTC/MWDT 看门狗、停放 core 1、
   启用分支预测器）、默认 panic handler
 - stable `riscv32imafc-unknown-none-elf`（RV32IMAFC、ilp32f 硬浮点 ABI），启动时使能 FPU

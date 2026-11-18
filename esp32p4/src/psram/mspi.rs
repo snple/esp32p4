@@ -433,6 +433,10 @@ pub(crate) fn init(timing: &Timing, is_hex: bool, rev3: bool) -> Result<usize, E
 
     init_mode_registers(timing, is_hex)?;
     let size = detect_size(timing).ok_or(Error::NotDetected)?;
+    debug!(
+        "PSRAM: {} bytes detected on a {} MHz bus",
+        size, timing.bus_clock_mhz
+    );
 
     configure_controller(timing, is_hex);
 

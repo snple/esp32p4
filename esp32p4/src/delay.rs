@@ -13,6 +13,28 @@ pub struct Delay {
     systimer: SYSTIMER,
 }
 
+/// Reads the raw counter into the latch and returns it.
+#[inline]
+fn read_ticks(systimer: &SYSTIMER) -> u64 {
+    // Latch the counter into UNIT0_VALUE_HI/LO and wait for VALUE_VALID.
+    systimer.unit0_op.trigger_timer_unit0_update();
+    while !systimer.unit0_op.timer_unit0_value_valid() {
+        core::hint::spin_loop();
+    }
+
+    let hi = systimer.unit0_value_hi.read_bits() as u64;
+    let lo = systimer.unit0_value_lo.read_bits() as u64;
+    (hi << 32) | lo
+}
+
+/// Microseconds since boot, readable without owning the timer.
+///
+/// Handy as a `defmt` timestamp: `defmt::timestamp!("{=u64:us}", micros());`
+#[inline]
+pub fn micros() -> u64 {
+    Delay::init(unsafe { SYSTIMER::steal() }).now_us()
+}
+
 impl Delay {
     /// Create a delay driver.
     ///
@@ -20,6 +42,9 @@ impl Delay {
     /// the counter keeps advancing while the CPU is idle.
     #[inline]
     pub fn init(systimer: SYSTIMER) -> Self {
+        // The bootloader normally leaves the timer running, but a program that
+        // was reset by software can find the clock gate closed.
+        systimer.conf.set_clk_en();
         systimer.conf.set_timer_unit0_work_en();
         systimer.conf.clr_timer_unit0_core0_stall_en();
         systimer.conf.clr_timer_unit0_core1_stall_en();
@@ -29,15 +54,13 @@ impl Delay {
     /// Read the current 52-bit counter value.
     #[inline]
     fn ticks(&self) -> u64 {
-        // Latch the counter into UNIT0_VALUE_HI/LO and wait for VALUE_VALID.
-        self.systimer.unit0_op.trigger_timer_unit0_update();
-        while !self.systimer.unit0_op.timer_unit0_value_valid() {
-            core::hint::spin_loop();
-        }
+        read_ticks(&self.systimer)
+    }
 
-        let hi = self.systimer.unit0_value_hi.read_bits() as u64;
-        let lo = self.systimer.unit0_value_lo.read_bits() as u64;
-        (hi << 32) | lo
+    /// Microseconds since boot.
+    #[inline]
+    pub fn now_us(&self) -> u64 {
+        self.ticks() / TICKS_PER_US
     }
 
     /// Wait for at least `us` microseconds.

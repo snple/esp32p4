@@ -10,9 +10,14 @@ keywords = ["esp32p4", "hal", "embedded", "riscv", "no-std"]
 categories = ["embedded", "hardware-support", "no-std"]
 
 [features]
-default = ["rt", "panic-handler"]
+default = ["rt", "panic-handler", "critical-section-impl"]
 rt = ["esp32p4-rt/rt"]
 panic-handler = []
+# `critical-section` implementation based on masking machine interrupts.
+critical-section-impl = ["dep:critical-section"]
+# `defmt::Format` implementations and log statements. Requires a logger in the
+# final binary, e.g. `defmt-rtt`.
+defmt = ["dep:defmt"]
 
 [dependencies]
 pastey.workspace = true
@@ -20,6 +25,8 @@ esp32p4-pac.workspace = true
 esp32p4-rt.workspace = true
 esp32p4-macro.workspace = true
 linked_list_allocator = "0.10"
+defmt = { workspace = true, optional = true }
+critical-section = { workspace = true, optional = true, features = ["restore-state-bool"] }
 
 [package.metadata.docs.rs]
 targets = ["riscv32imafc-unknown-none-elf"]

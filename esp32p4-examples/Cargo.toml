@@ -9,10 +9,17 @@ repository.workspace = true
 publish = false
 autobins = false
 
+[features]
+default = []
+# Enables defmt logging in the HAL and provides an RTT logger.
+defmt = ["esp32p4/defmt", "dep:defmt", "dep:defmt-rtt"]
+
 [dependencies]
 esp32p4.workspace = true
 esp32p4-pac.workspace = true
 esp32p4-rt.workspace = true
+defmt = { workspace = true, optional = true }
+defmt-rtt = { workspace = true, optional = true }
 
 [[bin]]
 name = "blink"
@@ -25,3 +32,8 @@ path = "src/psram.rs"
 [[bin]]
 name = "psram_split"
 path = "src/psram_split.rs"
+
+[[bin]]
+name = "defmt_log"
+path = "src/defmt_log.rs"
+required-features = ["defmt"]
