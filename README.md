@@ -430,9 +430,10 @@ TimerGroup1 ─┬─ Timer<1, 0>   TG1_T0
              └─ Watchdog<1>   TG1_WDT
 ```
 
-`TimerGroup0::new(dp.TIMG0, &clkrst)` 打开时钟门、把两路计数器和看门狗复位到已知状态，
-然后 `group.timer0` / `group.timer1` / `group.wdt` 就是那三个外设，字段是公开的，方法全部
-取 `&self`：
+`TimerGroup0::new(dp.TIMG0, &clkrst)` 打开时钟门、把两路计数器和看门狗复位到已知状态；
+之后用 `group.timer::<0>()` / `group.timer::<1>()` / `group.wdt()` 取出那三个外设的句柄
+（和 rp2350 的 `pwm.slice::<N>()` 同一个模式：句柄是“视图”，不写寄存器、可以 `steal`），
+计时器的方法全部取 `&self`：
 
 - 时钟源可选 `XTAL_CLK` 40 MHz、`RC_FAST_CLK`（约 17.5 MHz）、`PLL_F80M_CLK` 80 MHz，
   16 位预分频（2..=65536）；默认 40 → 1 tick = 1 µs。`timer.ticks(Duration)` 负责把时间段
@@ -447,9 +448,9 @@ TimerGroup1 ─┬─ Timer<1, 0>   TG1_T0
   `interrupt::claim`，线被占用会 panic。
 
 ```rust
-let group = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST);
-let fast = &group.timer0;
-let slow = &group.timer1;
+let mut group = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST);
+let fast = group.timer::<0>();
+let slow = group.timer::<1>();
 
 // 100 ms 周期中断
 fast.enable_interrupt(CpuInterrupt::new(21), tick);
@@ -473,10 +474,11 @@ unsafe { interrupt::enable() };
 （和 `Pin::<N>::steal()` 一个模式）：一个寄存器都不写，不启动计数、不持有 CPU 线，
 drop 它也不会影响 owner。
 
-`Watchdog<G>` 是 MWDT：`set_timeout(MwdtStage::Stage0, Duration::from_secs(1))` 配合
-`set_stage_action(stage, MwdtStageAction::ResetSystem)`，然后 `enable()`；之后必须在超时前
-`feed()`，否则系统复位。`startup::init` 已经把 bootloader 留下的看门狗关掉了，所以不碰它
-的程序不会被 reset。
+`Watchdog<G>` 是 MWDT，由 `group.wdt()` 取出：`set_timeout(MwdtStage::Stage0,
+Duration::from_secs(1))` 配合 `set_stage_action(stage, MwdtStageAction::ResetSystem)`，
+然后 `enable()`；之后必须在超时前 `feed()`，否则系统复位。它也有 `steal()`，因此在别处
+喂狗不需要持有 group。`startup::init` 已经把 bootloader 留下的看门狗关掉了，所以不碰它的
+程序不会被 reset。
 
 ### `SYSTIMER` 比较器闹钟
 
@@ -501,9 +503,11 @@ let one_shot = Alarm2::new();
 one_shot.set_target(Instant::now() + Duration::from_secs(5));
 ```
 
-厂商 SVD 只描述每个 TIMG 的 timer 0，timer 1 落在保留区里，所以这组寄存器没有走 PAC：
-[`timer/regs.rs`](esp32p4/src/timer/regs.rs) 按 TRM 第 18 章手写了偏移与位域
-（两路相隔 0x24，与 ESP-IDF 的 `timg_hwtimer_reg_t hw_timer[2]` 一致）。
+厂商 SVD 只描述每个 TIMG 的 timer 0，timer 1 落在保留区里。这里没有手写寄存器层：
+[`xtask/gen_timg.py`](xtask/gen_timg.py) 按 TRM 布局（两路相隔 0x24，与 ESP-IDF 的
+`timg_hwtimer_reg_t hw_timer[2]` 一致）补出完整的两组，生成 [`timg.svd`](timg.svd)，
+`cargo xtask gen-pac` 再用它**替换**厂商的 TIMG0/TIMG1。于是 `T1CONFIG`…`T1LOAD`
+和 `WDTx` 一样都是 PAC 的寄存器类型与访问器，HAL 里没有裸指针读写。
 
 ## 内存布局与启动
 
@@ -535,6 +539,11 @@ cargo xtask gen-pac --check    # 仅校验生成代码是否与 SVD 一致
 
 生成器会展开 ESP SVD 的 `<dim>` 寄存器数组（`GPIO%s`、`IV_MEM[%s]` 等），
 并处理数组元素与普通寄存器重名的情况。生成代码已自动 `rustfmt`。
+
+厂商 SVD 缺失或残缺的外设由两个 fragment 补全，按名字**替换**厂商的定义：
+[`emac.svd`](emac.svd)（整块缺失，脚本见 `xtask/gen_emac.py`）和
+[`timg.svd`](timg.svd)（两组各缺 timer 1，脚本见 `xtask/gen_timg.py`，重新生成用
+`python3 xtask/gen_timg.py`）。
 
 ## 工具链
 

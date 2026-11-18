@@ -59,11 +59,11 @@ fn main() -> ! {
     let mut led = pins.pin::<LED_PIN>();
     led.into_output();
 
-    // The group owns both counters and the watchdog; the fields are the
-    // timers themselves, all methods take `&self`.
-    let group = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST);
-    let fast = &group.timer0;
-    let slow = &group.timer1;
+    // The group owns both counters and the watchdog; these are views of
+    // them, and every method takes `&self`.
+    let mut group = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST);
+    let fast = group.timer::<0>();
+    let slow = group.timer::<1>();
 
     // 100 ms, counting up from zero: the counter restarts on every alarm, so
     // the time spent in the handler does not accumulate.
