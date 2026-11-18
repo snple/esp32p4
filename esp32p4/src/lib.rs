@@ -176,6 +176,7 @@ pub mod psram;
 pub mod regi2c;
 pub mod startup;
 pub mod system;
+pub mod systimer;
 pub mod time;
 pub mod timer;
 pub mod usb_serial_jtag;

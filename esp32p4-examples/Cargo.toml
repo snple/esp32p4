@@ -57,6 +57,10 @@ path = "src/net_tcp_echo.rs"
 required-features = ["net"]
 
 [[bin]]
+name = "alarm"
+path = "src/alarm.rs"
+
+[[bin]]
 name = "timer"
 path = "src/timer.rs"
 
