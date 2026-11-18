@@ -10,6 +10,10 @@
 //! - `defmt` - `defmt::Format` implementations and log statements
 //! - `defmt-usb-logger` - Register the USB Serial/JTAG port as the global
 //!   `defmt` logger, so `espflash monitor` shows the logs
+//! - `net` - Synchronous TCP/IP over the EMAC (`smoltcp`), heap-free
+//! - `net-alloc` - Same, with the socket table allocated from the global
+//!   allocator
+//! - `net-ipv6` - Add IPv6, SLAAC and fragmentation to `net`
 //!
 //! ## Example
 //!
@@ -35,6 +39,11 @@
 //! ```
 
 #![no_std]
+
+// The `net-alloc` socket table and the PSRAM allocator documentation both build
+// on `alloc`; nothing else in the crate requires a heap.
+#[cfg(feature = "net-alloc")]
+extern crate alloc;
 
 // ============================================================================
 // Logging
@@ -155,6 +164,8 @@ pub mod cache;
 pub mod delay;
 pub mod emac;
 pub mod gpio;
+#[cfg(feature = "net")]
+pub mod net;
 pub mod psram;
 pub mod regi2c;
 pub mod startup;

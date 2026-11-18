@@ -85,7 +85,7 @@ pub mod dma;
 use esp32p4_pac::{EMAC, GPIO, HP_SYS, HP_SYS_CLKRST, IO_MUX, LP_AON_CLKRST};
 
 use crate::gpio::Pin;
-pub use dma::{DmaBuffer, EmacBuffers, TxError};
+pub use dma::{DmaBuffer, EmacBuffers, MAX_FRAME_SIZE, TxError};
 
 /// GPIO matrix index of the MAC's MDIO input.
 ///
@@ -433,7 +433,7 @@ impl<'d, const RX: usize, const TX: usize> Emac<'d, RX, TX> {
     }
 
     /// Queue one Ethernet frame (header, payload, no FCS).
-    pub fn transmit(&mut self, frame: &[u8]) -> Result<(), TxError> {
+    pub fn transmit(&self, frame: &[u8]) -> Result<(), TxError> {
         self.tx.transmit(frame)?;
 
         // A frame in the ring does not move until the DMA is poked.
@@ -447,16 +447,31 @@ impl<'d, const RX: usize, const TX: usize> Emac<'d, RX, TX> {
         self.tx.has_capacity()
     }
 
+    /// Fill the next transmit slot with `len` bytes built by `f` and send it.
+    ///
+    /// This is the zero-copy variant of [`Emac::transmit`]: `f` receives the
+    /// DMA buffer itself. Frame builders such as a network stack use it to
+    /// avoid a copy per packet.
+    pub fn transmit_with<R>(
+        &self,
+        len: usize,
+        f: impl FnOnce(&mut [u8]) -> R,
+    ) -> Result<R, TxError> {
+        let result = self.tx.transmit_with(len, f)?;
+        self.emac.dmatxpolldemand.write_bits(0);
+        Ok(result)
+    }
+
     /// Return the next received frame, if any.
     ///
     /// The slice stays valid until [`Emac::release_frame`]; dropping the
     /// driver instead also returns the slot to the MAC.
-    pub fn receive(&mut self) -> Option<&[u8]> {
+    pub fn receive(&self) -> Option<&[u8]> {
         self.rx.receive()
     }
 
     /// Hand the frame returned by [`Emac::receive`] back to the MAC.
-    pub fn release_frame(&mut self) {
+    pub fn release_frame(&self) {
         self.rx.release();
     }
 

@@ -17,11 +17,22 @@ panic-handler = []
 critical-section-impl = ["dep:critical-section"]
 # `defmt::Format` implementations and log statements. Requires a logger in the
 # final binary, e.g. `defmt-rtt`.
-defmt = ["dep:defmt"]
+defmt = ["dep:defmt", "smoltcp?/defmt"]
 # Registers a global `defmt` logger that writes to the USB Serial/JTAG CDC-ACM
 # port, so `espflash monitor` decodes the frames. Mutually exclusive with
 # `defmt-rtt` and any other global logger.
 defmt-usb-logger = ["defmt", "critical-section-impl"]
+# Synchronous TCP/IP over the EMAC, backed by `smoltcp`: Ethernet medium,
+# IPv4, TCP/UDP/ICMP sockets, a DHCP client and a DNS client. Interrupts and
+# async are deliberately *not* involved — the stack is driven by
+# `Net::poll()`.
+net = ["dep:smoltcp"]
+# Lets `Net` own its socket table in a heap `Vec` instead of a caller-provided
+# `&mut [SocketStorage]`. Needs a global allocator (see `psram::PsramAllocator`).
+net-alloc = ["net", "smoltcp/alloc"]
+# Adds IPv6, stateless address autoconfiguration and fragmentation on top of
+# `net`.
+net-ipv6 = ["net", "smoltcp/proto-ipv6", "smoltcp/proto-ipv6-slaac"]
 
 [dependencies]
 pastey.workspace = true
@@ -31,6 +42,15 @@ esp32p4-macro.workspace = true
 linked_list_allocator = "0.10"
 defmt = { workspace = true, optional = true }
 critical-section = { workspace = true, optional = true, features = ["restore-state-bool"] }
+smoltcp = { version = "0.14", optional = true, default-features = false, features = [
+    "medium-ethernet",
+    "proto-ipv4",
+    "socket-icmp",
+    "socket-tcp",
+    "socket-udp",
+    "socket-dhcpv4",
+    "socket-dns",
+] }
 
 [package.metadata.docs.rs]
 targets = ["riscv32imafc-unknown-none-elf"]

@@ -13,7 +13,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | [`esp32p4-pac`](esp32p4-pac/) | **PAC**：由 `esp32p4.svd` 生成，提供寄存器块、字段常量和访问器。勿手改 |
 | [`esp32p4-rt`](esp32p4-rt/) | **运行时**：`_start`、trap 入口、`link.x`、CSR/汇编封装 |
 | [`esp32p4-macro`](esp32p4-macro/) | **过程宏**：`#[main]` |
-| [`esp32p4`](esp32p4/) | **HAL**：GPIO / IO MUX、SYSTIMER 延时、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC |
+| [`esp32p4`](esp32p4/) | **HAL**：GPIO / IO MUX、SYSTIMER 延时、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
 | [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、PSRAM 初始化与分区、USB Serial/JTAG |
 | [`xtask`](xtask/) | 构建辅助：`cargo xtask gen-pac` |
 
@@ -29,6 +29,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `defmt_log` | 用 `defmt-rtt` 输出日志（需 `--features defmt`，JTAG 读取） |
 | `usb_serial` | 通过 USB Serial/JTAG 打印并回显，同时翻转 GPIO2（两个驱动共享 `HP_SYS_CLKRST`） |
 | `emac` | 初始化 RMII 以太网、自动协商、打印链路状态并收发 ARP 帧 |
+| `net_tcp_echo` | DHCP + TCP echo 服务器（需 `--features net`，无堆、无 async） |
 | `defmt_usb` | `defmt` 日志直接走 USB Serial/JTAG（需 `--features defmt-usb`，`espflash monitor` 可见） |
 
 ## 快速开始
@@ -194,6 +195,50 @@ if let Some(rx) = emac.receive() {
   `poll_link` 读标准 BMSR/BMCR/ANLPAR 推断速率与双工并同步到 MAC，
   `autonegotiate` 重新发起协商。厂商专有寄存器（例如 LAN8720 的 SCSR）需自行读写。
 
+## TCP/IP（smoltcp）
+
+网络栈适配 `smoltcp 0.14`，**同步轮询、无 async、无执行器**，并且默认不依赖堆。
+`Emac` 直接实现 `smoltcp::phy::Device`，`Net` 把 interface 和 socket 表打包，
+由应用自己的主循环驱动：
+
+```rust
+let mut net = Net::new(
+    &mut emac,
+    SocketSet::new(&mut SOCKET_STORAGE[..]),   // 或用 Net::new_alloc
+    mac_address,
+    delay::micros(),                            // TCP ISN 随机种子
+);
+net.start_dhcp();
+net.wait_dhcp(&mut emac, 10_000);               // 忙轮询，仅用于启动阶段
+
+let socket = smoltcp::socket::tcp::Socket::new(rx_buf, tx_buf);
+let handle = net.sockets_mut().add(socket);
+
+loop {
+    net.poll(&mut emac);                        // 收发所有就绪帧 + 跑 timers
+    // 从 net.sockets_mut() 取 socket 做业务
+    delay.delay_ms(net.poll_delay().map(|d| d.total_millis().min(20) as u32).unwrap_or(5));
+}
+```
+
+| feature | 作用 |
+|---------|------|
+| `net` | 以太网 + IPv4 + TCP/UDP/ICMP + DHCP 客户端 + DNS 客户端，socket 表由用户提供 `&mut [SocketStorage]` |
+| `net-alloc` | 同上，但 `Net::new_alloc` 用全局分配器（PSRAM 堆）持有 socket 表 |
+| `net-ipv6` | 追加 IPv6 / SLAAC / 分片 |
+
+要点：
+
+- **堆是可选的**：`smoltcp` 自身在关闭 `alloc` 时不分配；只有 socket 表的容器可以放到堆上。
+  TCP 的收发窗口永远是用户提供的静态缓冲（示例用 2 KiB × 2）。
+- **不用 async**：`Net::poll()` 一次把所有就绪帧走完就返回；`poll_delay()` 给出下一次需要
+  运行的时间（smoltcp 的重传/延迟 ACK 定时器），应用据此 sleep。
+- **`Emac` 的数据路径改成 `&self`**：环索引在 `Cell` 里、缓冲区通过裸指针访问，这样
+  网络栈可以同时持有接收 token 和发送 token（`Device::receive` 的签名要求）。
+- **校验和走软件**（`ChecksumCapabilities::default()`）。MAC 支持硬件校验和，
+  但需要额外的描述符位，暂未启用。
+- **中断仍然关闭**：`DMAIN_EN = 0`，全部靠轮询。等 `rt` 接上中断后再考虑异步/唤醒。
+
 ## 内存布局与启动
 
 ESP32-P4 不是“ROM 直接跳到应用”的芯片：镜像由 ESP-IDF 2nd-stage bootloader
@@ -259,6 +304,7 @@ espflash save-image --chip esp32p4 \
 - 封装内 PSRAM 初始化（MPLL 250 MHz、16/32 MB 自动检测、MMU 映射、`PsramAllocator`）
 - USB Serial/JTAG（CDC-ACM）收发：`UsbSerialJtag`，以及可选的 `defmt` 全局 logger
 - 以太网 MAC（RMII + MDIO + DMA 描述符环），含 L1/L2 cache 维护
+- 同步 TCP/IP（smoltcp）：DHCP 客户端、TCP/UDP/ICMP、可选 IPv6，无 async、堆可选
 - `defmt` 日志支持（`Format` 实现 + 关键路径日志 + 基于 `mstatus.MIE` 的
   `critical-section` 实现）
 - `#[main]`（注入 `startup::init()`：关 bootloader 遗留的 RTC/MWDT 看门狗、停放 core 1、
@@ -271,6 +317,7 @@ espflash save-image --chip esp32p4 \
 - 完整时钟树（PLL/分频）配置
 - UART、SPI、I2C、DMA、RMT、WS2812 等驱动
 - EMAC 中断驱动、TX/RX 校验和卸载、PTP 时间戳、MII/RGMII 接口
+- 阻塞式 socket API（当前是 smoltcp 的事件/轮询风格）、DHCP 服务端
 - USB OTG FS/HS 主机与设备栈
 - LP 核与低功耗
 - trap 入口尚未保存 FPU 寄存器上下文（当前不使能可恢复中断）

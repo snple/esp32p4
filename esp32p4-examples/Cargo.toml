@@ -17,6 +17,10 @@ defmt = ["esp32p4/defmt", "dep:defmt", "dep:defmt-rtt"]
 # the USB Serial/JTAG port that `espflash monitor` already watches. Mutually
 # exclusive with `defmt`, which installs an RTT logger.
 defmt-usb = ["esp32p4/defmt-usb-logger", "dep:defmt"]
+# Synchronous TCP/IP over the EMAC (smoltcp), heap-free.
+net = ["esp32p4/net"]
+# Same, but with the socket table allocated from the global allocator.
+net-alloc = ["esp32p4/net-alloc", "net"]
 
 [dependencies]
 esp32p4.workspace = true
@@ -45,6 +49,11 @@ required-features = ["defmt"]
 [[bin]]
 name = "emac"
 path = "src/emac.rs"
+
+[[bin]]
+name = "net_tcp_echo"
+path = "src/net_tcp_echo.rs"
+required-features = ["net"]
 
 [[bin]]
 name = "usb_serial"
