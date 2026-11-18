@@ -237,7 +237,49 @@ loop {
   网络栈可以同时持有接收 token 和发送 token（`Device::receive` 的签名要求）。
 - **校验和走软件**（`ChecksumCapabilities::default()`）。MAC 支持硬件校验和，
   但需要额外的描述符位，暂未启用。
-- **中断仍然关闭**：`DMAIN_EN = 0`，全部靠轮询。等 `rt` 接上中断后再考虑异步/唤醒。
+- **中断驱动**：`Emac::enable_interrupts(lines::EMAC)` 把 MAC 的 DMA 完成中断接到 CPU，
+  `Net::poll_wait()` 用 `wfi` 把核心停住，等 MAC 中断或 smoltcp 的下一个定时器
+  （`SYSTIMER` target 0）唤醒。详见下节。
+
+## 中断
+
+P4 没有 PLIC，用的是 Espressif 自己的 CLIC（TRM 第 1 章）：
+
+```text
+外设 → INTERRUPT_CORE0 矩阵 → 32 条 CPU 中断线 → CLIC → 核心
+                                     mcause = 0x8000_0000 | (线号 + 16)
+```
+
+`esp32p4-rt` 提供最小可用的中断框架：
+
+- `_start_trap` 保存整数寄存器 + 被调用者保存的 FPU 寄存器（`fsw/flw`，只在带 F 的
+  target 上生成），调用 Rust 侧分发后 `mret` 返回。
+- CLIC 配置成 **direct 模式**（`SHV = 0`），所有中断都进同一个入口，按 `mcause` 分发，
+  不需要 RAM 里的向量表。
+- 处理器是普通 `fn()`，注册到按 CPU 中断线索引的表里；处理期间 `MIE = 0`，不支持嵌套。
+
+HAL 固定占用两条线（见 [`interrupt::lines`](esp32p4/src/interrupt.rs)）：
+
+| 线 | 用途 |
+|----|------|
+| 19 | `SYSTIMER` target 0：`Delay::sleep_us` / `sleep_ms` 的定时唤醒 |
+| 20 | EMAC DMA 完成（`ETH_MAC_INTR`） |
+
+驱动侧接口：
+
+```rust
+// 打开 MAC 中断，处理器只做两件事：清 DMASTATUS、置一个标志
+emac.enable_interrupts(esp32p4::interrupt::lines::EMAC);
+// 全局开关（启动最后一步）
+unsafe { esp32p4::interrupt::enable() };
+
+loop {
+    net.poll_wait(&mut emac, 20);   // 有活干就处理，没活就 wfi 睡 20 ms 或睡到定时器
+}
+```
+
+ISR 里不碰描述符环：环的所有权仍然只在主循环里，中断只负责把核心叫醒。这样既没有
+数据竞争，也不需要临界区。
 
 ## 内存布局与启动
 
@@ -305,6 +347,8 @@ espflash save-image --chip esp32p4 \
 - USB Serial/JTAG（CDC-ACM）收发：`UsbSerialJtag`，以及可选的 `defmt` 全局 logger
 - 以太网 MAC（RMII + MDIO + DMA 描述符环），含 L1/L2 cache 维护
 - 同步 TCP/IP（smoltcp）：DHCP 客户端、TCP/UDP/ICMP、可选 IPv6，无 async、堆可选
+- CLIC 中断框架（direct 模式、按 CPU 线分发、trap 保存 FPU 上下文）与 EMAC/SYSTIMER
+  中断驱动
 - `defmt` 日志支持（`Format` 实现 + 关键路径日志 + 基于 `mstatus.MIE` 的
   `critical-section` 实现）
 - `#[main]`（注入 `startup::init()`：关 bootloader 遗留的 RTC/MWDT 看门狗、停放 core 1、
@@ -313,7 +357,7 @@ espflash save-image --chip esp32p4 \
 
 尚未实现：
 
-- CLIC / 中断矩阵绑定、外设中断
+- 中断嵌套与优先级分级、其它外设中断
 - 完整时钟树（PLL/分频）配置
 - UART、SPI、I2C、DMA、RMT、WS2812 等驱动
 - EMAC 中断驱动、TX/RX 校验和卸载、PTP 时间戳、MII/RGMII 接口

@@ -270,6 +270,43 @@ impl<'a> Net<'a> {
         changed
     }
 
+    /// Poll, then park the core until the next interrupt or timer.
+    ///
+    /// This is the loop body for a board that has the MAC interrupt wired up:
+    /// the core stops in `wfi` instead of spinning, and wakes on either a frame
+    /// arriving or the stack's next timer becoming due — whichever comes first,
+    /// capped at `max_sleep_ms` so link changes still get noticed.
+    ///
+    /// Returns `true` when a socket changed state, i.e. when the caller should
+    /// look at its sockets before sleeping again.
+    ///
+    /// Requires [`Emac::enable_interrupts`] to have run and machine interrupts
+    /// to be enabled; without them it degrades to polling with a spin delay.
+    pub fn poll_wait<const RX: usize, const TX: usize>(
+        &mut self,
+        device: &mut Emac<'_, RX, TX>,
+        max_sleep_ms: u32,
+    ) -> bool {
+        if self.poll(device) {
+            return true;
+        }
+
+        // Consume the flag *before* sleeping so a frame that arrived during
+        // `poll` is not lost and does not cost a full sleep period.
+        device.take_interrupt();
+
+        let sleep_ms = self
+            .poll_delay()
+            .map(|delay| delay.total_millis() as u32)
+            .unwrap_or(max_sleep_ms)
+            .min(max_sleep_ms);
+
+        if sleep_ms > 0 {
+            crate::delay::sleep_ms(sleep_ms);
+        }
+        false
+    }
+
     /// How long the stack may sleep before it has work to do.
     ///
     /// `None` means it has nothing scheduled — sleep until the next packet or

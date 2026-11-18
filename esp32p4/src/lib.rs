@@ -164,6 +164,7 @@ pub mod cache;
 pub mod delay;
 pub mod emac;
 pub mod gpio;
+pub mod interrupt;
 #[cfg(feature = "net")]
 pub mod net;
 pub mod psram;

@@ -14,4 +14,15 @@ fn main() {
     println!("cargo:rustc-link-search={}", out_dir.display());
     println!("cargo:rerun-if-changed=link.x");
     println!("cargo:rerun-if-changed=build.rs");
+
+    // rustc does not report the F extension in `target_feature` for the
+    // `riscv32imafc` triple, so the trap handler cannot ask `cfg!`. Derive the
+    // answer from the target name instead: the `f` in `imafc`/`imafdc` is the
+    // only reliable signal, and the ABI follows it (`ilp32f`/`ilp32d`).
+    let target = env::var("TARGET").unwrap_or_default();
+    let has_fpu = target.starts_with("riscv32imaf") || target.starts_with("riscv32imafd");
+    if has_fpu {
+        println!("cargo:rustc-cfg=riscv_fpu");
+    }
+    println!("cargo:rerun-if-env-changed=TARGET");
 }

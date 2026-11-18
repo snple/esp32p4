@@ -82,10 +82,44 @@
 
 pub mod dma;
 
-use esp32p4_pac::{EMAC, GPIO, HP_SYS, HP_SYS_CLKRST, IO_MUX, LP_AON_CLKRST};
+use core::sync::atomic::{AtomicBool, Ordering};
+
+use esp32p4_pac::{EMAC, GPIO, HP_SYS, HP_SYS_CLKRST, INTERRUPT_CORE0, IO_MUX, LP_AON_CLKRST};
 
 use crate::gpio::Pin;
+use crate::interrupt;
 pub use dma::{DmaBuffer, EmacBuffers, MAX_FRAME_SIZE, TxError};
+
+/// `DMAIN_EN` bits this driver uses: normal summary, receive and transmit.
+const DMAIN_NORMAL_SUMMARY: u32 = 1 << 16;
+const DMAIN_RECEIVE: u32 = 1 << 6;
+const DMAIN_TRANSMIT: u32 = 1 << 0;
+
+/// Set by the MAC interrupt handler; consumed by [`Emac::take_interrupt`].
+static INTERRUPT_PENDING: AtomicBool = AtomicBool::new(false);
+
+/// MAC interrupt handler.
+///
+/// It does the only thing that must happen inside the handler — acknowledge the
+/// DMA status so the level-triggered line drops — and leaves the rings to the
+/// main loop. That keeps the handler tiny and means the ring cursors never have
+/// to be shared with an interrupt.
+fn emac_isr() {
+    let emac = unsafe { &*EMAC::PTR };
+    let status = emac.dmastatus.read_bits();
+    // DMASTATUS is write-one-to-clear.
+    emac.dmastatus.write_bits(status);
+
+    // A bus error or a descriptor we cannot supply would re-assert the line
+    // forever; drop the abnormal sources rather than spin in the trap.
+    if status & (1 << 13) != 0 {
+        // FATAL_BUS_ERR_INT: nothing sane can be done from here.
+        emac.dmain_en
+            .modify_bits(|v| v & !DMAIN_RECEIVE & !DMAIN_TRANSMIT);
+    }
+
+    INTERRUPT_PENDING.store(true, Ordering::Release);
+}
 
 /// GPIO matrix index of the MAC's MDIO input.
 ///
@@ -445,6 +479,64 @@ impl<'d, const RX: usize, const TX: usize> Emac<'d, RX, TX> {
     #[inline]
     pub fn transmit_ready(&self) -> bool {
         self.tx.has_capacity()
+    }
+
+    /// Route the MAC's interrupt source to `cpu_int` and start taking it.
+    ///
+    /// Only the normal summary is unmasked (receive/transmit completion); the
+    /// MAC-level sources (power management, LPI, timestamp) stay masked in
+    /// `EMACINTMASK`. The handler acknowledges the status and sets
+    /// [`Emac::take_interrupt`], so the rings stay owned by the main loop.
+    ///
+    /// `cpu_int` must be a line this crate does not already use — see
+    /// [`crate::interrupt::lines`].
+    pub fn enable_interrupts(&self, cpu_int: u32) {
+        // Acknowledge whatever the bootloader left pending before unmasking.
+        let status = self.emac.dmastatus.read_bits();
+        self.emac.dmastatus.write_bits(status);
+
+        let matrix = unsafe { &*INTERRUPT_CORE0::PTR };
+        matrix.sbd_int_map.write_core0_sbd_int_map(cpu_int);
+        interrupt::set_handler(cpu_int, emac_isr);
+
+        self.emac
+            .dmain_en
+            .modify_bits(|value| value | DMAIN_NORMAL_SUMMARY | DMAIN_RECEIVE | DMAIN_TRANSMIT);
+
+        // SAFETY: the handler is installed and the status was just cleared, so
+        // nothing fires before the caller starts polling.
+        unsafe { interrupt::unmask(cpu_int) };
+    }
+
+    /// Stop taking the MAC interrupt and give the line back.
+    pub fn disable_interrupts(&self, cpu_int: u32) {
+        interrupt::mask(cpu_int);
+        self.emac.dmain_en.write_bits(0);
+        INTERRUPT_PENDING.store(false, Ordering::Release);
+    }
+
+    /// Take the pending-interrupt flag, if the handler set it.
+    ///
+    /// Returns `true` at most once per interrupt, so a poll loop can decide
+    /// whether there is new work without touching the rings first.
+    #[inline]
+    pub fn take_interrupt(&self) -> bool {
+        INTERRUPT_PENDING.swap(false, Ordering::AcqRel)
+    }
+
+    /// Whether an interrupt arrived and has not been taken yet.
+    #[inline]
+    pub fn interrupt_pending(&self) -> bool {
+        INTERRUPT_PENDING.load(Ordering::Acquire)
+    }
+
+    /// Raw DMA status word, one bit per interrupt cause.
+    ///
+    /// Diagnostic aid: bit 6 is receive completion, bit 0 transmit completion,
+    /// bit 16 the normal summary.
+    #[inline]
+    pub fn dma_status(&self) -> u32 {
+        self.emac.dmastatus.read_bits()
     }
 
     /// Fill the next transmit slot with `len` bytes built by `f` and send it.

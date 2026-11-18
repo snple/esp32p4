@@ -16,3 +16,6 @@ rt = []
 [package.metadata.docs.rs]
 features = ["rt"]
 targets = ["riscv32imafc-unknown-none-elf"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(riscv_fpu)'] }

@@ -1,8 +1,9 @@
 //! DHCP client and a TCP echo server on port 7, over the on-chip Ethernet MAC.
 //!
 //! Everything is `no_std` and heap-free: the socket table, the TCP windows and
-//! the DMA rings all live in `static`s, and the stack is driven by plain
-//! polling — no interrupts, no executor.
+//! the DMA rings all live in `static`s. The loop is interrupt-driven — the MAC's
+//! DMA completion line and the system timer's comparator wake the core out of
+//! `wfi` — but there is no executor and no async anywhere.
 //!
 //! ```text
 //! cargo run --bin net_tcp_echo
@@ -132,6 +133,12 @@ fn main() -> ! {
         }
     }
 
+    // Interrupt-driven from here on: the MAC's DMA completion line and the
+    // system timer's comparator both wake the core out of `wfi`.
+    emac.enable_interrupts(esp32p4::interrupt::lines::EMAC);
+    // SAFETY: both handlers are installed and the peripheral sources cleared.
+    unsafe { esp32p4::interrupt::enable() };
+
     // SAFETY: handed to the socket once, below.
     let tcp_buffers = unsafe { &mut *core::ptr::addr_of_mut!(TCP_BUFFERS) };
     let socket = tcp::Socket::new(
@@ -142,7 +149,9 @@ fn main() -> ! {
 
     let mut ticks = 0u32;
     loop {
-        net.poll(&mut emac);
+        // Park the core until the MAC or the stack's next timer has something
+        // to do, then run the whole loop body.
+        net.poll_wait(&mut emac, 20);
 
         // Serve whatever the echo socket currently has room for. The borrow of
         // the socket ends before the status report below.
@@ -171,19 +180,14 @@ fn main() -> ! {
             let state = net.sockets().get::<tcp::Socket>(server).state();
             writeln!(
                 serial,
-                "tick {ticks}: link {}, ip {:?}, tcp {:?}",
-                link.up, ip, state
+                "tick {ticks} at {} ms: link {}, ip {:?}, tcp {:?}",
+                delay.now_us() / 1000,
+                link.up,
+                ip,
+                state
             )
             .ok();
         }
         ticks = ticks.wrapping_add(1);
-
-        // Without interrupts there is nothing to wait on: sleep the shortest
-        // time the stack asked for, capped so a cable pull still shows up.
-        let sleep_ms = net
-            .poll_delay()
-            .map(|d| d.total_millis().min(20) as u32)
-            .unwrap_or(5);
-        delay.delay_ms(sleep_ms.max(1));
     }
 }
