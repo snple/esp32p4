@@ -91,3 +91,4 @@ PROVIDE(__global_pointer$ = MIN(_sdata + 0x800, _edata));
 PROVIDE(esp_rom_spi_cmd_config = 0x4fc00108);
 PROVIDE(esp_rom_spi_set_op_mode = 0x4fc00110);
 PROVIDE(Cache_Invalidate_Addr = 0x4fc003e4);
+PROVIDE(Cache_WriteBack_Addr = 0x4fc003f4);

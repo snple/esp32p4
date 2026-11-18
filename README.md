@@ -13,7 +13,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | [`esp32p4-pac`](esp32p4-pac/) | **PAC**：由 `esp32p4.svd` 生成，提供寄存器块、字段常量和访问器。勿手改 |
 | [`esp32p4-rt`](esp32p4-rt/) | **运行时**：`_start`、trap 入口、`link.x`、CSR/汇编封装 |
 | [`esp32p4-macro`](esp32p4-macro/) | **过程宏**：`#[main]` |
-| [`esp32p4`](esp32p4/) | **HAL**：GPIO / IO MUX、SYSTIMER 延时、复位、封装内 PSRAM、USB Serial/JTAG |
+| [`esp32p4`](esp32p4/) | **HAL**：GPIO / IO MUX、SYSTIMER 延时、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC |
 | [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、PSRAM 初始化与分区、USB Serial/JTAG |
 | [`xtask`](xtask/) | 构建辅助：`cargo xtask gen-pac` |
 
@@ -28,6 +28,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `psram_split` | 把 PSRAM 分成「cached 全局堆 + uncached DMA 池」两部分 |
 | `defmt_log` | 用 `defmt-rtt` 输出日志（需 `--features defmt`，JTAG 读取） |
 | `usb_serial` | 通过 USB Serial/JTAG 打印并回显，同时翻转 GPIO2（两个驱动共享 `HP_SYS_CLKRST`） |
+| `emac` | 初始化 RMII 以太网、自动协商、打印链路状态并收发 ARP 帧 |
 | `defmt_usb` | `defmt` 日志直接走 USB Serial/JTAG（需 `--features defmt-usb`，`espflash monitor` 可见） |
 
 ## 快速开始
@@ -123,6 +124,76 @@ cargo run --bin defmt_usb --features defmt-usb
 HAL 的 `defmt-usb-logger` feature 会注册成全局 logger，因此不能和 `defmt-rtt`
 同时启用。时钟未打开时 logger 丢弃日志而不是访问未上时钟的寄存器。
 
+## 以太网 MAC
+
+P4 内置 DesignWare 10/100 MAC + DMA，通过 RMII 连接外部 PHY
+（LAN8720 / DP83848 之类）。SVD 里没有这个外设，所以寄存器定义来自 TRM
+第 53 章：`xtask/svd/gen_emac.py` 从 LaTeX 源生成 `xtask/svd/emac.svd`
+片段，`cargo xtask gen-pac` 再把它和主 SVD 合并。片段已提交，正常构建不需要
+TRM 源或 Python。
+
+```rust
+static mut BUFFERS: EmacBuffers<8, 4> = EmacBuffers::new();
+
+let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
+let rmii = RmiiPins::new(
+    pins.pin::<33>(), // TXEN
+    pins.pin::<34>(), // TXD0
+    pins.pin::<35>(), // TXD1
+    pins.pin::<30>(), // RXD1
+    pins.pin::<29>(), // RXD0
+    pins.pin::<28>(), // CRS_DV
+    pins.pin::<32>(), // REF_CLK
+    pins.pin::<20>(), // MDC
+    pins.pin::<21>(), // MDIO
+);
+let (gpio, io_mux) = pins.release();
+
+// SAFETY: `BUFFERS` is only handed to the driver, once.
+let mut emac = Emac::init(
+    dp.EMAC,
+    rmii,
+    EmacConfig::default(),
+    unsafe { &mut *core::ptr::addr_of_mut!(BUFFERS) },
+    EmacResources {
+        gpio: &gpio,
+        io_mux: &io_mux,
+        hp_sys: &dp.HP_SYS,
+        clkrst: &dp.HP_SYS_CLKRST,
+        lp_clkrst: &dp.LP_AON_CLKRST,
+    },
+);
+
+let link = emac.autonegotiate();   // 5 s 超时，返回协商结果
+emac.transmit(&frame)?;            // 帧不带 FCS
+if let Some(rx) = emac.receive() {
+    // ...
+    emac.release_frame();
+}
+```
+
+要点：
+
+- **引脚**：RMII 数据/时钟是 **IO MUX 的专用 GMAC 功能（Function 3）**，不是普通 GPIO，
+  也不走 GPIO matrix —— 选中功能后 pad 直接连到 MAC，连输出使能都由 MAC 控制，
+  `GPIO_ENABLE` 对它无效（IDF `gpio_hal_iomux_out` 的注释："as long as the func sel
+  is not GPIO, the oe can only be controlled by the peripheral"）。可用的 pad 分组是
+  GPIO28-36 / 40-48 / 49-54。MDC/MDIO 没有专用功能，走 GPIO matrix，可以放在任意引脚，
+  但 `OEN_SEL` 仍留给 MAC：MDIO 是双向的，MAC 必须在 PHY 应答前释放总线。
+  `RmiiPins::new` 用 `Pin<N>` 参数做类型检查，引脚不带 GMAC 功能会编译失败。
+- **时钟**：`RefClock::External` 由 PHY 提供 50 MHz 到 `REF_CLK`（推荐）；
+  `RefClock::InternalMpll` 用 MPLL 500 MHz / 10 输出到 `REF_50M_CLK`，需板上回环到
+  `REF_CLK`。RMII 模式下 EMAC 时钟树由 `HP_SYS_CLKRST.PERI_CLK_CTRL00/01` 配置，
+  复位在 `LP_AON_CLKRST.HP_SDMMC_EMAC_RST_CTRL`（不在 HP 复位门里）。
+- **DMA**：32 字节增强描述符、`ALT_DESC_SIZE = 1`，描述符和缓冲区必须常驻
+  `static`。驱动通过 [`cache`](esp32p4/src/cache.rs) 在交给 MAC 前 writeback、
+  在读回前 invalidate；放在 PSRAM uncached 窗口则不需要维护。
+- **中断**：当前是轮询驱动，`DMAIN_EN` 和 `EMACINTMASK` 全部屏蔽，
+  `transmit`/`receive` 都不阻塞等待。
+- **PHY**：`mdio_read`/`mdio_write` 是 clause-22 原始寄存器访问，
+  `poll_link` 读标准 BMSR/BMCR/ANLPAR 推断速率与双工并同步到 MAC，
+  `autonegotiate` 重新发起协商。厂商专有寄存器（例如 LAN8720 的 SCSR）需自行读写。
+
 ## 内存布局与启动
 
 ESP32-P4 不是“ROM 直接跳到应用”的芯片：镜像由 ESP-IDF 2nd-stage bootloader
@@ -187,6 +258,7 @@ espflash save-image --chip esp32p4 \
 - 复位控制与复位原因（`system::software_reset` / `software_reset_cpu` / `reset_reason`，纯寄存器实现）
 - 封装内 PSRAM 初始化（MPLL 250 MHz、16/32 MB 自动检测、MMU 映射、`PsramAllocator`）
 - USB Serial/JTAG（CDC-ACM）收发：`UsbSerialJtag`，以及可选的 `defmt` 全局 logger
+- 以太网 MAC（RMII + MDIO + DMA 描述符环），含 L1/L2 cache 维护
 - `defmt` 日志支持（`Format` 实现 + 关键路径日志 + 基于 `mstatus.MIE` 的
   `critical-section` 实现）
 - `#[main]`（注入 `startup::init()`：关 bootloader 遗留的 RTC/MWDT 看门狗、停放 core 1、
@@ -198,6 +270,7 @@ espflash save-image --chip esp32p4 \
 - CLIC / 中断矩阵绑定、外设中断
 - 完整时钟树（PLL/分频）配置
 - UART、SPI、I2C、DMA、RMT、WS2812 等驱动
+- EMAC 中断驱动、TX/RX 校验和卸载、PTP 时间戳、MII/RGMII 接口
 - USB OTG FS/HS 主机与设备栈
 - LP 核与低功耗
 - trap 入口尚未保存 FPU 寄存器上下文（当前不使能可恢复中断）

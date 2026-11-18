@@ -43,6 +43,10 @@ path = "src/defmt_log.rs"
 required-features = ["defmt"]
 
 [[bin]]
+name = "emac"
+path = "src/emac.rs"
+
+[[bin]]
 name = "usb_serial"
 path = "src/usb_serial.rs"
 

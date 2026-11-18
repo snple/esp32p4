@@ -151,7 +151,9 @@ pub use esp32p4_pac as pac;
 pub use esp32p4_pac::{Interrupt, Peripherals};
 pub use esp32p4_rt as rt;
 
+pub mod cache;
 pub mod delay;
+pub mod emac;
 pub mod gpio;
 pub mod psram;
 pub mod regi2c;

@@ -50,9 +50,6 @@ const ROM_PSRAM_MSPI: i32 = 3;
 /// `ESP_ROM_SPIFLASH_OPI_DTR_MODE`: 8 data lines, double data rate.
 const ROM_MODE_OPI_DTR: u32 = 7;
 
-/// `Cache_Invalidate_Addr` bus mask for the L1 data cache plus the L2 cache.
-const CACHE_BUS_L1D_AND_L2: u32 = 0x30;
-
 /// Timing parameters for one PSRAM frequency.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Timing {
@@ -100,7 +97,6 @@ struct RomSpiCmd {
 unsafe extern "C" {
     fn esp_rom_spi_set_op_mode(spi_num: i32, mode: u32);
     fn esp_rom_spi_cmd_config(spi_num: i32, pcmd: *mut RomSpiCmd);
-    fn Cache_Invalidate_Addr(bus: u32, addr: u32, size: u32);
 }
 
 /// Powers the MSPI PHY LDOs.
@@ -367,7 +363,7 @@ pub(crate) fn map(size: usize) {
     }
 
     // Drop any line the cache may have prefetched from the window.
-    unsafe { Cache_Invalidate_Addr(CACHE_BUS_L1D_AND_L2, BASE as u32, size as u32) };
+    crate::cache::invalidate((BASE as *const u8).cast(), size);
 }
 
 /// Silicon revision 3.0 needs two dummy reads and a controller reset before
