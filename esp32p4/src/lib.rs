@@ -137,9 +137,9 @@ unsafe impl critical_section::Impl for SingleCoreCriticalSection {
 /// pin.into_output();                       // &mut self — compile error
 /// ```
 ///
-/// [`timer::TimerHandle`] is the other user: it takes `&self` everywhere, so a
-/// stolen handle can run the whole register-level API from an interrupt. The
-/// rule is the same for both — `steal()` never gives access to a method that
+/// [`timer::Tg0T0`] and [`systimer::Alarm1`] follow the same rule: they take
+/// `&self` everywhere, so a stolen copy can run the whole register-level API
+/// from an interrupt. What `steal()` never gives access to is a method that
 /// takes `&mut self`.
 pub struct Steal<T>(pub(crate) T);
 

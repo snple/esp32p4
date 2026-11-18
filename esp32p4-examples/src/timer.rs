@@ -23,11 +23,11 @@ defmt::timestamp!("{=u64:us}", esp32p4::delay::micros());
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use esp32p4::gpio::Pins;
-use esp32p4::interrupt::{self, CpuInterrupt, Interrupt};
+use esp32p4::interrupt::{self, CpuInterrupt};
 use esp32p4::main;
 use esp32p4::pac::Peripherals;
 use esp32p4::time::Duration;
-use esp32p4::timer::{Direction, TimerGroup0, TimerHandle};
+use esp32p4::timer::{Direction, Tg0T0, TimerGroup0};
 
 const LED_PIN: u32 = 2;
 /// CPU lines this example borrows out of the 32 the CLIC has.
@@ -42,9 +42,9 @@ static FAST_COUNTER: AtomicU32 = AtomicU32::new(0);
 fn fast_tick() {
     FAST_TICKS.fetch_add(1, Ordering::Relaxed);
 
-    // The handler does not own the timer, but a handle is enough to read it.
+    // The handler does not own the timer, but a stolen handle is enough.
     // SAFETY: `main` keeps this timer alive for the whole program.
-    let timer = unsafe { TimerHandle::steal(Interrupt::TG0_T0) };
+    let timer = unsafe { Tg0T0::steal() };
     FAST_COUNTER.store(timer.counter() as u32, Ordering::Relaxed);
 }
 

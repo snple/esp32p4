@@ -78,6 +78,12 @@ impl Regs {
         }
     }
 
+    /// The registers of timer `index`, counted as `group * 2 + unit`.
+    pub(crate) const fn at(index: usize) -> Self {
+        let base = if index < 2 { GROUP0_BASE } else { GROUP1_BASE };
+        Self::new(base, (index % 2) as u8)
+    }
+
     #[inline(always)]
     fn read(&self, offset: usize) -> u32 {
         reg(self.timer + offset).read_bits()
@@ -166,6 +172,12 @@ impl Regs {
                 v & !CONFIG_ALARM_EN
             }
         });
+    }
+
+    /// The programmed prescaler divisor, 2 to 65536.
+    pub(crate) fn divider(&self) -> u32 {
+        let encoded = (self.read(CONFIG) & CONFIG_DIVIDER_MASK) >> CONFIG_DIVIDER_SHIFT;
+        if encoded == 0 { 65536 } else { encoded }
     }
 
     /// Whether the alarm is armed.

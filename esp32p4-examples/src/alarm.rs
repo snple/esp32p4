@@ -25,7 +25,7 @@ use esp32p4::gpio::Pins;
 use esp32p4::interrupt::{self, CpuInterrupt};
 use esp32p4::main;
 use esp32p4::pac::Peripherals;
-use esp32p4::systimer::{Alarm, Comparator};
+use esp32p4::systimer::{Alarm1, Alarm2};
 use esp32p4::time::{Duration, Instant};
 
 const LED_PIN: u32 = 2;
@@ -47,13 +47,13 @@ fn main() -> ! {
 
     // COMP1: an interrupt every 250 ms. The hardware re-arms the comparator,
     // so the handler only has to acknowledge it (which the shim does).
-    let periodic = Alarm::new(Comparator::One);
+    let periodic = Alarm1::new();
     periodic.enable_interrupt(ALARM_LINE, tick);
     periodic.set_period(Duration::from_millis(250));
 
     // COMP2: a single deadline 5 s out, polled from the main loop.
-    let one_shot = Alarm::new(Comparator::Two);
-    one_shot.start_in(Duration::from_secs(5));
+    let one_shot = Alarm2::new();
+    one_shot.set_target(Instant::now() + Duration::from_secs(5));
 
     unsafe { interrupt::enable() };
 

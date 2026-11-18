@@ -443,46 +443,52 @@ unsafe { interrupt::enable() };
 
 ### `SYSTIMER` 比较器闹钟
 
-`SYSTIMER` 的 3 个比较器里，COMP0 归 `Delay`，另外两个由 [`systimer`](esp32p4/src/systimer.rs)
-以 `Alarm` 的形式交出（`Alarm::new(Comparator::One)`，重复创建会 panic）：
+`SYSTIMER` 的 3 个比较器里，COMP0 归 `Delay`，另外两个各是一个类型：
+[`systimer::Alarm1`](esp32p4/src/systimer.rs) 与 `Alarm2`（`Alarm1::new()` 占用比较器，
+重复占用会 panic）：
 
 - **target 模式**：一次中断，比较值是完整的 52 位计数器值，也就是一个 `Instant`
-  （`alarm.set_target(deadline)` / `start_in(Duration)`）。
+  （`alarm.set_target(Instant::now() + Duration::from_secs(5))`）。
 - **period 模式**：每 δt 一次中断，δt 存在 26 位寄存器里，因此上限约 67 秒
-  （`alarm.set_period(Duration)`）。周期模式由硬件自己重新武装，handler 只要应答。
+  （`alarm.set_period(Duration::from_millis(10))`）。周期模式由硬件自己重新武装，
+  handler 只要应答。
 - 中断是电平型，HAL 的中断壳负责清 `int_clr`；`enable_interrupt(line, handler)` 同样走
   `interrupt::claim`，CPU 线由调用者选。
-- `AlarmHandle` 与 `TimerHandle` 同构：`Copy`、方法取 `&self`、`Alarm` 通过 `Deref` 复用，
-  `AlarmHandle::steal(comparator)` 可在中断里重建句柄。
 
 ```rust
-let alarm = Alarm::new(Comparator::One);
-alarm.enable_interrupt(CpuInterrupt::new(21), tick);
-alarm.set_period(Duration::from_millis(10));   // 10 ms 一次
+let periodic = Alarm1::new();
+periodic.enable_interrupt(CpuInterrupt::new(21), tick);
+periodic.set_period(Duration::from_millis(250));
 
-let one_shot = Alarm::new(Comparator::Two);
-one_shot.start_in(Duration::from_secs(5));     // 5 s 后一次
+let one_shot = Alarm2::new();
+one_shot.set_target(Instant::now() + Duration::from_secs(5));
 ```
 
-### 两个层次：`Timer` 与 `TimerHandle`
+### 一个计数器一个类型，`&self` + `steal()`
 
-`Timer` 是拥有者：它借用 `HP_SYS_CLKRST`、记住时钟源与预分频、在开中断时持有 CPU 线。
-所有寄存器级操作放在 `TimerHandle` 上——`Copy` 值、方法全取 `&self`，`Timer` 通过 `Deref`
-把它暴露出来，所以两者是同一套 API（`timer.counter()` 编译成对 handle 的调用）。
+和 rp2350 的 `Timer0` / `Timer1` 一样，每个硬件计数器都是独立类型（`Tg0T0`、`Tg0T1`、
+`Tg1T0`、`Tg1T1`，名字就是它对应的中断源），由宏生成、共用同一套方法：
 
-中断里没有 `&Timer`，用 `TimerHandle::steal` 重建一个（和 `Pin::<N>::steal()` 同一个模式）：
+- `TimerGroup0/1::new(timg, &clkrst).split()` 交出两路，初始化时把计数器复位到已知状态
+  （停止、清计数、关闹钟、XTAL/40 → 1 tick = 1 µs）。
+- **所有方法取 `&self`**：寄存器是 volatile cell，因此共享引用就够；时钟源、预分频、
+  计数器方向和闹钟都从/向硬件读写，结构体里只缓存“我持有的 CPU 线”。
+- `unsafe { Tg0T0::steal() }` 返回 `Steal<Tg0T0>`：**同一个类型**、不碰任何寄存器，
+  所以中断里能直接拿到和 owner 完全一样的能力，也不需要额外的 handle 类型或 `new` 包装。
+  只有 Ctrl 自己的簿记不同——stolen 副本没有 claim 的 CPU 线，drop 时也不会影响硬件。
 
 ```rust
 fn overrun() {
-    // SAFETY: main 里的 Timer 一直活着，且这里只读计数器、重设闹钟。
-    let timer = unsafe { TimerHandle::steal(Interrupt::TG0_T0) };
+    // SAFETY: main 里的 Tg0T0 一直活着。
+    let timer = unsafe { Tg0T0::steal() };
     OVERRUNS.fetch_add(1, Ordering::Relaxed);
     timer.set_alarm(timer.counter() + PERIOD_TICKS);
 }
 ```
 
-`Timer::handle()` 是安全版本：拿到副本后可以放进 `static`（`TimerHandle::steal` 是
-`const unsafe fn`，`Steal<TimerHandle>` 因此能直接 const 初始化），主循环和中断各用各的副本。
+CPU 线的所有权放在一个私有的 `Irq` guard 里：`enable_interrupt` 把它放进 `RefCell`，
+`disable_interrupt` 或整个定时器被 drop 时，guard 的 `Drop` 关掉 TIMG 的中断使能、
+清状态、注销 shim 并把线还回去——stolen 副本里没有这个 guard，所以不受影响。
 
 厂商 SVD 只描述每个 TIMG 的 timer 0，timer 1 落在保留区里，所以这组寄存器没有走 PAC：
 [`timer/regs.rs`](esp32p4/src/timer/regs.rs) 按 TRM 第 18 章手写了偏移与位域
@@ -549,7 +555,7 @@ espflash save-image --chip esp32p4 \
 - RISC-V 启动、trap 入口、CSR/汇编封装、ESP-IDF 兼容镜像布局
 - GPIO0–GPIO53 的简单推挽输出/输入、IO MUX 配置
 - SYSTIMER 阻塞延时（`sleep_ms` / `sleep_until`）与单调时钟（`time::Instant` / `Duration`）
-- SYSTIMER 比较器闹钟（COMP1 / COMP2：绝对 deadline 与周期模式，带中断与 `AlarmHandle`）
+- SYSTIMER 比较器闹钟（`Alarm1` / `Alarm2`：绝对 deadline 与周期模式，带中断）
 - 通用定时器（`TIMG0` / `TIMG1` 的 4 路 54 位计数器：时钟源与预分频、增/减计数、
   软件重载、一次性与周期性闹钟中断）
 - 复位控制与复位原因（`system::software_reset` / `software_reset_cpu` / `reset_reason`，纯寄存器实现）
