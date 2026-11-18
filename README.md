@@ -128,8 +128,8 @@ HAL 的 `defmt-usb-logger` feature 会注册成全局 logger，因此不能和 `
 
 P4 内置 DesignWare 10/100 MAC + DMA，通过 RMII 连接外部 PHY
 （LAN8720 / DP83848 之类）。SVD 里没有这个外设，所以寄存器定义来自 TRM
-第 53 章：`xtask/svd/gen_emac.py` 从 LaTeX 源生成 `xtask/svd/emac.svd`
-片段，`cargo xtask gen-pac` 再把它和主 SVD 合并。片段已提交，正常构建不需要
+第 53 章：`xtask/gen_emac.py` 从 LaTeX 源生成根目录下的 `emac.svd` 片段，
+`cargo xtask gen-pac` 再把它和 `esp32p4.svd` 合并。片段已提交，正常构建不需要
 TRM 源或 Python。
 
 ```rust

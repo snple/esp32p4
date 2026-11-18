@@ -9,11 +9,11 @@ register set is extracted from the TRM LaTeX sources instead:
 
 Run from the repository root:
 
-    python3 xtask/svd/gen_emac.py
+    python3 xtask/gen_emac.py
     cargo xtask gen-pac
 
-The generated `xtask/svd/emac.svd` is committed, so neither the TRM sources nor
-Python are needed for a normal build.
+The generated `emac.svd` next to the vendor `esp32p4.svd` is committed, so
+neither the TRM sources nor Python are needed for a normal build.
 """
 
 import os
@@ -23,7 +23,9 @@ import sys
 TRM_DEFAULT = os.path.expanduser(
     "~/code/esp32/esp-technical-reference-manual-latex/ESP32-P4/53-ETHERNETMAC/53-ETHERNETMAC-reg__EN.tex"
 )
-OUT_DEFAULT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "emac.svd")
+OUT_DEFAULT = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "emac.svd"
+)
 
 # `EMACCONFIG_REG` -> `EMACCONFIG`; the generated PAC prepends nothing, so the
 # field names inside a register only need to be unique within that register.

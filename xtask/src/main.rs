@@ -95,8 +95,8 @@ fn gen_pac(
     let mut device = svd_parser::parse_svd(&svd_path).context("Failed to parse SVD file")?;
 
     // The vendor SVD has no Ethernet MAC block; its registers live in a
-    // fragment extracted from the TRM (see `xtask/svd/gen_emac.py`).
-    let emac_svd = root.join("xtask/svd/emac.svd");
+    // fragment extracted from the TRM (see `xtask/gen_emac.py`).
+    let emac_svd = root.join("emac.svd");
     if emac_svd.exists() {
         let emac = svd_parser::parse_svd(&emac_svd)
             .with_context(|| format!("Failed to parse {}", emac_svd.display()))?;
@@ -159,7 +159,7 @@ fn check_generated(device: &types::SvdDevice, output_path: &Path) -> Result<()> 
     let _ = std::fs::remove_dir_all(&tmp);
     result?;
 
-    println!("✓ Generated PAC is up to date with esp32p4.svd");
+    println!("✓ Generated PAC is up to date with esp32p4.svd and emac.svd");
     Ok(())
 }
 
