@@ -360,6 +360,44 @@ loop {
 ISR 里不碰描述符环：环的所有权仍然只在主循环里，中断只负责把核心叫醒。这样既没有
 数据竞争，也不需要临界区。
 
+### HAL 中断接口
+
+[`esp32p4::interrupt`](esp32p4/src/interrupt.rs) 把矩阵、CLIC 和处理器表包成一套带所有权的 API：
+
+```rust
+use esp32p4::interrupt::{self, CpuInterrupt, Interrupt, Level};
+
+fn isr() { /* 清外设状态，置一个标志 */ }
+
+// 1. 占用一条线：检查是否已被占用、路由中断源、设定级别、注册处理器。
+//    线保持 masked，外设准备好后再 enable。
+let handler = unsafe {
+    interrupt::claim(Interrupt::TG0_T0, CpuInterrupt::new(21), Level::LOW, isr)
+};
+handler.enable();
+
+// 2. 多个源共线时，用矩阵状态区分来源
+if interrupt::source_pending(Interrupt::LP_GPIO) { /* ... */ }
+
+// 3. 临界区与 ISR 共享数据
+interrupt::free(|cs| COUNTER.borrow(cs).set(0));
+```
+
+- **类型安全的源与线**：`CpuInterrupt` 是 0..=31 的 CPU 线（`new` 越界即编译期/运行期
+  panic），`Source` 覆盖矩阵全部 128 个源。厂商 SVD 只命名了其中 95 个（例如 EMAC 的
+  `SBD_INTR` 就缺失），所以路由接口接收 `impl Into<Source>`：具名的 `Interrupt`
+  自动转换，缺失的用 `Source::SBD` 或 `Source::new(id)`。
+- **所有权**：`claim` 用原子位图记录已占用的线，第二个驱动再抢同一条线会 panic；
+  `InterruptHandler` 在 drop 时 mask、注销处理器并归还线，`leak()` 表示“这条线归程序
+  所有”（`Delay` 就是这么做的）。
+- **级别**：`mcliccfg.MNLBITS = 3`，每级编码成 8 位字节（级别 0 = `0x1f`，级别 7 =
+  `0xff`，低 5 位硬连线为 1）。级别只决定**同时挂起时谁先被取走**；trap 入口里
+  `MIE = 0`，所以不会发生嵌套抢占。
+- **临界区**：`free(|cs| ...)` 把 `CriticalSection` 令牌传给闭包，`Mutex<T>` 只有拿到
+  令牌才能借数据；`disable_all()` 返回 RAII guard，drop 时恢复 `MIE`。
+- **矩阵状态**：`source_pending(source)` 读 `CORE0_INTR_STATUS_REG_n`，共享中断线的
+  处理器据此判断是自己的哪个源。
+
 ## 内存布局与启动
 
 ESP32-P4 不是“ROM 直接跳到应用”的芯片：镜像由 ESP-IDF 2nd-stage bootloader

@@ -82,12 +82,13 @@
 
 pub mod dma;
 
+use core::cell::Cell;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use esp32p4_pac::{EMAC, GPIO, HP_SYS, HP_SYS_CLKRST, INTERRUPT_CORE0, IO_MUX, LP_AON_CLKRST};
+use esp32p4_pac::{EMAC, GPIO, HP_SYS, HP_SYS_CLKRST, IO_MUX, LP_AON_CLKRST};
 
 use crate::gpio::Pin;
-use crate::interrupt;
+use crate::interrupt::{self, CpuInterrupt, InterruptHandler, Level, Source};
 pub use dma::{DmaBuffer, EmacBuffers, MAX_FRAME_SIZE, TxError};
 
 /// `DMAIN_EN` bits this driver uses: normal summary, receive and transmit.
@@ -359,6 +360,7 @@ pub struct Emac<'d, const RX: usize, const TX: usize> {
     phy_address: u8,
     speed: Speed,
     duplex: Duplex,
+    handler: Cell<Option<InterruptHandler>>,
 }
 
 impl<'d, const RX: usize, const TX: usize> Emac<'d, RX, TX> {
@@ -413,6 +415,7 @@ impl<'d, const RX: usize, const TX: usize> Emac<'d, RX, TX> {
             phy_address: config.phy_address,
             speed: config.speed,
             duplex: config.duplex,
+            handler: Cell::new(None),
         }
     }
 
@@ -488,31 +491,36 @@ impl<'d, const RX: usize, const TX: usize> Emac<'d, RX, TX> {
     /// `EMACINTMASK`. The handler acknowledges the status and sets
     /// [`Emac::take_interrupt`], so the rings stay owned by the main loop.
     ///
-    /// `cpu_int` must be a line this crate does not already use — see
-    /// [`crate::interrupt::lines`].
-    pub fn enable_interrupts(&self, cpu_int: u32) {
+    /// `line` must be a line nobody else owns — in practice
+    /// [`crate::interrupt::lines::EMAC`].
+    pub fn enable_interrupts(&self, line: CpuInterrupt) {
+        // Re-enabling may target a different line: release the previous claim
+        // first, which also masks it.
+        self.handler.set(None);
+
         // Acknowledge whatever the bootloader left pending before unmasking.
         let status = self.emac.dmastatus.read_bits();
         self.emac.dmastatus.write_bits(status);
 
-        let matrix = unsafe { &*INTERRUPT_CORE0::PTR };
-        matrix.sbd_int_map.write_core0_sbd_int_map(cpu_int);
-        interrupt::set_handler(cpu_int, emac_isr);
+        // SAFETY: the handler acknowledges the MAC status, the source was just
+        // cleared, and the line stays masked until the DMA interrupts below are
+        // enabled.
+        let handler = unsafe { interrupt::claim(Source::SBD, line, Level::LOW, emac_isr) };
 
         self.emac
             .dmain_en
             .modify_bits(|value| value | DMAIN_NORMAL_SUMMARY | DMAIN_RECEIVE | DMAIN_TRANSMIT);
-
-        // SAFETY: the handler is installed and the status was just cleared, so
-        // nothing fires before the caller starts polling.
-        unsafe { interrupt::unmask(cpu_int) };
+        handler.enable();
+        self.handler.set(Some(handler));
     }
 
     /// Stop taking the MAC interrupt and give the line back.
-    pub fn disable_interrupts(&self, cpu_int: u32) {
-        interrupt::mask(cpu_int);
+    pub fn disable_interrupts(&self) {
         self.emac.dmain_en.write_bits(0);
         INTERRUPT_PENDING.store(false, Ordering::Release);
+        // Dropping the handler masks the line, removes the handler and releases
+        // the claim.
+        self.handler.set(None);
     }
 
     /// Take the pending-interrupt flag, if the handler set it.

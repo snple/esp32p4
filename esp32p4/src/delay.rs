@@ -5,9 +5,9 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use esp32p4_pac::{INTERRUPT_CORE0, SYSTIMER};
+use esp32p4_pac::SYSTIMER;
 
-use crate::interrupt;
+use crate::interrupt::{self, Interrupt, Level};
 
 /// System timer ticks per microsecond.
 const TICKS_PER_US: u64 = 16;
@@ -91,14 +91,20 @@ impl Delay {
         // `sleep_us` arms a comparator, and interrupts stay globally off until
         // the application enables them.
         if !INTERRUPT_ROUTED.swap(true, Ordering::AcqRel) {
-            let matrix = unsafe { &*INTERRUPT_CORE0::PTR };
-            matrix
-                .systimer_target0_int_map
-                .write_core0_systimer_target0_int_map(interrupt::lines::SYSTIMER_TARGET0);
-            interrupt::set_handler(interrupt::lines::SYSTIMER_TARGET0, target0_isr);
-            // SAFETY: the handler above only clears the comparator and sets a
-            // flag, and it cannot fire before a comparator is armed.
-            unsafe { interrupt::unmask(interrupt::lines::SYSTIMER_TARGET0) };
+            // SAFETY: the handler only clears the comparator and sets a flag,
+            // and it cannot fire before a comparator is armed.
+            let handler = unsafe {
+                interrupt::claim(
+                    Interrupt::SYSTIMER_TARGET0,
+                    interrupt::lines::SYSTIMER_TARGET0,
+                    Level::LOW,
+                    target0_isr,
+                )
+            };
+            handler.enable();
+            // The delay driver is created on every `micros()` call, so the line
+            // belongs to the program rather than to one instance.
+            handler.leak();
         }
 
         Self { systimer }
