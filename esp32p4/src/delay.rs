@@ -1,24 +1,23 @@
 //! Blocking delays using the system timer.
 //!
-//! The ESP32-P4 `SYSTIMER` counts at an average of 16 MHz
-//! (`XTAL_CLK / 2.5`), so one microsecond is 16 counter ticks.
+//! The counter and the tick rate live in [`crate::time`]; this module only adds
+//! comparator 0 on top of them, which lets the core park in `wfi` instead of
+//! spinning through a delay.
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use esp32p4_pac::SYSTIMER;
 
 use crate::interrupt::{self, Interrupt, Level};
-
-/// System timer ticks per microsecond.
-const TICKS_PER_US: u64 = 16;
+use crate::time::{self, TICKS_PER_US};
 
 /// Set by the target-0 interrupt handler, consumed by [`Delay::sleep_us`].
 static TIMER_FIRED: AtomicBool = AtomicBool::new(false);
 
 /// Whether the target-0 interrupt has been routed.
 ///
-/// [`Delay::init`] is also called by [`micros`] on every timestamp, so the
-/// routing must not run more than once.
+/// Every [`Delay`] instance shares comparator 0, so the routing must not run
+/// more than once.
 static INTERRUPT_ROUTED: AtomicBool = AtomicBool::new(false);
 
 /// Target-0 interrupt handler.
@@ -35,20 +34,6 @@ fn target0_isr() {
 /// Blocking delay driver backed by `SYSTIMER` unit 0.
 pub struct Delay {
     systimer: SYSTIMER,
-}
-
-/// Reads the raw counter into the latch and returns it.
-#[inline]
-fn read_ticks(systimer: &SYSTIMER) -> u64 {
-    // Latch the counter into UNIT0_VALUE_HI/LO and wait for VALUE_VALID.
-    systimer.unit0_op.trigger_timer_unit0_update();
-    while !systimer.unit0_op.timer_unit0_value_valid() {
-        core::hint::spin_loop();
-    }
-
-    let hi = systimer.unit0_value_hi.read_bits() as u64;
-    let lo = systimer.unit0_value_lo.read_bits() as u64;
-    (hi << 32) | lo
 }
 
 /// Sleep for `ms` milliseconds, waking early on any interrupt.
@@ -69,22 +54,17 @@ pub fn sleep_ms(ms: u32) -> bool {
 /// Handy as a `defmt` timestamp: `defmt::timestamp!("{=u64:us}", micros());`
 #[inline]
 pub fn micros() -> u64 {
-    Delay::init(unsafe { SYSTIMER::steal() }).now_us()
+    time::Instant::now().as_ticks() / TICKS_PER_US
 }
 
 impl Delay {
     /// Create a delay driver.
     ///
-    /// Unit 0 is left free-running: the stall-on-core-halt bits are cleared so
-    /// the counter keeps advancing while the CPU is idle.
+    /// Starts the counter if that has not happened yet and routes comparator 0
+    /// to its interrupt line.
     #[inline]
     pub fn init(systimer: SYSTIMER) -> Self {
-        // The bootloader normally leaves the timer running, but a program that
-        // was reset by software can find the clock gate closed.
-        systimer.conf.set_clk_en();
-        systimer.conf.set_timer_unit0_work_en();
-        systimer.conf.clr_timer_unit0_core0_stall_en();
-        systimer.conf.clr_timer_unit0_core1_stall_en();
+        time::start();
 
         // Route target 0 to its CPU interrupt line so `sleep_us` can park the
         // core instead of spinning. The line is unmasked but only fires once
@@ -113,7 +93,7 @@ impl Delay {
     /// Read the current 52-bit counter value.
     #[inline]
     fn ticks(&self) -> u64 {
-        read_ticks(&self.systimer)
+        time::read_ticks()
     }
 
     /// Microseconds since boot.
