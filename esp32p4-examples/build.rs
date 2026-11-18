@@ -12,7 +12,9 @@ fn main() {
     // strings into a single `.defmt` section that the host can decode.
     // `defmt.x` itself is provided by the `defmt` crate's build script, which
     // adds its output directory to the linker search path.
-    if env::var_os("CARGO_FEATURE_DEFMT").is_some() {
+    if env::var_os("CARGO_FEATURE_DEFMT").is_some()
+        || env::var_os("CARGO_FEATURE_DEFMT_USB").is_some()
+    {
         println!("cargo:rustc-link-arg=-Tdefmt.x");
     }
     println!("cargo:rerun-if-changed=memory.x");

@@ -13,6 +13,10 @@ autobins = false
 default = []
 # Enables defmt logging in the HAL and provides an RTT logger.
 defmt = ["esp32p4/defmt", "dep:defmt", "dep:defmt-rtt"]
+# Enables defmt logging in the HAL and lets it own the global logger, writing to
+# the USB Serial/JTAG port that `espflash monitor` already watches. Mutually
+# exclusive with `defmt`, which installs an RTT logger.
+defmt-usb = ["esp32p4/defmt-usb-logger", "dep:defmt"]
 
 [dependencies]
 esp32p4.workspace = true
@@ -37,3 +41,12 @@ path = "src/psram_split.rs"
 name = "defmt_log"
 path = "src/defmt_log.rs"
 required-features = ["defmt"]
+
+[[bin]]
+name = "usb_serial"
+path = "src/usb_serial.rs"
+
+[[bin]]
+name = "defmt_usb"
+path = "src/defmt_usb.rs"
+required-features = ["defmt-usb"]

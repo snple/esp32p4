@@ -7,6 +7,9 @@
 //! - `rt` - Link the `esp32p4-rt` startup code and trap handler
 //! - `panic-handler` - Provide a default `#[panic_handler]` that parks the
 //!   core (disable it if the application supplies its own)
+//! - `defmt` - `defmt::Format` implementations and log statements
+//! - `defmt-usb-logger` - Register the USB Serial/JTAG port as the global
+//!   `defmt` logger, so `espflash monitor` shows the logs
 //!
 //! ## Example
 //!
@@ -154,3 +157,4 @@ pub mod psram;
 pub mod regi2c;
 pub mod startup;
 pub mod system;
+pub mod usb_serial_jtag;

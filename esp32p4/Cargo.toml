@@ -18,6 +18,10 @@ critical-section-impl = ["dep:critical-section"]
 # `defmt::Format` implementations and log statements. Requires a logger in the
 # final binary, e.g. `defmt-rtt`.
 defmt = ["dep:defmt"]
+# Registers a global `defmt` logger that writes to the USB Serial/JTAG CDC-ACM
+# port, so `espflash monitor` decodes the frames. Mutually exclusive with
+# `defmt-rtt` and any other global logger.
+defmt-usb-logger = ["defmt", "critical-section-impl"]
 
 [dependencies]
 pastey.workspace = true
