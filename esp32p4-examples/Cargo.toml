@@ -17,3 +17,11 @@ esp32p4-rt.workspace = true
 [[bin]]
 name = "blink"
 path = "src/blink.rs"
+
+[[bin]]
+name = "psram"
+path = "src/psram.rs"
+
+[[bin]]
+name = "psram_split"
+path = "src/psram_split.rs"

@@ -14,10 +14,18 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | [`esp32p4-rt`](esp32p4-rt/) | **运行时**：`_start`、trap 入口、`link.x`、CSR/汇编封装 |
 | [`esp32p4-macro`](esp32p4-macro/) | **过程宏**：`#[main]` |
 | [`esp32p4`](esp32p4/) | **HAL**：GPIO / IO MUX、SYSTIMER 延时、复位、封装内 PSRAM |
-| [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink |
+| [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、PSRAM 初始化与分区 |
 | [`xtask`](xtask/) | 构建辅助：`cargo xtask gen-pac` |
 
 依赖方向是单向的：`macro` / `rt` → `pac` → `esp32p4` → `examples`。
+
+## 示例
+
+| 二进制 | 内容 |
+|--------|------|
+| `blink` | GPIO2 每 500 ms 翻转一次 |
+| `psram` | 初始化封装内 PSRAM，整体作为全局堆使用 |
+| `psram_split` | 把 PSRAM 分成「cached 全局堆 + uncached DMA 池」两部分 |
 
 ## 快速开始
 
