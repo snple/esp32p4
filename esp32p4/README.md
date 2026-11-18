@@ -1,0 +1,126 @@
+# esp32p4
+
+ESP32-P4 的最小硬件抽象层。
+
+## 模块
+
+| 模块 | 内容 |
+|------|------|
+| `startup` | `#[main]` 自动调用的核级初始化：看门狗、core 1、分支预测器 |
+| `gpio` | `Pins` 控制器、`Pin<N>` 句柄（输入/输出/上拉/驱动强度）；GPIO0–GPIO53 |
+| `delay` | 基于 `SYSTIMER` unit 0 的 `delay_us` / `delay_ms` |
+| `system` | `Cpu`/`ResetReason` 枚举、`reset_reason`、`software_reset`、`software_reset_cpu` |
+
+`lib.rs` 统一重导出：
+
+```rust
+pub use esp32p4_macro::main;
+pub use esp32p4_pac as pac;
+pub use esp32p4_pac::{Interrupt, Peripherals};
+pub use esp32p4_rt as rt;
+```
+
+## 启动初始化
+
+`#[main]` 会在用户函数体之前插入 `startup::init()`：
+
+1. **关闭 RTC 看门狗**：ESP-IDF 2nd-stage bootloader 默认启用它（9 s）并留给应用，
+   应用不关就会在几秒后被复位；
+2. **关闭 TIMG0/TIMG1 MWDT**：防御性，避免上一个程序留下的 WDT 在 CPU 复位后继续跑；
+3. **停放 core 1**：P4 的 ROM 只启动 core 0，core 1 的时钟/复位/停顿状态在 LP 域，
+   软件复位后可能继续执行旧代码；
+4. **打开分支预测器**：ROM 在 cache 完全配置前关掉它，只影响性能。
+
+`startup::init()` 用 `steal()` 直接配置寄存器，不需要 `Peripherals`；调用两次也安全。
+
+## 复位与复位原因
+
+ESP32-P4 没有 Cortex-M 的 `SYSRESETREQ`，复位由 always-on 的 **LP 域**寄存器触发，
+但**全部在 PAC 里，不需要 ROM 符号**：
+
+| 函数 | 触发的寄存器（TRM 名） | 复位类型 / 复位码 |
+|------|------------------------|-------------------|
+| `system::software_reset()` | `LP_SYSTEM_SYS_CTRL_REG.SYS_SW_RST`（PAC：`LP_SYS.SYS_CTRL`） | HP core reset / `0x03` |
+| `system::software_reset_cpu(cpu)` | `LP_CLKRST_HPCOREx_SW_RESET`（PAC：`LP_AON_CLKRST.HPCPU_RESET_CTRL0`） | CPU reset / `0x0c` |
+| `system::reset_reason(cpu)` | 读 `LP_CLKRST_HPCOREx_RESET_CAUSE`（PAC：`LP_AON_CLKRST.RESET_CAUSE`） | — |
+
+**为什么复位 HP 核却在 LP 域？** 核不能复位自己：复位请求必须由“目标被复位期间仍在运行”
+的逻辑锁存，且 HP 时钟/总线要活到复位释放，所以 P4 的所有复位触发位都在 always-on 域。
+`LP_SYSTEM`（PAC/SVD 里叫 `LP_SYS`，`0x5011_0000`）持有 HP **内核**复位位，
+`LP_CLKRST`（PAC 里叫 `LP_AON_CLKRST`，`0x5011_1000`）持有**单核**复位位与复位原因，
+而 `HP_SYS`（`0x500E_5000`）根本没有复位触发位。
+另外 `LP_SYSTEM_SYS_CTRL` 必须读-改-写（同寄存器还有 `DIG_FIB`/`ANA_FIB`/`IO_MUX_RESET_DISABLE`
+等默认非零字段），PAC 生成的 `trigger_sys_sw_rst()` 已经是读-改-写。
+
+```rust
+use esp32p4::system::{reset_reason, software_reset, Cpu, ResetReason};
+
+if reset_reason(Cpu::ProCpu) == Some(ResetReason::CpuSoftware) {
+    // 上一次复位来自 software_reset_cpu()
+}
+software_reset(); // 不复返
+```
+
+`software_reset()` 复位整个 HP 域（两个核、外设、HP 内存），LP/RTC 域保留状态，
+随后 ROM bootloader 重新从 flash 加载应用；`software_reset_cpu()` 只复位单个核，
+外设状态保留，需要调用者自己清理。
+
+## GPIO
+
+```rust
+let pins = Pins::init(dp.GPIO, dp.IO_MUX, dp.HP_SYS_CLKRST);
+
+let mut led = pins.pin::<2>();
+led.into_output();      // 推挽输出，初始低
+led.set_high();
+led.toggle();
+
+let mut button = pins.pin::<3>();
+button.into_input_pullup();
+if button.get() { /* 未按下 */ }
+```
+
+和 rp2350 一样，`Pin<N>` 自身就是句柄：配置方法取 `&mut self`，读写方法取 `&self`，
+`into_output()` / `into_input()` 返回 `&Self` 便于链式调用。ISR 里可用
+`unsafe { Pin::<N>::steal() }`（返回 `Steal<Pin<N>>`，只能调 `&self` 方法）。
+
+`init_pad()`（`into_*` 会先调用）做这些事：
+
+1. `IO_MUX_GPIOx.MCU_SEL = 1`（GPIO 功能）；
+2. 关闭输入缓冲与上下拉；
+3. `FUN_DRV = 2`（约 20 mA）；
+4. `GPIO_FUNCn_OUT_SEL_CFG.OUT_SEL = 256`（选择 GPIO 自己的输出寄存器）；
+5. `OEN_SEL = 1`（输出使能由 `GPIO_ENABLE` 控制）。
+
+`into_output()` 之后再通过 `GPIO_ENABLE_W1TS` 打开输出。输出使用 `OUT_W1TS/W1TC`，
+GPIO32–53 使用 `OUT1_W1TS/W1TC`；GPIO 没有 XOR 寄存器，`toggle()` 是读输出寄存器后置位/清零。
+
+可用方法：`set_function` / `function` / `set_function_gpio`、`set_pull` /
+`set_pull_up` / `set_pull_down` / `set_pull_none`、`set_drive_strength`、
+`enable_input` / `disable_input`、`set_direction_out` / `set_direction_in` /
+`is_output`、`get` / `set_high` / `set_low` / `set` / `toggle` / `output_level`、
+`into_output` / `into_input` / `into_input_pullup` / `into_input_pulldown`。
+
+## 延时
+
+`SYSTIMER` 的 `CNT_CLK` 平均 16 MHz（`XTAL_CLK / 2.5`），因此 1 µs = 16 tick。
+`Delay` 通过 `UNIT0` 的 update/valid 握手读取 52 位计数器：
+
+```rust
+let delay = Delay::init(dp.SYSTIMER);
+delay.delay_ms(500);
+```
+
+## Features
+
+- `rt`（默认）：链接 `esp32p4-rt`。
+- `panic-handler`（默认）：提供停核式 `#[panic_handler]`；应用要自定义 panic
+  处理时关闭它。
+
+## 当前限制
+
+- 只支持简单 GPIO 输出/输入；GPIO 中断、滤波、同步阶段尚未封装。
+- 没有时钟树 API；依赖 bootloader 留下的默认时钟。
+- 没有 UART/SPI/I2C/DMA/RMT 等驱动。
+- `system` 的复位路径未经硬件验证（无板可测）；复位码表按 TRM 12-RESCLK 与
+  ESP-IDF `soc/reset_reasons.h` 对齐。

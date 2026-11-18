@@ -1,0 +1,19 @@
+[package]
+name = "esp32p4-examples"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Examples for esp32p4"
+repository.workspace = true
+publish = false
+autobins = false
+
+[dependencies]
+esp32p4.workspace = true
+esp32p4-pac.workspace = true
+esp32p4-rt.workspace = true
+
+[[bin]]
+name = "blink"
+path = "src/blink.rs"
