@@ -1329,6 +1329,18 @@ peripheral!(USB_WRAP, usb_wrap::RegisterBlock, 0x50080000);
 /// USB_WRAP Peripheral
 pub mod usb_wrap;
 
+/// Ethernet MAC (DesignWare 10/100 MAC + DMA)
+pub struct EMAC {
+    _marker: PhantomData<*const ()>,
+}
+
+unsafe impl Send for EMAC {}
+
+peripheral!(EMAC, emac::RegisterBlock, 0x50098000);
+
+/// Ethernet MAC (DesignWare 10/100 MAC + DMA)
+pub mod emac;
+
 // ============================================================================
 // Peripherals - All device peripherals
 // ============================================================================
@@ -1519,6 +1531,8 @@ pub struct Peripherals {
     pub USB_DEVICE: USB_DEVICE,
     /// USB_WRAP Peripheral
     pub USB_WRAP: USB_WRAP,
+    /// Ethernet MAC (DesignWare 10/100 MAC + DMA)
+    pub EMAC: EMAC,
 }
 
 impl Peripherals {
@@ -1630,6 +1644,7 @@ impl Peripherals {
                 UHCI0: UHCI0::steal(),
                 USB_DEVICE: USB_DEVICE::steal(),
                 USB_WRAP: USB_WRAP::steal(),
+                EMAC: EMAC::steal(),
             }
         }
     }

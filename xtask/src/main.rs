@@ -92,7 +92,17 @@ fn gen_pac(
     }
 
     // Parse SVD and generate code
-    let device = svd_parser::parse_svd(&svd_path).context("Failed to parse SVD file")?;
+    let mut device = svd_parser::parse_svd(&svd_path).context("Failed to parse SVD file")?;
+
+    // The vendor SVD has no Ethernet MAC block; its registers live in a
+    // fragment extracted from the TRM (see `xtask/svd/gen_emac.py`).
+    let emac_svd = root.join("xtask/svd/emac.svd");
+    if emac_svd.exists() {
+        let emac = svd_parser::parse_svd(&emac_svd)
+            .with_context(|| format!("Failed to parse {}", emac_svd.display()))?;
+        println!("Merging supplementary SVD: {}", emac_svd.display());
+        device.peripherals.extend(emac.peripherals);
+    }
 
     if check {
         if no_check {
