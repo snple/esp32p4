@@ -94,14 +94,24 @@ fn gen_pac(
     // Parse SVD and generate code
     let mut device = svd_parser::parse_svd(&svd_path).context("Failed to parse SVD file")?;
 
-    // The vendor SVD has no Ethernet MAC block; its registers live in a
-    // fragment extracted from the TRM (see `xtask/gen_emac.py`).
-    let emac_svd = root.join("emac.svd");
-    if emac_svd.exists() {
-        let emac = svd_parser::parse_svd(&emac_svd)
-            .with_context(|| format!("Failed to parse {}", emac_svd.display()))?;
-        println!("Merging supplementary SVD: {}", emac_svd.display());
-        device.peripherals.extend(emac.peripherals);
+    // Some peripherals are incomplete in the vendor SVD: the Ethernet MAC block
+    // is missing entirely (see `xtask/gen_emac.py`), and both timer groups lack
+    // their second counter (see `xtask/gen_timg.py`). Fragments carry the full
+    // definition and replace the vendor's peripheral of the same name.
+    for fragment in ["emac.svd", "timg.svd"] {
+        let path = root.join(fragment);
+        if !path.exists() {
+            continue;
+        }
+        let extra = svd_parser::parse_svd(&path)
+            .with_context(|| format!("Failed to parse {}", path.display()))?;
+        println!("Merging supplementary SVD: {}", path.display());
+        for peripheral in extra.peripherals {
+            device
+                .peripherals
+                .retain(|existing| existing.name != peripheral.name);
+            device.peripherals.push(peripheral);
+        }
     }
 
     if check {

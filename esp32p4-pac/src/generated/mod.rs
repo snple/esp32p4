@@ -1137,30 +1137,6 @@ peripheral!(SYSTIMER, systimer::RegisterBlock, 0x500e2000);
 /// System Timer
 pub mod systimer;
 
-/// Timer Group 0
-pub struct TIMG0 {
-    _marker: PhantomData<*const ()>,
-}
-
-unsafe impl Send for TIMG0 {}
-
-peripheral!(TIMG0, timg0::RegisterBlock, 0x500c2000);
-
-/// Timer Group 0
-pub mod timg0;
-
-/// Timer Group 1
-pub struct TIMG1 {
-    _marker: PhantomData<*const ()>,
-}
-
-unsafe impl Send for TIMG1 {}
-
-peripheral!(TIMG1, timg1::RegisterBlock, 0x500c3000);
-
-/// Timer Group 1
-pub mod timg1;
-
 /// TRACE0 Peripheral
 pub struct TRACE0 {
     _marker: PhantomData<*const ()>,
@@ -1341,6 +1317,30 @@ peripheral!(EMAC, emac::RegisterBlock, 0x50098000);
 /// Ethernet MAC (DesignWare 10/100 MAC + DMA)
 pub mod emac;
 
+/// Timer Group 0
+pub struct TIMG0 {
+    _marker: PhantomData<*const ()>,
+}
+
+unsafe impl Send for TIMG0 {}
+
+peripheral!(TIMG0, timg0::RegisterBlock, 0x500c2000);
+
+/// Timer Group 0
+pub mod timg0;
+
+/// Timer Group 1
+pub struct TIMG1 {
+    _marker: PhantomData<*const ()>,
+}
+
+unsafe impl Send for TIMG1 {}
+
+peripheral!(TIMG1, timg1::RegisterBlock, 0x500c3000);
+
+/// Timer Group 1
+pub mod timg1;
+
 // ============================================================================
 // Peripherals - All device peripherals
 // ============================================================================
@@ -1499,10 +1499,6 @@ pub struct Peripherals {
     pub SPI3: SPI3,
     /// System Timer
     pub SYSTIMER: SYSTIMER,
-    /// Timer Group 0
-    pub TIMG0: TIMG0,
-    /// Timer Group 1
-    pub TIMG1: TIMG1,
     /// TRACE0 Peripheral
     pub TRACE0: TRACE0,
     /// TRACE1 Peripheral
@@ -1533,6 +1529,10 @@ pub struct Peripherals {
     pub USB_WRAP: USB_WRAP,
     /// Ethernet MAC (DesignWare 10/100 MAC + DMA)
     pub EMAC: EMAC,
+    /// Timer Group 0
+    pub TIMG0: TIMG0,
+    /// Timer Group 1
+    pub TIMG1: TIMG1,
 }
 
 impl Peripherals {
@@ -1628,8 +1628,6 @@ impl Peripherals {
                 SPI2: SPI2::steal(),
                 SPI3: SPI3::steal(),
                 SYSTIMER: SYSTIMER::steal(),
-                TIMG0: TIMG0::steal(),
-                TIMG1: TIMG1::steal(),
                 TRACE0: TRACE0::steal(),
                 TRACE1: TRACE1::steal(),
                 LP_TSENS: LP_TSENS::steal(),
@@ -1645,6 +1643,8 @@ impl Peripherals {
                 USB_DEVICE: USB_DEVICE::steal(),
                 USB_WRAP: USB_WRAP::steal(),
                 EMAC: EMAC::steal(),
+                TIMG0: TIMG0::steal(),
+                TIMG1: TIMG1::steal(),
             }
         }
     }

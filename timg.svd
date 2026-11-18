@@ -1,0 +1,1756 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<device schemaVersion="1.1">
+  <vendor>ESPRESSIF SYSTEMS (SHANGHAI) CO., LTD.</vendor>
+  <vendorID>ESPRESSIF</vendorID>
+  <name>ESP32-P4</name>
+  <version>2</version>
+  <description>ESP32-P4 timer groups (timer 1 completed from the TRM layout)</description>
+  <peripherals>
+    <peripheral>
+      <name>TIMG0</name>
+      <description>Timer Group 0</description>
+      <groupName>TIMG</groupName>
+      <baseAddress>0x500C2000</baseAddress>
+      <addressBlock>
+        <offset>0x0</offset>
+        <size>0x100</size>
+        <usage>registers</usage>
+      </addressBlock>
+      <interrupt>
+        <name>TG0_T0</name>
+        <value>46</value>
+      </interrupt>
+      <interrupt>
+        <name>TG0_T1</name>
+        <value>47</value>
+      </interrupt>
+      <interrupt>
+        <name>TG0_WDT</name>
+        <value>48</value>
+      </interrupt>
+      <registers>
+<register>
+          <name>T0CONFIG</name>
+          <description>Timer %s configuration register</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x60002000</resetValue>
+          <fields>
+            <field>
+              <name>USE_XTAL</name>
+              <description>1: Use XTAL_CLK as the source clock of timer group. 0: Use APB_CLK as the source clock of timer group.</description>
+              <bitOffset>9</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>ALARM_EN</name>
+              <description>When set, the alarm is enabled. This bit is automatically cleared once an
+alarm occurs.</description>
+              <bitOffset>10</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>DIVCNT_RST</name>
+              <description>When set, Timer %s 's clock divider counter will be reset.</description>
+              <bitOffset>12</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>write-only</access>
+            </field>
+            <field>
+              <name>DIVIDER</name>
+              <description>Timer %s clock (T%s_clk) prescaler value.</description>
+              <bitOffset>13</bitOffset>
+              <bitWidth>16</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>AUTORELOAD</name>
+              <description>When set, timer %s auto-reload at alarm is enabled.</description>
+              <bitOffset>29</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>INCREASE</name>
+              <description>When set, the timer %s time-base counter will increment every clock tick. When
+cleared, the timer %s time-base counter will decrement.</description>
+              <bitOffset>30</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>EN</name>
+              <description>When set, the timer %s time-base counter is enabled.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T0LO</name>
+          <description>Timer %s current value, low 32 bits</description>
+          <addressOffset>0x4</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>LO</name>
+              <description>After writing to TIMG_T%sUPDATE_REG, the low 32 bits of the time-base counter
+of timer %s can be read here.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>read-only</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T0HI</name>
+          <description>Timer %s current value, high 22 bits</description>
+          <addressOffset>0x8</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>HI</name>
+              <description>After writing to TIMG_T%sUPDATE_REG, the high 22 bits of the time-base counter
+of timer %s can be read here.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>22</bitWidth>
+              <access>read-only</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T0UPDATE</name>
+          <description>Write to copy current timer value to TIMGn_T%s_(LO/HI)_REG</description>
+          <addressOffset>0xC</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>UPDATE</name>
+              <description>After writing 0 or 1 to TIMG_T%sUPDATE_REG, the counter value is latched.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T0ALARMLO</name>
+          <description>Timer %s alarm value, low 32 bits</description>
+          <addressOffset>0x10</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>ALARM_LO</name>
+              <description>Timer %s alarm trigger time-base counter value, low 32 bits.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T0ALARMHI</name>
+          <description>Timer %s alarm value, high bits</description>
+          <addressOffset>0x14</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>ALARM_HI</name>
+              <description>Timer %s alarm trigger time-base counter value, high 22 bits.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>22</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T0LOADLO</name>
+          <description>Timer %s reload value, low 32 bits</description>
+          <addressOffset>0x18</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>LOAD_LO</name>
+              <description>Low 32 bits of the value that a reload will load onto timer %s time-base
+Counter.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T0LOADHI</name>
+          <description>Timer %s reload value, high 22 bits</description>
+          <addressOffset>0x1C</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>LOAD_HI</name>
+              <description>High 22 bits of the value that a reload will load onto timer %s time-base
+counter.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>22</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T0LOAD</name>
+          <description>Write to reload timer from TIMG_T%s_(LOADLOLOADHI)_REG</description>
+          <addressOffset>0x20</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>LOAD</name>
+              <description>Write any value to trigger a timer %s time-base counter reload.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>write-only</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T1CONFIG</name>
+          <description>Timer %s configuration register</description>
+          <addressOffset>0x24</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x60002000</resetValue>
+          <fields>
+            <field>
+              <name>USE_XTAL</name>
+              <description>1: Use XTAL_CLK as the source clock of timer group. 0: Use APB_CLK as the source clock of timer group.</description>
+              <bitOffset>9</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>ALARM_EN</name>
+              <description>When set, the alarm is enabled. This bit is automatically cleared once an
+alarm occurs.</description>
+              <bitOffset>10</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>DIVCNT_RST</name>
+              <description>When set, Timer %s 's clock divider counter will be reset.</description>
+              <bitOffset>12</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>write-only</access>
+            </field>
+            <field>
+              <name>DIVIDER</name>
+              <description>Timer %s clock (T%s_clk) prescaler value.</description>
+              <bitOffset>13</bitOffset>
+              <bitWidth>16</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>AUTORELOAD</name>
+              <description>When set, timer %s auto-reload at alarm is enabled.</description>
+              <bitOffset>29</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>INCREASE</name>
+              <description>When set, the timer %s time-base counter will increment every clock tick. When
+cleared, the timer %s time-base counter will decrement.</description>
+              <bitOffset>30</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>EN</name>
+              <description>When set, the timer %s time-base counter is enabled.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T1LO</name>
+          <description>Timer %s current value, low 32 bits</description>
+          <addressOffset>0x28</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>LO</name>
+              <description>After writing to TIMG_T%sUPDATE_REG, the low 32 bits of the time-base counter
+of timer %s can be read here.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>read-only</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T1HI</name>
+          <description>Timer %s current value, high 22 bits</description>
+          <addressOffset>0x2C</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>HI</name>
+              <description>After writing to TIMG_T%sUPDATE_REG, the high 22 bits of the time-base counter
+of timer %s can be read here.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>22</bitWidth>
+              <access>read-only</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T1UPDATE</name>
+          <description>Write to copy current timer value to TIMGn_T%s_(LO/HI)_REG</description>
+          <addressOffset>0x30</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>UPDATE</name>
+              <description>After writing 0 or 1 to TIMG_T%sUPDATE_REG, the counter value is latched.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T1ALARMLO</name>
+          <description>Timer %s alarm value, low 32 bits</description>
+          <addressOffset>0x34</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>ALARM_LO</name>
+              <description>Timer %s alarm trigger time-base counter value, low 32 bits.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T1ALARMHI</name>
+          <description>Timer %s alarm value, high bits</description>
+          <addressOffset>0x38</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>ALARM_HI</name>
+              <description>Timer %s alarm trigger time-base counter value, high 22 bits.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>22</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T1LOADLO</name>
+          <description>Timer %s reload value, low 32 bits</description>
+          <addressOffset>0x3C</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>LOAD_LO</name>
+              <description>Low 32 bits of the value that a reload will load onto timer %s time-base
+Counter.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T1LOADHI</name>
+          <description>Timer %s reload value, high 22 bits</description>
+          <addressOffset>0x40</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>LOAD_HI</name>
+              <description>High 22 bits of the value that a reload will load onto timer %s time-base
+counter.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>22</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T1LOAD</name>
+          <description>Write to reload timer from TIMG_T%s_(LOADLOLOADHI)_REG</description>
+          <addressOffset>0x44</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>LOAD</name>
+              <description>Write any value to trigger a timer %s time-base counter reload.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>write-only</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>WDTCONFIG0</name>
+          <description>Watchdog timer configuration register</description>
+          <addressOffset>0x48</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x0004C000</resetValue>
+          <fields>
+            <field>
+              <name>WDT_APPCPU_RESET_EN</name>
+              <description>WDT reset CPU enable.</description>
+              <bitOffset>12</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_PROCPU_RESET_EN</name>
+              <description>WDT reset CPU enable.</description>
+              <bitOffset>13</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_FLASHBOOT_MOD_EN</name>
+              <description>When set, Flash boot protection is enabled.</description>
+              <bitOffset>14</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_SYS_RESET_LENGTH</name>
+              <description>System reset signal length selection. 0: 100 ns, 1: 200 ns,
+2: 300 ns, 3: 400 ns, 4: 500 ns, 5: 800 ns, 6: 1.6 us, 7: 3.2 us.</description>
+              <bitOffset>15</bitOffset>
+              <bitWidth>3</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_CPU_RESET_LENGTH</name>
+              <description>CPU reset signal length selection. 0: 100 ns, 1: 200 ns,
+2: 300 ns, 3: 400 ns, 4: 500 ns, 5: 800 ns, 6: 1.6 us, 7: 3.2 us.</description>
+              <bitOffset>18</bitOffset>
+              <bitWidth>3</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_USE_XTAL</name>
+              <description>choose WDT clock:0-apb_clk, 1-xtal_clk.</description>
+              <bitOffset>21</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_CONF_UPDATE_EN</name>
+              <description>update the WDT configuration registers</description>
+              <bitOffset>22</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>write-only</access>
+            </field>
+            <field>
+              <name>WDT_STG3</name>
+              <description>Stage 3 configuration. 0: off, 1: interrupt, 2: reset CPU, 3: reset system.</description>
+              <bitOffset>23</bitOffset>
+              <bitWidth>2</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_STG2</name>
+              <description>Stage 2 configuration. 0: off, 1: interrupt, 2: reset CPU, 3: reset system.</description>
+              <bitOffset>25</bitOffset>
+              <bitWidth>2</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_STG1</name>
+              <description>Stage 1 configuration. 0: off, 1: interrupt, 2: reset CPU, 3: reset system.</description>
+              <bitOffset>27</bitOffset>
+              <bitWidth>2</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_STG0</name>
+              <description>Stage 0 configuration. 0: off, 1: interrupt, 2: reset CPU, 3: reset system.</description>
+              <bitOffset>29</bitOffset>
+              <bitWidth>2</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_EN</name>
+              <description>When set, MWDT is enabled.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>WDTCONFIG1</name>
+          <description>Watchdog timer prescaler register</description>
+          <addressOffset>0x4C</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x00010000</resetValue>
+          <fields>
+            <field>
+              <name>WDT_DIVCNT_RST</name>
+              <description>When set, WDT 's clock divider counter will be reset.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>write-only</access>
+            </field>
+            <field>
+              <name>WDT_CLK_PRESCALE</name>
+              <description>MWDT clock prescaler value. MWDT clock period = 12.5 ns *
+TIMG_WDT_CLK_PRESCALE.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>16</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>WDTCONFIG2</name>
+          <description>Watchdog timer stage 0 timeout value</description>
+          <addressOffset>0x50</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x018CBA80</resetValue>
+          <fields>
+            <field>
+              <name>WDT_STG0_HOLD</name>
+              <description>Stage 0 timeout value, in MWDT clock cycles.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>WDTCONFIG3</name>
+          <description>Watchdog timer stage 1 timeout value</description>
+          <addressOffset>0x54</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x07FFFFFF</resetValue>
+          <fields>
+            <field>
+              <name>WDT_STG1_HOLD</name>
+              <description>Stage 1 timeout value, in MWDT clock cycles.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>WDTCONFIG4</name>
+          <description>Watchdog timer stage 2 timeout value</description>
+          <addressOffset>0x58</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x000FFFFF</resetValue>
+          <fields>
+            <field>
+              <name>WDT_STG2_HOLD</name>
+              <description>Stage 2 timeout value, in MWDT clock cycles.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>WDTCONFIG5</name>
+          <description>Watchdog timer stage 3 timeout value</description>
+          <addressOffset>0x5C</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x000FFFFF</resetValue>
+          <fields>
+            <field>
+              <name>WDT_STG3_HOLD</name>
+              <description>Stage 3 timeout value, in MWDT clock cycles.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>WDTFEED</name>
+          <description>Write to feed the watchdog timer</description>
+          <addressOffset>0x60</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>WDT_FEED</name>
+              <description>Write any value to feed the MWDT. (WO)</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>write-only</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>WDTWPROTECT</name>
+          <description>Watchdog write protect register</description>
+          <addressOffset>0x64</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x50D83AA1</resetValue>
+          <fields>
+            <field>
+              <name>WDT_WKEY</name>
+              <description>If the register contains a different value than its reset value, write
+protection is enabled.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>RTCCALICFG</name>
+          <description>RTC calibration configure register</description>
+          <addressOffset>0x68</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x00011000</resetValue>
+          <fields>
+            <field>
+              <name>RTC_CALI_START_CYCLING</name>
+              <description>0: one-shot frequency calculation,1: periodic frequency calculation,</description>
+              <bitOffset>12</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>RTC_CALI_CLK_SEL</name>
+              <description>0:rtc slow clock. 1:clk_8m, 2:xtal_32k.</description>
+              <bitOffset>13</bitOffset>
+              <bitWidth>2</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>RTC_CALI_RDY</name>
+              <description>indicate one-shot frequency calculation is done.</description>
+              <bitOffset>15</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-only</access>
+            </field>
+            <field>
+              <name>RTC_CALI_MAX</name>
+              <description>Configure the time to calculate RTC slow clock's frequency.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>15</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>RTC_CALI_START</name>
+              <description>Set this bit to start one-shot frequency calculation.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>RTCCALICFG1</name>
+          <description>RTC calibration configure1 register</description>
+          <addressOffset>0x6C</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>RTC_CALI_CYCLING_DATA_VLD</name>
+              <description>indicate periodic frequency calculation is done.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-only</access>
+            </field>
+            <field>
+              <name>RTC_CALI_VALUE</name>
+              <description>When one-shot or periodic frequency calculation is done, read this value to calculate RTC slow clock's frequency.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>25</bitWidth>
+              <access>read-only</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>INT_ENA_TIMERS</name>
+          <description>Interrupt enable bits</description>
+          <addressOffset>0x70</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>T0_INT_ENA</name>
+              <description>The interrupt enable bit for the TIMG_T0_INT interrupt.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>T1_INT_ENA</name>
+              <description>The interrupt enable bit for the TIMG_T1_INT interrupt.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_INT_ENA</name>
+              <description>The interrupt enable bit for the TIMG_WDT_INT interrupt.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>INT_RAW_TIMERS</name>
+          <description>Raw interrupt status</description>
+          <addressOffset>0x74</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>T0_INT_RAW</name>
+              <description>The raw interrupt status bit for the TIMG_T0_INT interrupt.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-only</access>
+            </field>
+            <field>
+              <name>T1_INT_RAW</name>
+              <description>The raw interrupt status bit for the TIMG_T1_INT interrupt.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-only</access>
+            </field>
+            <field>
+              <name>WDT_INT_RAW</name>
+              <description>The raw interrupt status bit for the TIMG_WDT_INT interrupt.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-only</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>INT_ST_TIMERS</name>
+          <description>Masked interrupt status</description>
+          <addressOffset>0x78</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>T0_INT_ST</name>
+              <description>The masked interrupt status bit for the TIMG_T0_INT interrupt.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-only</access>
+            </field>
+            <field>
+              <name>T1_INT_ST</name>
+              <description>The masked interrupt status bit for the TIMG_T1_INT interrupt.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-only</access>
+            </field>
+            <field>
+              <name>WDT_INT_ST</name>
+              <description>The masked interrupt status bit for the TIMG_WDT_INT interrupt.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-only</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>INT_CLR_TIMERS</name>
+          <description>Interrupt clear bits</description>
+          <addressOffset>0x7C</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>T0_INT_CLR</name>
+              <description>Set this bit to clear the TIMG_T0_INT interrupt.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>write-only</access>
+            </field>
+            <field>
+              <name>T1_INT_CLR</name>
+              <description>Set this bit to clear the TIMG_T1_INT interrupt.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>write-only</access>
+            </field>
+            <field>
+              <name>WDT_INT_CLR</name>
+              <description>Set this bit to clear the TIMG_WDT_INT interrupt.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>write-only</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>RTCCALICFG2</name>
+          <description>Timer group calibration register</description>
+          <addressOffset>0x80</addressOffset>
+          <size>0x20</size>
+          <resetValue>0xFFFFFF98</resetValue>
+          <fields>
+            <field>
+              <name>RTC_CALI_TIMEOUT</name>
+              <description>RTC calibration timeout indicator</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-only</access>
+            </field>
+            <field>
+              <name>RTC_CALI_TIMEOUT_RST_CNT</name>
+              <description>Cycles that release calibration timeout reset</description>
+              <bitOffset>3</bitOffset>
+              <bitWidth>4</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>RTC_CALI_TIMEOUT_THRES</name>
+              <description>Threshold value for the RTC calibration timer. If the calibration timer's value exceeds this threshold, a timeout is triggered.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>25</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>NTIMERS_DATE</name>
+          <description>Timer version control register</description>
+          <addressOffset>0xF8</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x02209142</resetValue>
+          <fields>
+            <field>
+              <name>NTIMGS_DATE</name>
+              <description>Timer version control register</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>28</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>REGCLK</name>
+          <description>Timer group clock gate register</description>
+          <addressOffset>0xFC</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x70000000</resetValue>
+          <fields>
+            <field>
+              <name>ETM_EN</name>
+              <description>enable timer's etm task and event</description>
+              <bitOffset>28</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_CLK_IS_ACTIVE</name>
+              <description>enable WDT's clock</description>
+              <bitOffset>29</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>TIMER_CLK_IS_ACTIVE</name>
+              <description>enable Timer 30's clock</description>
+              <bitOffset>30</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>CLK_EN</name>
+              <description>Register clock gate signal. 1: Registers can be read and written to by software. 0: Registers can not be read or written to by software.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>TIMG1</name>
+      <description>Timer Group 1</description>
+      <groupName>TIMG</groupName>
+      <baseAddress>0x500C3000</baseAddress>
+      <addressBlock>
+        <offset>0x0</offset>
+        <size>0x100</size>
+        <usage>registers</usage>
+      </addressBlock>
+      <interrupt>
+        <name>TG1_T0</name>
+        <value>49</value>
+      </interrupt>
+      <interrupt>
+        <name>TG1_T1</name>
+        <value>50</value>
+      </interrupt>
+      <interrupt>
+        <name>TG1_WDT</name>
+        <value>51</value>
+      </interrupt>
+      <registers>
+<register>
+          <name>T0CONFIG</name>
+          <description>Timer %s configuration register</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x60002000</resetValue>
+          <fields>
+            <field>
+              <name>USE_XTAL</name>
+              <description>1: Use XTAL_CLK as the source clock of timer group. 0: Use APB_CLK as the source clock of timer group.</description>
+              <bitOffset>9</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>ALARM_EN</name>
+              <description>When set, the alarm is enabled. This bit is automatically cleared once an
+alarm occurs.</description>
+              <bitOffset>10</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>DIVCNT_RST</name>
+              <description>When set, Timer %s 's clock divider counter will be reset.</description>
+              <bitOffset>12</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>write-only</access>
+            </field>
+            <field>
+              <name>DIVIDER</name>
+              <description>Timer %s clock (T%s_clk) prescaler value.</description>
+              <bitOffset>13</bitOffset>
+              <bitWidth>16</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>AUTORELOAD</name>
+              <description>When set, timer %s auto-reload at alarm is enabled.</description>
+              <bitOffset>29</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>INCREASE</name>
+              <description>When set, the timer %s time-base counter will increment every clock tick. When
+cleared, the timer %s time-base counter will decrement.</description>
+              <bitOffset>30</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>EN</name>
+              <description>When set, the timer %s time-base counter is enabled.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T0LO</name>
+          <description>Timer %s current value, low 32 bits</description>
+          <addressOffset>0x4</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>LO</name>
+              <description>After writing to TIMG_T%sUPDATE_REG, the low 32 bits of the time-base counter
+of timer %s can be read here.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>read-only</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T0HI</name>
+          <description>Timer %s current value, high 22 bits</description>
+          <addressOffset>0x8</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>HI</name>
+              <description>After writing to TIMG_T%sUPDATE_REG, the high 22 bits of the time-base counter
+of timer %s can be read here.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>22</bitWidth>
+              <access>read-only</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T0UPDATE</name>
+          <description>Write to copy current timer value to TIMGn_T%s_(LO/HI)_REG</description>
+          <addressOffset>0xC</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>UPDATE</name>
+              <description>After writing 0 or 1 to TIMG_T%sUPDATE_REG, the counter value is latched.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T0ALARMLO</name>
+          <description>Timer %s alarm value, low 32 bits</description>
+          <addressOffset>0x10</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>ALARM_LO</name>
+              <description>Timer %s alarm trigger time-base counter value, low 32 bits.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T0ALARMHI</name>
+          <description>Timer %s alarm value, high bits</description>
+          <addressOffset>0x14</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>ALARM_HI</name>
+              <description>Timer %s alarm trigger time-base counter value, high 22 bits.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>22</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T0LOADLO</name>
+          <description>Timer %s reload value, low 32 bits</description>
+          <addressOffset>0x18</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>LOAD_LO</name>
+              <description>Low 32 bits of the value that a reload will load onto timer %s time-base
+Counter.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T0LOADHI</name>
+          <description>Timer %s reload value, high 22 bits</description>
+          <addressOffset>0x1C</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>LOAD_HI</name>
+              <description>High 22 bits of the value that a reload will load onto timer %s time-base
+counter.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>22</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T0LOAD</name>
+          <description>Write to reload timer from TIMG_T%s_(LOADLOLOADHI)_REG</description>
+          <addressOffset>0x20</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>LOAD</name>
+              <description>Write any value to trigger a timer %s time-base counter reload.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>write-only</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T1CONFIG</name>
+          <description>Timer %s configuration register</description>
+          <addressOffset>0x24</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x60002000</resetValue>
+          <fields>
+            <field>
+              <name>USE_XTAL</name>
+              <description>1: Use XTAL_CLK as the source clock of timer group. 0: Use APB_CLK as the source clock of timer group.</description>
+              <bitOffset>9</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>ALARM_EN</name>
+              <description>When set, the alarm is enabled. This bit is automatically cleared once an
+alarm occurs.</description>
+              <bitOffset>10</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>DIVCNT_RST</name>
+              <description>When set, Timer %s 's clock divider counter will be reset.</description>
+              <bitOffset>12</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>write-only</access>
+            </field>
+            <field>
+              <name>DIVIDER</name>
+              <description>Timer %s clock (T%s_clk) prescaler value.</description>
+              <bitOffset>13</bitOffset>
+              <bitWidth>16</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>AUTORELOAD</name>
+              <description>When set, timer %s auto-reload at alarm is enabled.</description>
+              <bitOffset>29</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>INCREASE</name>
+              <description>When set, the timer %s time-base counter will increment every clock tick. When
+cleared, the timer %s time-base counter will decrement.</description>
+              <bitOffset>30</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>EN</name>
+              <description>When set, the timer %s time-base counter is enabled.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T1LO</name>
+          <description>Timer %s current value, low 32 bits</description>
+          <addressOffset>0x28</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>LO</name>
+              <description>After writing to TIMG_T%sUPDATE_REG, the low 32 bits of the time-base counter
+of timer %s can be read here.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>read-only</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T1HI</name>
+          <description>Timer %s current value, high 22 bits</description>
+          <addressOffset>0x2C</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>HI</name>
+              <description>After writing to TIMG_T%sUPDATE_REG, the high 22 bits of the time-base counter
+of timer %s can be read here.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>22</bitWidth>
+              <access>read-only</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T1UPDATE</name>
+          <description>Write to copy current timer value to TIMGn_T%s_(LO/HI)_REG</description>
+          <addressOffset>0x30</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>UPDATE</name>
+              <description>After writing 0 or 1 to TIMG_T%sUPDATE_REG, the counter value is latched.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T1ALARMLO</name>
+          <description>Timer %s alarm value, low 32 bits</description>
+          <addressOffset>0x34</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>ALARM_LO</name>
+              <description>Timer %s alarm trigger time-base counter value, low 32 bits.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T1ALARMHI</name>
+          <description>Timer %s alarm value, high bits</description>
+          <addressOffset>0x38</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>ALARM_HI</name>
+              <description>Timer %s alarm trigger time-base counter value, high 22 bits.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>22</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T1LOADLO</name>
+          <description>Timer %s reload value, low 32 bits</description>
+          <addressOffset>0x3C</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>LOAD_LO</name>
+              <description>Low 32 bits of the value that a reload will load onto timer %s time-base
+Counter.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T1LOADHI</name>
+          <description>Timer %s reload value, high 22 bits</description>
+          <addressOffset>0x40</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>LOAD_HI</name>
+              <description>High 22 bits of the value that a reload will load onto timer %s time-base
+counter.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>22</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>T1LOAD</name>
+          <description>Write to reload timer from TIMG_T%s_(LOADLOLOADHI)_REG</description>
+          <addressOffset>0x44</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>LOAD</name>
+              <description>Write any value to trigger a timer %s time-base counter reload.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>write-only</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>WDTCONFIG0</name>
+          <description>Watchdog timer configuration register</description>
+          <addressOffset>0x48</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x0004C000</resetValue>
+          <fields>
+            <field>
+              <name>WDT_APPCPU_RESET_EN</name>
+              <description>WDT reset CPU enable.</description>
+              <bitOffset>12</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_PROCPU_RESET_EN</name>
+              <description>WDT reset CPU enable.</description>
+              <bitOffset>13</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_FLASHBOOT_MOD_EN</name>
+              <description>When set, Flash boot protection is enabled.</description>
+              <bitOffset>14</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_SYS_RESET_LENGTH</name>
+              <description>System reset signal length selection. 0: 100 ns, 1: 200 ns,
+2: 300 ns, 3: 400 ns, 4: 500 ns, 5: 800 ns, 6: 1.6 us, 7: 3.2 us.</description>
+              <bitOffset>15</bitOffset>
+              <bitWidth>3</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_CPU_RESET_LENGTH</name>
+              <description>CPU reset signal length selection. 0: 100 ns, 1: 200 ns,
+2: 300 ns, 3: 400 ns, 4: 500 ns, 5: 800 ns, 6: 1.6 us, 7: 3.2 us.</description>
+              <bitOffset>18</bitOffset>
+              <bitWidth>3</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_USE_XTAL</name>
+              <description>choose WDT clock:0-apb_clk, 1-xtal_clk.</description>
+              <bitOffset>21</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_CONF_UPDATE_EN</name>
+              <description>update the WDT configuration registers</description>
+              <bitOffset>22</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>write-only</access>
+            </field>
+            <field>
+              <name>WDT_STG3</name>
+              <description>Stage 3 configuration. 0: off, 1: interrupt, 2: reset CPU, 3: reset system.</description>
+              <bitOffset>23</bitOffset>
+              <bitWidth>2</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_STG2</name>
+              <description>Stage 2 configuration. 0: off, 1: interrupt, 2: reset CPU, 3: reset system.</description>
+              <bitOffset>25</bitOffset>
+              <bitWidth>2</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_STG1</name>
+              <description>Stage 1 configuration. 0: off, 1: interrupt, 2: reset CPU, 3: reset system.</description>
+              <bitOffset>27</bitOffset>
+              <bitWidth>2</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_STG0</name>
+              <description>Stage 0 configuration. 0: off, 1: interrupt, 2: reset CPU, 3: reset system.</description>
+              <bitOffset>29</bitOffset>
+              <bitWidth>2</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_EN</name>
+              <description>When set, MWDT is enabled.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>WDTCONFIG1</name>
+          <description>Watchdog timer prescaler register</description>
+          <addressOffset>0x4C</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x00010000</resetValue>
+          <fields>
+            <field>
+              <name>WDT_DIVCNT_RST</name>
+              <description>When set, WDT 's clock divider counter will be reset.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>write-only</access>
+            </field>
+            <field>
+              <name>WDT_CLK_PRESCALE</name>
+              <description>MWDT clock prescaler value. MWDT clock period = 12.5 ns *
+TIMG_WDT_CLK_PRESCALE.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>16</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>WDTCONFIG2</name>
+          <description>Watchdog timer stage 0 timeout value</description>
+          <addressOffset>0x50</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x018CBA80</resetValue>
+          <fields>
+            <field>
+              <name>WDT_STG0_HOLD</name>
+              <description>Stage 0 timeout value, in MWDT clock cycles.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>WDTCONFIG3</name>
+          <description>Watchdog timer stage 1 timeout value</description>
+          <addressOffset>0x54</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x07FFFFFF</resetValue>
+          <fields>
+            <field>
+              <name>WDT_STG1_HOLD</name>
+              <description>Stage 1 timeout value, in MWDT clock cycles.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>WDTCONFIG4</name>
+          <description>Watchdog timer stage 2 timeout value</description>
+          <addressOffset>0x58</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x000FFFFF</resetValue>
+          <fields>
+            <field>
+              <name>WDT_STG2_HOLD</name>
+              <description>Stage 2 timeout value, in MWDT clock cycles.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>WDTCONFIG5</name>
+          <description>Watchdog timer stage 3 timeout value</description>
+          <addressOffset>0x5C</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x000FFFFF</resetValue>
+          <fields>
+            <field>
+              <name>WDT_STG3_HOLD</name>
+              <description>Stage 3 timeout value, in MWDT clock cycles.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>WDTFEED</name>
+          <description>Write to feed the watchdog timer</description>
+          <addressOffset>0x60</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>WDT_FEED</name>
+              <description>Write any value to feed the MWDT. (WO)</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>write-only</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>WDTWPROTECT</name>
+          <description>Watchdog write protect register</description>
+          <addressOffset>0x64</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x50D83AA1</resetValue>
+          <fields>
+            <field>
+              <name>WDT_WKEY</name>
+              <description>If the register contains a different value than its reset value, write
+protection is enabled.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>RTCCALICFG</name>
+          <description>RTC calibration configure register</description>
+          <addressOffset>0x68</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x00011000</resetValue>
+          <fields>
+            <field>
+              <name>RTC_CALI_START_CYCLING</name>
+              <description>0: one-shot frequency calculation,1: periodic frequency calculation,</description>
+              <bitOffset>12</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>RTC_CALI_CLK_SEL</name>
+              <description>0:rtc slow clock. 1:clk_8m, 2:xtal_32k.</description>
+              <bitOffset>13</bitOffset>
+              <bitWidth>2</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>RTC_CALI_RDY</name>
+              <description>indicate one-shot frequency calculation is done.</description>
+              <bitOffset>15</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-only</access>
+            </field>
+            <field>
+              <name>RTC_CALI_MAX</name>
+              <description>Configure the time to calculate RTC slow clock's frequency.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>15</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>RTC_CALI_START</name>
+              <description>Set this bit to start one-shot frequency calculation.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>RTCCALICFG1</name>
+          <description>RTC calibration configure1 register</description>
+          <addressOffset>0x6C</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>RTC_CALI_CYCLING_DATA_VLD</name>
+              <description>indicate periodic frequency calculation is done.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-only</access>
+            </field>
+            <field>
+              <name>RTC_CALI_VALUE</name>
+              <description>When one-shot or periodic frequency calculation is done, read this value to calculate RTC slow clock's frequency.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>25</bitWidth>
+              <access>read-only</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>INT_ENA_TIMERS</name>
+          <description>Interrupt enable bits</description>
+          <addressOffset>0x70</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>T0_INT_ENA</name>
+              <description>The interrupt enable bit for the TIMG_T0_INT interrupt.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>T1_INT_ENA</name>
+              <description>The interrupt enable bit for the TIMG_T1_INT interrupt.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_INT_ENA</name>
+              <description>The interrupt enable bit for the TIMG_WDT_INT interrupt.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>INT_RAW_TIMERS</name>
+          <description>Raw interrupt status</description>
+          <addressOffset>0x74</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>T0_INT_RAW</name>
+              <description>The raw interrupt status bit for the TIMG_T0_INT interrupt.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-only</access>
+            </field>
+            <field>
+              <name>T1_INT_RAW</name>
+              <description>The raw interrupt status bit for the TIMG_T1_INT interrupt.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-only</access>
+            </field>
+            <field>
+              <name>WDT_INT_RAW</name>
+              <description>The raw interrupt status bit for the TIMG_WDT_INT interrupt.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-only</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>INT_ST_TIMERS</name>
+          <description>Masked interrupt status</description>
+          <addressOffset>0x78</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>T0_INT_ST</name>
+              <description>The masked interrupt status bit for the TIMG_T0_INT interrupt.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-only</access>
+            </field>
+            <field>
+              <name>T1_INT_ST</name>
+              <description>The masked interrupt status bit for the TIMG_T1_INT interrupt.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-only</access>
+            </field>
+            <field>
+              <name>WDT_INT_ST</name>
+              <description>The masked interrupt status bit for the TIMG_WDT_INT interrupt.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-only</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>INT_CLR_TIMERS</name>
+          <description>Interrupt clear bits</description>
+          <addressOffset>0x7C</addressOffset>
+          <size>0x20</size>
+          <fields>
+            <field>
+              <name>T0_INT_CLR</name>
+              <description>Set this bit to clear the TIMG_T0_INT interrupt.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>write-only</access>
+            </field>
+            <field>
+              <name>T1_INT_CLR</name>
+              <description>Set this bit to clear the TIMG_T1_INT interrupt.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>write-only</access>
+            </field>
+            <field>
+              <name>WDT_INT_CLR</name>
+              <description>Set this bit to clear the TIMG_WDT_INT interrupt.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>write-only</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>RTCCALICFG2</name>
+          <description>Timer group calibration register</description>
+          <addressOffset>0x80</addressOffset>
+          <size>0x20</size>
+          <resetValue>0xFFFFFF98</resetValue>
+          <fields>
+            <field>
+              <name>RTC_CALI_TIMEOUT</name>
+              <description>RTC calibration timeout indicator</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-only</access>
+            </field>
+            <field>
+              <name>RTC_CALI_TIMEOUT_RST_CNT</name>
+              <description>Cycles that release calibration timeout reset</description>
+              <bitOffset>3</bitOffset>
+              <bitWidth>4</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>RTC_CALI_TIMEOUT_THRES</name>
+              <description>Threshold value for the RTC calibration timer. If the calibration timer's value exceeds this threshold, a timeout is triggered.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>25</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>NTIMERS_DATE</name>
+          <description>Timer version control register</description>
+          <addressOffset>0xF8</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x02209142</resetValue>
+          <fields>
+            <field>
+              <name>NTIMGS_DATE</name>
+              <description>Timer version control register</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>28</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+<register>
+          <name>REGCLK</name>
+          <description>Timer group clock gate register</description>
+          <addressOffset>0xFC</addressOffset>
+          <size>0x20</size>
+          <resetValue>0x70000000</resetValue>
+          <fields>
+            <field>
+              <name>ETM_EN</name>
+              <description>enable timer's etm task and event</description>
+              <bitOffset>28</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>WDT_CLK_IS_ACTIVE</name>
+              <description>enable WDT's clock</description>
+              <bitOffset>29</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>TIMER_CLK_IS_ACTIVE</name>
+              <description>enable Timer 30's clock</description>
+              <bitOffset>30</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>CLK_EN</name>
+              <description>Register clock gate signal. 1: Registers can be read and written to by software. 0: Registers can not be read or written to by software.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+  </peripherals>
+</device>

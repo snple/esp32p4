@@ -1379,6 +1379,1380 @@ impl T0load {
     }
 }
 
+/// T1CONFIG Register
+///
+/// Timer %s configuration register
+///
+/// Address offset: 0x0024
+/// Reset value: 0x60002000
+///
+/// ## Fields
+///
+/// - **EN** `[31]` (RW)
+///
+///   When set, the timer %s time-base counter is enabled.
+///
+/// - **INCREASE** `[30]` (RW)
+///
+///   When set, the timer %s time-base counter will increment every clock tick. When
+///   cleared, the timer %s time-base counter will decrement.
+///
+/// - **AUTORELOAD** `[29]` (RW)
+///
+///   When set, timer %s auto-reload at alarm is enabled.
+///
+/// - **DIVIDER** `[28:13]` (RW)
+///
+///   Timer %s clock (T%s_clk) prescaler value.
+///
+/// - **DIVCNT_RST** `[12]` (WO)
+///
+///   When set, Timer %s 's clock divider counter will be reset.
+///
+/// - **ALARM_EN** `[10]` (RW)
+///
+///   When set, the alarm is enabled. This bit is automatically cleared once an
+///   alarm occurs.
+///
+/// - **USE_XTAL** `[9]` (RW)
+///
+///   1: Use XTAL_CLK as the source clock of timer group. 0: Use APB_CLK as the source clock of timer group.
+#[repr(transparent)]
+pub struct T1config {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for T1config {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl T1config {
+    // ======== Field Constants ========
+
+    /// **EN**
+    ///
+    /// When set, the timer %s time-base counter is enabled.
+    ///
+    /// Bits `[31:31]`, mask `0x80000000`
+    pub const EN_OFFSET: u32 = 31;
+    pub const EN_MASK: u32 = 0x80000000;
+    pub const EN: u32 = 1 << 31;
+
+    /// **INCREASE**
+    ///
+    /// When set, the timer %s time-base counter will increment every clock tick. When
+    /// cleared, the timer %s time-base counter will decrement.
+    ///
+    /// Bits `[30:30]`, mask `0x40000000`
+    pub const INCREASE_OFFSET: u32 = 30;
+    pub const INCREASE_MASK: u32 = 0x40000000;
+    pub const INCREASE: u32 = 1 << 30;
+
+    /// **AUTORELOAD**
+    ///
+    /// When set, timer %s auto-reload at alarm is enabled.
+    ///
+    /// Bits `[29:29]`, mask `0x20000000`
+    pub const AUTORELOAD_OFFSET: u32 = 29;
+    pub const AUTORELOAD_MASK: u32 = 0x20000000;
+    pub const AUTORELOAD: u32 = 1 << 29;
+
+    /// **DIVIDER**
+    ///
+    /// Timer %s clock (T%s_clk) prescaler value.
+    ///
+    /// Bits `[28:13]`, mask `0x1fffe000`
+    pub const DIVIDER_OFFSET: u32 = 13;
+    pub const DIVIDER_MASK: u32 = 0x1fffe000;
+
+    /// **DIVCNT_RST**
+    ///
+    /// When set, Timer %s 's clock divider counter will be reset.
+    ///
+    /// Bits `[12:12]`, mask `0x00001000`
+    pub const DIVCNT_RST_OFFSET: u32 = 12;
+    pub const DIVCNT_RST_MASK: u32 = 0x00001000;
+    pub const DIVCNT_RST: u32 = 1 << 12;
+
+    /// **ALARM_EN**
+    ///
+    /// When set, the alarm is enabled. This bit is automatically cleared once an
+    /// alarm occurs.
+    ///
+    /// Bits `[10:10]`, mask `0x00000400`
+    pub const ALARM_EN_OFFSET: u32 = 10;
+    pub const ALARM_EN_MASK: u32 = 0x00000400;
+    pub const ALARM_EN: u32 = 1 << 10;
+
+    /// **USE_XTAL**
+    ///
+    /// 1: Use XTAL_CLK as the source clock of timer group. 0: Use APB_CLK as the source clock of timer group.
+    ///
+    /// Bits `[9:9]`, mask `0x00000200`
+    pub const USE_XTAL_OFFSET: u32 = 9;
+    pub const USE_XTAL_MASK: u32 = 0x00000200;
+    pub const USE_XTAL: u32 = 1 << 9;
+
+    // ======== Field Accessors ========
+
+    /// **EN** `[31]` (RW)
+    ///
+    /// When set, the timer %s time-base counter is enabled.
+    #[inline(always)]
+    pub fn en(&self) -> bool {
+        (self.value.read_bits() & Self::EN_MASK) != 0
+    }
+
+    /// Set EN bit (RW) - NOT atomic
+    #[inline(always)]
+    pub fn set_en(&self) {
+        self.value.modify_bits(|r| r | Self::EN_MASK);
+    }
+
+    /// Clear EN bit (RW) - NOT atomic
+    #[inline(always)]
+    pub fn clr_en(&self) {
+        self.value.modify_bits(|r| r & !Self::EN_MASK);
+    }
+
+    /// **INCREASE** `[30]` (RW)
+    ///
+    /// When set, the timer %s time-base counter will increment every clock tick. When
+    /// cleared, the timer %s time-base counter will decrement.
+    #[inline(always)]
+    pub fn increase(&self) -> bool {
+        (self.value.read_bits() & Self::INCREASE_MASK) != 0
+    }
+
+    /// Set INCREASE bit (RW) - NOT atomic
+    #[inline(always)]
+    pub fn set_increase(&self) {
+        self.value.modify_bits(|r| r | Self::INCREASE_MASK);
+    }
+
+    /// Clear INCREASE bit (RW) - NOT atomic
+    #[inline(always)]
+    pub fn clr_increase(&self) {
+        self.value.modify_bits(|r| r & !Self::INCREASE_MASK);
+    }
+
+    /// **AUTORELOAD** `[29]` (RW)
+    ///
+    /// When set, timer %s auto-reload at alarm is enabled.
+    #[inline(always)]
+    pub fn autoreload(&self) -> bool {
+        (self.value.read_bits() & Self::AUTORELOAD_MASK) != 0
+    }
+
+    /// Set AUTORELOAD bit (RW) - NOT atomic
+    #[inline(always)]
+    pub fn set_autoreload(&self) {
+        self.value.modify_bits(|r| r | Self::AUTORELOAD_MASK);
+    }
+
+    /// Clear AUTORELOAD bit (RW) - NOT atomic
+    #[inline(always)]
+    pub fn clr_autoreload(&self) {
+        self.value.modify_bits(|r| r & !Self::AUTORELOAD_MASK);
+    }
+
+    /// **DIVIDER** `[28:13]` (RW)
+    ///
+    /// Timer %s clock (T%s_clk) prescaler value.
+    #[inline(always)]
+    pub fn divider(&self) -> u32 {
+        (self.value.read_bits() & Self::DIVIDER_MASK) >> Self::DIVIDER_OFFSET
+    }
+
+    /// Write **DIVIDER** `[28:13]` (RW)
+    ///
+    /// Timer %s clock (T%s_clk) prescaler value.
+    #[inline(always)]
+    pub fn write_divider(&self, value: u32) {
+        self.value.modify_bits(|r| {
+            (r & !Self::DIVIDER_MASK) | ((value << Self::DIVIDER_OFFSET) & Self::DIVIDER_MASK)
+        });
+    }
+
+    /// Trigger **DIVCNT_RST** (WO)
+    ///
+    /// When set, Timer %s 's clock divider counter will be reset.
+    #[inline(always)]
+    pub fn trigger_divcnt_rst(&self) {
+        self.value.modify_bits(|r| r | Self::DIVCNT_RST_MASK);
+    }
+
+    /// **ALARM_EN** `[10]` (RW)
+    ///
+    /// When set, the alarm is enabled. This bit is automatically cleared once an
+    /// alarm occurs.
+    #[inline(always)]
+    pub fn alarm_en(&self) -> bool {
+        (self.value.read_bits() & Self::ALARM_EN_MASK) != 0
+    }
+
+    /// Set ALARM_EN bit (RW) - NOT atomic
+    #[inline(always)]
+    pub fn set_alarm_en(&self) {
+        self.value.modify_bits(|r| r | Self::ALARM_EN_MASK);
+    }
+
+    /// Clear ALARM_EN bit (RW) - NOT atomic
+    #[inline(always)]
+    pub fn clr_alarm_en(&self) {
+        self.value.modify_bits(|r| r & !Self::ALARM_EN_MASK);
+    }
+
+    /// **USE_XTAL** `[9]` (RW)
+    ///
+    /// 1: Use XTAL_CLK as the source clock of timer group. 0: Use APB_CLK as the source clock of timer group.
+    #[inline(always)]
+    pub fn use_xtal(&self) -> bool {
+        (self.value.read_bits() & Self::USE_XTAL_MASK) != 0
+    }
+
+    /// Set USE_XTAL bit (RW) - NOT atomic
+    #[inline(always)]
+    pub fn set_use_xtal(&self) {
+        self.value.modify_bits(|r| r | Self::USE_XTAL_MASK);
+    }
+
+    /// Clear USE_XTAL bit (RW) - NOT atomic
+    #[inline(always)]
+    pub fn clr_use_xtal(&self) {
+        self.value.modify_bits(|r| r & !Self::USE_XTAL_MASK);
+    }
+}
+
+/// T1CONFIG value type for batch read/modify/write operations
+///
+/// Use `t1config.read_val()` to read the register into this struct,
+/// modify fields with builder methods, then write back with `t1config.write_val(val)`.
+#[derive(Clone, Copy)]
+pub struct T1configVal {
+    bits: u32,
+}
+
+impl T1configVal {
+    /// Create from raw bits
+    #[inline(always)]
+    pub const fn from_bits(bits: u32) -> Self {
+        Self { bits }
+    }
+
+    /// Get the raw bits
+    #[inline(always)]
+    pub const fn bits(&self) -> u32 {
+        self.bits
+    }
+
+    /// Create with reset value
+    #[inline(always)]
+    pub const fn reset_val() -> Self {
+        Self { bits: 0x60002000 }
+    }
+
+    /// Read **EN** `[31:31]`
+    ///
+    /// When set, the timer %s time-base counter is enabled.
+    #[inline(always)]
+    pub const fn en(&self) -> bool {
+        (self.bits & T1config::EN_MASK) != 0
+    }
+
+    /// Read **INCREASE** `[30:30]`
+    ///
+    /// When set, the timer %s time-base counter will increment every clock tick. When
+    /// cleared, the timer %s time-base counter will decrement.
+    #[inline(always)]
+    pub const fn increase(&self) -> bool {
+        (self.bits & T1config::INCREASE_MASK) != 0
+    }
+
+    /// Read **AUTORELOAD** `[29:29]`
+    ///
+    /// When set, timer %s auto-reload at alarm is enabled.
+    #[inline(always)]
+    pub const fn autoreload(&self) -> bool {
+        (self.bits & T1config::AUTORELOAD_MASK) != 0
+    }
+
+    /// Read **DIVIDER** `[28:13]`
+    ///
+    /// Timer %s clock (T%s_clk) prescaler value.
+    #[inline(always)]
+    pub const fn divider(&self) -> u32 {
+        (self.bits & T1config::DIVIDER_MASK) >> T1config::DIVIDER_OFFSET
+    }
+
+    /// Read **ALARM_EN** `[10:10]`
+    ///
+    /// When set, the alarm is enabled. This bit is automatically cleared once an
+    /// alarm occurs.
+    #[inline(always)]
+    pub const fn alarm_en(&self) -> bool {
+        (self.bits & T1config::ALARM_EN_MASK) != 0
+    }
+
+    /// Read **USE_XTAL** `[9:9]`
+    ///
+    /// 1: Use XTAL_CLK as the source clock of timer group. 0: Use APB_CLK as the source clock of timer group.
+    #[inline(always)]
+    pub const fn use_xtal(&self) -> bool {
+        (self.bits & T1config::USE_XTAL_MASK) != 0
+    }
+
+    /// Set **EN** `[31:31]`
+    ///
+    /// When set, the timer %s time-base counter is enabled.
+    #[inline(always)]
+    pub const fn with_en(self, value: bool) -> Self {
+        Self {
+            bits: if value {
+                self.bits | T1config::EN_MASK
+            } else {
+                self.bits & !T1config::EN_MASK
+            },
+        }
+    }
+
+    /// Set **INCREASE** `[30:30]`
+    ///
+    /// When set, the timer %s time-base counter will increment every clock tick. When
+    /// cleared, the timer %s time-base counter will decrement.
+    #[inline(always)]
+    pub const fn with_increase(self, value: bool) -> Self {
+        Self {
+            bits: if value {
+                self.bits | T1config::INCREASE_MASK
+            } else {
+                self.bits & !T1config::INCREASE_MASK
+            },
+        }
+    }
+
+    /// Set **AUTORELOAD** `[29:29]`
+    ///
+    /// When set, timer %s auto-reload at alarm is enabled.
+    #[inline(always)]
+    pub const fn with_autoreload(self, value: bool) -> Self {
+        Self {
+            bits: if value {
+                self.bits | T1config::AUTORELOAD_MASK
+            } else {
+                self.bits & !T1config::AUTORELOAD_MASK
+            },
+        }
+    }
+
+    /// Set **DIVIDER** `[28:13]`
+    ///
+    /// Timer %s clock (T%s_clk) prescaler value.
+    #[inline(always)]
+    pub const fn with_divider(self, value: u32) -> Self {
+        Self {
+            bits: (self.bits & !T1config::DIVIDER_MASK)
+                | ((value << T1config::DIVIDER_OFFSET) & T1config::DIVIDER_MASK),
+        }
+    }
+
+    /// Set **DIVCNT_RST** `[12:12]`
+    ///
+    /// When set, Timer %s 's clock divider counter will be reset.
+    #[inline(always)]
+    pub const fn with_divcnt_rst(self, value: bool) -> Self {
+        Self {
+            bits: if value {
+                self.bits | T1config::DIVCNT_RST_MASK
+            } else {
+                self.bits & !T1config::DIVCNT_RST_MASK
+            },
+        }
+    }
+
+    /// Set **ALARM_EN** `[10:10]`
+    ///
+    /// When set, the alarm is enabled. This bit is automatically cleared once an
+    /// alarm occurs.
+    #[inline(always)]
+    pub const fn with_alarm_en(self, value: bool) -> Self {
+        Self {
+            bits: if value {
+                self.bits | T1config::ALARM_EN_MASK
+            } else {
+                self.bits & !T1config::ALARM_EN_MASK
+            },
+        }
+    }
+
+    /// Set **USE_XTAL** `[9:9]`
+    ///
+    /// 1: Use XTAL_CLK as the source clock of timer group. 0: Use APB_CLK as the source clock of timer group.
+    #[inline(always)]
+    pub const fn with_use_xtal(self, value: bool) -> Self {
+        Self {
+            bits: if value {
+                self.bits | T1config::USE_XTAL_MASK
+            } else {
+                self.bits & !T1config::USE_XTAL_MASK
+            },
+        }
+    }
+}
+
+impl Default for T1configVal {
+    fn default() -> Self {
+        Self::reset_val()
+    }
+}
+
+impl T1config {
+    /// Read the register into a value struct
+    #[inline(always)]
+    pub fn read_val(&self) -> T1configVal {
+        T1configVal::from_bits(self.value.read_bits())
+    }
+
+    /// Write a value struct to the register
+    #[inline(always)]
+    pub fn write_val(&self, val: T1configVal) {
+        self.value.write_bits(val.bits())
+    }
+
+    /// Modify the register using a value struct
+    #[inline(always)]
+    pub fn modify_val<F: FnOnce(T1configVal) -> T1configVal>(&self, f: F) {
+        self.write_val(f(self.read_val()))
+    }
+}
+
+/// T1LO Register
+///
+/// Timer %s current value, low 32 bits
+///
+/// Address offset: 0x0028
+///
+/// ## Fields
+///
+/// - **LO** `[31:0]` (RO)
+///
+///   After writing to TIMG_T%sUPDATE_REG, the low 32 bits of the time-base counter
+///   of timer %s can be read here.
+#[repr(transparent)]
+pub struct T1lo {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for T1lo {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl T1lo {
+    // ======== Field Constants ========
+
+    /// **LO**
+    ///
+    /// After writing to TIMG_T%sUPDATE_REG, the low 32 bits of the time-base counter
+    /// of timer %s can be read here.
+    ///
+    /// Bits `[31:0]`, mask `0xffffffff`
+    pub const LO_OFFSET: u32 = 0;
+    pub const LO_MASK: u32 = 0xffffffff;
+
+    // ======== Field Accessors ========
+
+    /// **LO** `[31:0]` (RO)
+    ///
+    /// After writing to TIMG_T%sUPDATE_REG, the low 32 bits of the time-base counter
+    /// of timer %s can be read here.
+    #[inline(always)]
+    pub fn lo(&self) -> u32 {
+        (self.value.read_bits() & Self::LO_MASK) >> Self::LO_OFFSET
+    }
+}
+
+/// T1LO value type for batch read/modify/write operations
+///
+/// Use `t1lo.read_val()` to read the register into this struct,
+/// modify fields with builder methods, then write back with `t1lo.write_val(val)`.
+#[derive(Clone, Copy)]
+pub struct T1loVal {
+    bits: u32,
+}
+
+impl T1loVal {
+    /// Create from raw bits
+    #[inline(always)]
+    pub const fn from_bits(bits: u32) -> Self {
+        Self { bits }
+    }
+
+    /// Get the raw bits
+    #[inline(always)]
+    pub const fn bits(&self) -> u32 {
+        self.bits
+    }
+
+    /// Read **LO** `[31:0]`
+    ///
+    /// After writing to TIMG_T%sUPDATE_REG, the low 32 bits of the time-base counter
+    /// of timer %s can be read here.
+    #[inline(always)]
+    pub const fn lo(&self) -> u32 {
+        (self.bits & T1lo::LO_MASK) >> T1lo::LO_OFFSET
+    }
+}
+
+impl Default for T1loVal {
+    fn default() -> Self {
+        Self { bits: 0 }
+    }
+}
+
+impl T1lo {
+    /// Read the register into a value struct
+    #[inline(always)]
+    pub fn read_val(&self) -> T1loVal {
+        T1loVal::from_bits(self.value.read_bits())
+    }
+}
+
+/// T1HI Register
+///
+/// Timer %s current value, high 22 bits
+///
+/// Address offset: 0x002c
+///
+/// ## Fields
+///
+/// - **HI** `[21:0]` (RO)
+///
+///   After writing to TIMG_T%sUPDATE_REG, the high 22 bits of the time-base counter
+///   of timer %s can be read here.
+#[repr(transparent)]
+pub struct T1hi {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for T1hi {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl T1hi {
+    // ======== Field Constants ========
+
+    /// **HI**
+    ///
+    /// After writing to TIMG_T%sUPDATE_REG, the high 22 bits of the time-base counter
+    /// of timer %s can be read here.
+    ///
+    /// Bits `[21:0]`, mask `0x003fffff`
+    pub const HI_OFFSET: u32 = 0;
+    pub const HI_MASK: u32 = 0x003fffff;
+
+    // ======== Field Accessors ========
+
+    /// **HI** `[21:0]` (RO)
+    ///
+    /// After writing to TIMG_T%sUPDATE_REG, the high 22 bits of the time-base counter
+    /// of timer %s can be read here.
+    #[inline(always)]
+    pub fn hi(&self) -> u32 {
+        (self.value.read_bits() & Self::HI_MASK) >> Self::HI_OFFSET
+    }
+}
+
+/// T1HI value type for batch read/modify/write operations
+///
+/// Use `t1hi.read_val()` to read the register into this struct,
+/// modify fields with builder methods, then write back with `t1hi.write_val(val)`.
+#[derive(Clone, Copy)]
+pub struct T1hiVal {
+    bits: u32,
+}
+
+impl T1hiVal {
+    /// Create from raw bits
+    #[inline(always)]
+    pub const fn from_bits(bits: u32) -> Self {
+        Self { bits }
+    }
+
+    /// Get the raw bits
+    #[inline(always)]
+    pub const fn bits(&self) -> u32 {
+        self.bits
+    }
+
+    /// Read **HI** `[21:0]`
+    ///
+    /// After writing to TIMG_T%sUPDATE_REG, the high 22 bits of the time-base counter
+    /// of timer %s can be read here.
+    #[inline(always)]
+    pub const fn hi(&self) -> u32 {
+        (self.bits & T1hi::HI_MASK) >> T1hi::HI_OFFSET
+    }
+}
+
+impl Default for T1hiVal {
+    fn default() -> Self {
+        Self { bits: 0 }
+    }
+}
+
+impl T1hi {
+    /// Read the register into a value struct
+    #[inline(always)]
+    pub fn read_val(&self) -> T1hiVal {
+        T1hiVal::from_bits(self.value.read_bits())
+    }
+}
+
+/// T1UPDATE Register
+///
+/// Write to copy current timer value to TIMGn_T%s_(LO/HI)_REG
+///
+/// Address offset: 0x0030
+///
+/// ## Fields
+///
+/// - **UPDATE** `[31]` (RW)
+///
+///   After writing 0 or 1 to TIMG_T%sUPDATE_REG, the counter value is latched.
+#[repr(transparent)]
+pub struct T1update {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for T1update {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl T1update {
+    // ======== Field Constants ========
+
+    /// **UPDATE**
+    ///
+    /// After writing 0 or 1 to TIMG_T%sUPDATE_REG, the counter value is latched.
+    ///
+    /// Bits `[31:31]`, mask `0x80000000`
+    pub const UPDATE_OFFSET: u32 = 31;
+    pub const UPDATE_MASK: u32 = 0x80000000;
+    pub const UPDATE: u32 = 1 << 31;
+
+    // ======== Field Accessors ========
+
+    /// **UPDATE** `[31]` (RW)
+    ///
+    /// After writing 0 or 1 to TIMG_T%sUPDATE_REG, the counter value is latched.
+    #[inline(always)]
+    pub fn update(&self) -> bool {
+        (self.value.read_bits() & Self::UPDATE_MASK) != 0
+    }
+
+    /// Set UPDATE bit (RW) - NOT atomic
+    #[inline(always)]
+    pub fn set_update(&self) {
+        self.value.modify_bits(|r| r | Self::UPDATE_MASK);
+    }
+
+    /// Clear UPDATE bit (RW) - NOT atomic
+    #[inline(always)]
+    pub fn clr_update(&self) {
+        self.value.modify_bits(|r| r & !Self::UPDATE_MASK);
+    }
+}
+
+/// T1UPDATE value type for batch read/modify/write operations
+///
+/// Use `t1update.read_val()` to read the register into this struct,
+/// modify fields with builder methods, then write back with `t1update.write_val(val)`.
+#[derive(Clone, Copy)]
+pub struct T1updateVal {
+    bits: u32,
+}
+
+impl T1updateVal {
+    /// Create from raw bits
+    #[inline(always)]
+    pub const fn from_bits(bits: u32) -> Self {
+        Self { bits }
+    }
+
+    /// Get the raw bits
+    #[inline(always)]
+    pub const fn bits(&self) -> u32 {
+        self.bits
+    }
+
+    /// Read **UPDATE** `[31:31]`
+    ///
+    /// After writing 0 or 1 to TIMG_T%sUPDATE_REG, the counter value is latched.
+    #[inline(always)]
+    pub const fn update(&self) -> bool {
+        (self.bits & T1update::UPDATE_MASK) != 0
+    }
+
+    /// Set **UPDATE** `[31:31]`
+    ///
+    /// After writing 0 or 1 to TIMG_T%sUPDATE_REG, the counter value is latched.
+    #[inline(always)]
+    pub const fn with_update(self, value: bool) -> Self {
+        Self {
+            bits: if value {
+                self.bits | T1update::UPDATE_MASK
+            } else {
+                self.bits & !T1update::UPDATE_MASK
+            },
+        }
+    }
+}
+
+impl Default for T1updateVal {
+    fn default() -> Self {
+        Self { bits: 0 }
+    }
+}
+
+impl T1update {
+    /// Read the register into a value struct
+    #[inline(always)]
+    pub fn read_val(&self) -> T1updateVal {
+        T1updateVal::from_bits(self.value.read_bits())
+    }
+
+    /// Write a value struct to the register
+    #[inline(always)]
+    pub fn write_val(&self, val: T1updateVal) {
+        self.value.write_bits(val.bits())
+    }
+
+    /// Modify the register using a value struct
+    #[inline(always)]
+    pub fn modify_val<F: FnOnce(T1updateVal) -> T1updateVal>(&self, f: F) {
+        self.write_val(f(self.read_val()))
+    }
+}
+
+/// T1ALARMLO Register
+///
+/// Timer %s alarm value, low 32 bits
+///
+/// Address offset: 0x0034
+///
+/// ## Fields
+///
+/// - **ALARM_LO** `[31:0]` (RW)
+///
+///   Timer %s alarm trigger time-base counter value, low 32 bits.
+#[repr(transparent)]
+pub struct T1alarmlo {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for T1alarmlo {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl T1alarmlo {
+    // ======== Field Constants ========
+
+    /// **ALARM_LO**
+    ///
+    /// Timer %s alarm trigger time-base counter value, low 32 bits.
+    ///
+    /// Bits `[31:0]`, mask `0xffffffff`
+    pub const ALARM_LO_OFFSET: u32 = 0;
+    pub const ALARM_LO_MASK: u32 = 0xffffffff;
+
+    // ======== Field Accessors ========
+
+    /// **ALARM_LO** `[31:0]` (RW)
+    ///
+    /// Timer %s alarm trigger time-base counter value, low 32 bits.
+    #[inline(always)]
+    pub fn alarm_lo(&self) -> u32 {
+        (self.value.read_bits() & Self::ALARM_LO_MASK) >> Self::ALARM_LO_OFFSET
+    }
+
+    /// Write **ALARM_LO** `[31:0]` (RW)
+    ///
+    /// Timer %s alarm trigger time-base counter value, low 32 bits.
+    #[inline(always)]
+    pub fn write_alarm_lo(&self, value: u32) {
+        self.value.modify_bits(|r| {
+            (r & !Self::ALARM_LO_MASK) | ((value << Self::ALARM_LO_OFFSET) & Self::ALARM_LO_MASK)
+        });
+    }
+}
+
+/// T1ALARMLO value type for batch read/modify/write operations
+///
+/// Use `t1alarmlo.read_val()` to read the register into this struct,
+/// modify fields with builder methods, then write back with `t1alarmlo.write_val(val)`.
+#[derive(Clone, Copy)]
+pub struct T1alarmloVal {
+    bits: u32,
+}
+
+impl T1alarmloVal {
+    /// Create from raw bits
+    #[inline(always)]
+    pub const fn from_bits(bits: u32) -> Self {
+        Self { bits }
+    }
+
+    /// Get the raw bits
+    #[inline(always)]
+    pub const fn bits(&self) -> u32 {
+        self.bits
+    }
+
+    /// Read **ALARM_LO** `[31:0]`
+    ///
+    /// Timer %s alarm trigger time-base counter value, low 32 bits.
+    #[inline(always)]
+    pub const fn alarm_lo(&self) -> u32 {
+        (self.bits & T1alarmlo::ALARM_LO_MASK) >> T1alarmlo::ALARM_LO_OFFSET
+    }
+
+    /// Set **ALARM_LO** `[31:0]`
+    ///
+    /// Timer %s alarm trigger time-base counter value, low 32 bits.
+    #[inline(always)]
+    pub const fn with_alarm_lo(self, value: u32) -> Self {
+        Self {
+            bits: (self.bits & !T1alarmlo::ALARM_LO_MASK)
+                | ((value << T1alarmlo::ALARM_LO_OFFSET) & T1alarmlo::ALARM_LO_MASK),
+        }
+    }
+}
+
+impl Default for T1alarmloVal {
+    fn default() -> Self {
+        Self { bits: 0 }
+    }
+}
+
+impl T1alarmlo {
+    /// Read the register into a value struct
+    #[inline(always)]
+    pub fn read_val(&self) -> T1alarmloVal {
+        T1alarmloVal::from_bits(self.value.read_bits())
+    }
+
+    /// Write a value struct to the register
+    #[inline(always)]
+    pub fn write_val(&self, val: T1alarmloVal) {
+        self.value.write_bits(val.bits())
+    }
+
+    /// Modify the register using a value struct
+    #[inline(always)]
+    pub fn modify_val<F: FnOnce(T1alarmloVal) -> T1alarmloVal>(&self, f: F) {
+        self.write_val(f(self.read_val()))
+    }
+}
+
+/// T1ALARMHI Register
+///
+/// Timer %s alarm value, high bits
+///
+/// Address offset: 0x0038
+///
+/// ## Fields
+///
+/// - **ALARM_HI** `[21:0]` (RW)
+///
+///   Timer %s alarm trigger time-base counter value, high 22 bits.
+#[repr(transparent)]
+pub struct T1alarmhi {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for T1alarmhi {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl T1alarmhi {
+    // ======== Field Constants ========
+
+    /// **ALARM_HI**
+    ///
+    /// Timer %s alarm trigger time-base counter value, high 22 bits.
+    ///
+    /// Bits `[21:0]`, mask `0x003fffff`
+    pub const ALARM_HI_OFFSET: u32 = 0;
+    pub const ALARM_HI_MASK: u32 = 0x003fffff;
+
+    // ======== Field Accessors ========
+
+    /// **ALARM_HI** `[21:0]` (RW)
+    ///
+    /// Timer %s alarm trigger time-base counter value, high 22 bits.
+    #[inline(always)]
+    pub fn alarm_hi(&self) -> u32 {
+        (self.value.read_bits() & Self::ALARM_HI_MASK) >> Self::ALARM_HI_OFFSET
+    }
+
+    /// Write **ALARM_HI** `[21:0]` (RW)
+    ///
+    /// Timer %s alarm trigger time-base counter value, high 22 bits.
+    #[inline(always)]
+    pub fn write_alarm_hi(&self, value: u32) {
+        self.value.modify_bits(|r| {
+            (r & !Self::ALARM_HI_MASK) | ((value << Self::ALARM_HI_OFFSET) & Self::ALARM_HI_MASK)
+        });
+    }
+}
+
+/// T1ALARMHI value type for batch read/modify/write operations
+///
+/// Use `t1alarmhi.read_val()` to read the register into this struct,
+/// modify fields with builder methods, then write back with `t1alarmhi.write_val(val)`.
+#[derive(Clone, Copy)]
+pub struct T1alarmhiVal {
+    bits: u32,
+}
+
+impl T1alarmhiVal {
+    /// Create from raw bits
+    #[inline(always)]
+    pub const fn from_bits(bits: u32) -> Self {
+        Self { bits }
+    }
+
+    /// Get the raw bits
+    #[inline(always)]
+    pub const fn bits(&self) -> u32 {
+        self.bits
+    }
+
+    /// Read **ALARM_HI** `[21:0]`
+    ///
+    /// Timer %s alarm trigger time-base counter value, high 22 bits.
+    #[inline(always)]
+    pub const fn alarm_hi(&self) -> u32 {
+        (self.bits & T1alarmhi::ALARM_HI_MASK) >> T1alarmhi::ALARM_HI_OFFSET
+    }
+
+    /// Set **ALARM_HI** `[21:0]`
+    ///
+    /// Timer %s alarm trigger time-base counter value, high 22 bits.
+    #[inline(always)]
+    pub const fn with_alarm_hi(self, value: u32) -> Self {
+        Self {
+            bits: (self.bits & !T1alarmhi::ALARM_HI_MASK)
+                | ((value << T1alarmhi::ALARM_HI_OFFSET) & T1alarmhi::ALARM_HI_MASK),
+        }
+    }
+}
+
+impl Default for T1alarmhiVal {
+    fn default() -> Self {
+        Self { bits: 0 }
+    }
+}
+
+impl T1alarmhi {
+    /// Read the register into a value struct
+    #[inline(always)]
+    pub fn read_val(&self) -> T1alarmhiVal {
+        T1alarmhiVal::from_bits(self.value.read_bits())
+    }
+
+    /// Write a value struct to the register
+    #[inline(always)]
+    pub fn write_val(&self, val: T1alarmhiVal) {
+        self.value.write_bits(val.bits())
+    }
+
+    /// Modify the register using a value struct
+    #[inline(always)]
+    pub fn modify_val<F: FnOnce(T1alarmhiVal) -> T1alarmhiVal>(&self, f: F) {
+        self.write_val(f(self.read_val()))
+    }
+}
+
+/// T1LOADLO Register
+///
+/// Timer %s reload value, low 32 bits
+///
+/// Address offset: 0x003c
+///
+/// ## Fields
+///
+/// - **LOAD_LO** `[31:0]` (RW)
+///
+///   Low 32 bits of the value that a reload will load onto timer %s time-base
+///   Counter.
+#[repr(transparent)]
+pub struct T1loadlo {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for T1loadlo {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl T1loadlo {
+    // ======== Field Constants ========
+
+    /// **LOAD_LO**
+    ///
+    /// Low 32 bits of the value that a reload will load onto timer %s time-base
+    /// Counter.
+    ///
+    /// Bits `[31:0]`, mask `0xffffffff`
+    pub const LOAD_LO_OFFSET: u32 = 0;
+    pub const LOAD_LO_MASK: u32 = 0xffffffff;
+
+    // ======== Field Accessors ========
+
+    /// **LOAD_LO** `[31:0]` (RW)
+    ///
+    /// Low 32 bits of the value that a reload will load onto timer %s time-base
+    /// Counter.
+    #[inline(always)]
+    pub fn load_lo(&self) -> u32 {
+        (self.value.read_bits() & Self::LOAD_LO_MASK) >> Self::LOAD_LO_OFFSET
+    }
+
+    /// Write **LOAD_LO** `[31:0]` (RW)
+    ///
+    /// Low 32 bits of the value that a reload will load onto timer %s time-base
+    /// Counter.
+    #[inline(always)]
+    pub fn write_load_lo(&self, value: u32) {
+        self.value.modify_bits(|r| {
+            (r & !Self::LOAD_LO_MASK) | ((value << Self::LOAD_LO_OFFSET) & Self::LOAD_LO_MASK)
+        });
+    }
+}
+
+/// T1LOADLO value type for batch read/modify/write operations
+///
+/// Use `t1loadlo.read_val()` to read the register into this struct,
+/// modify fields with builder methods, then write back with `t1loadlo.write_val(val)`.
+#[derive(Clone, Copy)]
+pub struct T1loadloVal {
+    bits: u32,
+}
+
+impl T1loadloVal {
+    /// Create from raw bits
+    #[inline(always)]
+    pub const fn from_bits(bits: u32) -> Self {
+        Self { bits }
+    }
+
+    /// Get the raw bits
+    #[inline(always)]
+    pub const fn bits(&self) -> u32 {
+        self.bits
+    }
+
+    /// Read **LOAD_LO** `[31:0]`
+    ///
+    /// Low 32 bits of the value that a reload will load onto timer %s time-base
+    /// Counter.
+    #[inline(always)]
+    pub const fn load_lo(&self) -> u32 {
+        (self.bits & T1loadlo::LOAD_LO_MASK) >> T1loadlo::LOAD_LO_OFFSET
+    }
+
+    /// Set **LOAD_LO** `[31:0]`
+    ///
+    /// Low 32 bits of the value that a reload will load onto timer %s time-base
+    /// Counter.
+    #[inline(always)]
+    pub const fn with_load_lo(self, value: u32) -> Self {
+        Self {
+            bits: (self.bits & !T1loadlo::LOAD_LO_MASK)
+                | ((value << T1loadlo::LOAD_LO_OFFSET) & T1loadlo::LOAD_LO_MASK),
+        }
+    }
+}
+
+impl Default for T1loadloVal {
+    fn default() -> Self {
+        Self { bits: 0 }
+    }
+}
+
+impl T1loadlo {
+    /// Read the register into a value struct
+    #[inline(always)]
+    pub fn read_val(&self) -> T1loadloVal {
+        T1loadloVal::from_bits(self.value.read_bits())
+    }
+
+    /// Write a value struct to the register
+    #[inline(always)]
+    pub fn write_val(&self, val: T1loadloVal) {
+        self.value.write_bits(val.bits())
+    }
+
+    /// Modify the register using a value struct
+    #[inline(always)]
+    pub fn modify_val<F: FnOnce(T1loadloVal) -> T1loadloVal>(&self, f: F) {
+        self.write_val(f(self.read_val()))
+    }
+}
+
+/// T1LOADHI Register
+///
+/// Timer %s reload value, high 22 bits
+///
+/// Address offset: 0x0040
+///
+/// ## Fields
+///
+/// - **LOAD_HI** `[21:0]` (RW)
+///
+///   High 22 bits of the value that a reload will load onto timer %s time-base
+///   counter.
+#[repr(transparent)]
+pub struct T1loadhi {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for T1loadhi {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl T1loadhi {
+    // ======== Field Constants ========
+
+    /// **LOAD_HI**
+    ///
+    /// High 22 bits of the value that a reload will load onto timer %s time-base
+    /// counter.
+    ///
+    /// Bits `[21:0]`, mask `0x003fffff`
+    pub const LOAD_HI_OFFSET: u32 = 0;
+    pub const LOAD_HI_MASK: u32 = 0x003fffff;
+
+    // ======== Field Accessors ========
+
+    /// **LOAD_HI** `[21:0]` (RW)
+    ///
+    /// High 22 bits of the value that a reload will load onto timer %s time-base
+    /// counter.
+    #[inline(always)]
+    pub fn load_hi(&self) -> u32 {
+        (self.value.read_bits() & Self::LOAD_HI_MASK) >> Self::LOAD_HI_OFFSET
+    }
+
+    /// Write **LOAD_HI** `[21:0]` (RW)
+    ///
+    /// High 22 bits of the value that a reload will load onto timer %s time-base
+    /// counter.
+    #[inline(always)]
+    pub fn write_load_hi(&self, value: u32) {
+        self.value.modify_bits(|r| {
+            (r & !Self::LOAD_HI_MASK) | ((value << Self::LOAD_HI_OFFSET) & Self::LOAD_HI_MASK)
+        });
+    }
+}
+
+/// T1LOADHI value type for batch read/modify/write operations
+///
+/// Use `t1loadhi.read_val()` to read the register into this struct,
+/// modify fields with builder methods, then write back with `t1loadhi.write_val(val)`.
+#[derive(Clone, Copy)]
+pub struct T1loadhiVal {
+    bits: u32,
+}
+
+impl T1loadhiVal {
+    /// Create from raw bits
+    #[inline(always)]
+    pub const fn from_bits(bits: u32) -> Self {
+        Self { bits }
+    }
+
+    /// Get the raw bits
+    #[inline(always)]
+    pub const fn bits(&self) -> u32 {
+        self.bits
+    }
+
+    /// Read **LOAD_HI** `[21:0]`
+    ///
+    /// High 22 bits of the value that a reload will load onto timer %s time-base
+    /// counter.
+    #[inline(always)]
+    pub const fn load_hi(&self) -> u32 {
+        (self.bits & T1loadhi::LOAD_HI_MASK) >> T1loadhi::LOAD_HI_OFFSET
+    }
+
+    /// Set **LOAD_HI** `[21:0]`
+    ///
+    /// High 22 bits of the value that a reload will load onto timer %s time-base
+    /// counter.
+    #[inline(always)]
+    pub const fn with_load_hi(self, value: u32) -> Self {
+        Self {
+            bits: (self.bits & !T1loadhi::LOAD_HI_MASK)
+                | ((value << T1loadhi::LOAD_HI_OFFSET) & T1loadhi::LOAD_HI_MASK),
+        }
+    }
+}
+
+impl Default for T1loadhiVal {
+    fn default() -> Self {
+        Self { bits: 0 }
+    }
+}
+
+impl T1loadhi {
+    /// Read the register into a value struct
+    #[inline(always)]
+    pub fn read_val(&self) -> T1loadhiVal {
+        T1loadhiVal::from_bits(self.value.read_bits())
+    }
+
+    /// Write a value struct to the register
+    #[inline(always)]
+    pub fn write_val(&self, val: T1loadhiVal) {
+        self.value.write_bits(val.bits())
+    }
+
+    /// Modify the register using a value struct
+    #[inline(always)]
+    pub fn modify_val<F: FnOnce(T1loadhiVal) -> T1loadhiVal>(&self, f: F) {
+        self.write_val(f(self.read_val()))
+    }
+}
+
+/// T1LOAD Register
+///
+/// Write to reload timer from TIMG_T%s_(LOADLOLOADHI)_REG
+///
+/// Address offset: 0x0044
+///
+/// ## Fields
+///
+/// - **LOAD** `[31:0]` (WO)
+///
+///   Write any value to trigger a timer %s time-base counter reload.
+#[repr(transparent)]
+pub struct T1load {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for T1load {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl T1load {
+    // ======== Field Constants ========
+
+    /// **LOAD**
+    ///
+    /// Write any value to trigger a timer %s time-base counter reload.
+    ///
+    /// Bits `[31:0]`, mask `0xffffffff`
+    pub const LOAD_OFFSET: u32 = 0;
+    pub const LOAD_MASK: u32 = 0xffffffff;
+
+    // ======== Field Accessors ========
+
+    /// Write **LOAD** `[31:0]` (WO)
+    ///
+    /// Write any value to trigger a timer %s time-base counter reload.
+    #[inline(always)]
+    pub fn write_load(&self, value: u32) {
+        self.value
+            .write_bits((value << Self::LOAD_OFFSET) & Self::LOAD_MASK);
+    }
+}
+
+/// T1LOAD value type for batch read/modify/write operations
+///
+/// Use `t1load.read_val()` to read the register into this struct,
+/// modify fields with builder methods, then write back with `t1load.write_val(val)`.
+#[derive(Clone, Copy)]
+pub struct T1loadVal {
+    bits: u32,
+}
+
+impl T1loadVal {
+    /// Create from raw bits
+    #[inline(always)]
+    pub const fn from_bits(bits: u32) -> Self {
+        Self { bits }
+    }
+
+    /// Get the raw bits
+    #[inline(always)]
+    pub const fn bits(&self) -> u32 {
+        self.bits
+    }
+
+    /// Set **LOAD** `[31:0]`
+    ///
+    /// Write any value to trigger a timer %s time-base counter reload.
+    #[inline(always)]
+    pub const fn with_load(self, value: u32) -> Self {
+        Self {
+            bits: (self.bits & !T1load::LOAD_MASK)
+                | ((value << T1load::LOAD_OFFSET) & T1load::LOAD_MASK),
+        }
+    }
+}
+
+impl Default for T1loadVal {
+    fn default() -> Self {
+        Self { bits: 0 }
+    }
+}
+
+impl T1load {
+    /// Write a value struct to the register
+    #[inline(always)]
+    pub fn write_val(&self, val: T1loadVal) {
+        self.value.write_bits(val.bits())
+    }
+}
+
 /// WDTCONFIG0 Register
 ///
 /// Watchdog timer configuration register
@@ -4864,7 +6238,33 @@ pub struct RegisterBlock {
     /// 0x0020
     /// Write to reload timer from TIMG_T%s_(LOADLOLOADHI)_REG
     pub t0load: T0load,
-    _reserved0: [u8; 36],
+    /// 0x0024
+    /// Timer %s configuration register
+    pub t1config: T1config,
+    /// 0x0028
+    /// Timer %s current value, low 32 bits
+    pub t1lo: T1lo,
+    /// 0x002c
+    /// Timer %s current value, high 22 bits
+    pub t1hi: T1hi,
+    /// 0x0030
+    /// Write to copy current timer value to TIMGn_T%s_(LO/HI)_REG
+    pub t1update: T1update,
+    /// 0x0034
+    /// Timer %s alarm value, low 32 bits
+    pub t1alarmlo: T1alarmlo,
+    /// 0x0038
+    /// Timer %s alarm value, high bits
+    pub t1alarmhi: T1alarmhi,
+    /// 0x003c
+    /// Timer %s reload value, low 32 bits
+    pub t1loadlo: T1loadlo,
+    /// 0x0040
+    /// Timer %s reload value, high 22 bits
+    pub t1loadhi: T1loadhi,
+    /// 0x0044
+    /// Write to reload timer from TIMG_T%s_(LOADLOLOADHI)_REG
+    pub t1load: T1load,
     /// 0x0048
     /// Watchdog timer configuration register
     pub wdtconfig0: Wdtconfig0,
@@ -4910,7 +6310,7 @@ pub struct RegisterBlock {
     /// 0x0080
     /// Timer group calibration register
     pub rtccalicfg2: Rtccalicfg2,
-    _reserved1: [u8; 116],
+    _reserved0: [u8; 116],
     /// 0x00f8
     /// Timer version control register
     pub ntimers_date: NtimersDate,
