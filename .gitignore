@@ -1,0 +1,5 @@
+/target
+*.pdf
+
+# Local study material: a text conversion of the TRM, not a build input.
+esp32-p4_technical_reference_manual_cn.md

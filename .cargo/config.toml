@@ -1,0 +1,19 @@
+# Workspace-wide Cargo configuration for esp32p4.
+
+[alias]
+xtask = "run --package xtask --"
+
+# Linker flags for the RISC-V target. `link.x` is provided by esp32p4-rt's
+# build script; each application supplies `memory.x` through its own build.rs.
+[target."riscv32imafc-unknown-none-elf"]
+rustflags = [
+    "-C", "link-arg=--nmagic",
+    "-C", "link-arg=-Tlink.x",
+]
+
+# Optional build target without the F extension.
+[target."riscv32imac-unknown-none-elf"]
+rustflags = [
+    "-C", "link-arg=--nmagic",
+    "-C", "link-arg=-Tlink.x",
+]

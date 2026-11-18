@@ -1,0 +1,40 @@
+[workspace]
+resolver = "2"
+members = [
+    "xtask",
+    "esp32p4-pac",
+    "esp32p4-rt",
+    "esp32p4-macro",
+    "esp32p4",
+    "esp32p4-examples",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/snple/esp32p4.git"
+
+[workspace.dependencies]
+# Macros / code generation
+pastey = "0.2"
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = { version = "3.0", features = ["full"] }
+
+# Local crates
+esp32p4 = { version = "0.1.0", path = "esp32p4" }
+esp32p4-pac = { version = "0.1.0", path = "esp32p4-pac" }
+esp32p4-rt = { version = "0.1.0", path = "esp32p4-rt" }
+esp32p4-macro = { version = "0.1.0", path = "esp32p4-macro" }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1
+opt-level = 3
+debug = 2
