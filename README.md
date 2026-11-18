@@ -13,7 +13,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | [`esp32p4-pac`](esp32p4-pac/) | **PAC**：由 `esp32p4.svd` 生成，提供寄存器块、字段常量和访问器。勿手改 |
 | [`esp32p4-rt`](esp32p4-rt/) | **运行时**：`_start`、trap 入口、`link.x`、CSR/汇编封装 |
 | [`esp32p4-macro`](esp32p4-macro/) | **过程宏**：`#[main]` |
-| [`esp32p4`](esp32p4/) | **HAL**：GPIO / IO MUX、SYSTIMER 延时、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
+| [`esp32p4`](esp32p4/) | **HAL**：GPIO / IO MUX、SYSTIMER 延时与单调时钟、通用定时器、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
 | [`esp32p4-usb`](esp32p4-usb/) | **USB 设备栈**：DWC OTG 全速/高速控制器（slave 模式、轮询）、标准请求与描述符、CDC-ACM 虚拟串口、自定义类 |
 | [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC |
 | [`xtask`](xtask/) | 构建辅助：`cargo xtask gen-pac` |
@@ -31,6 +31,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `usb_serial` | 通过 USB Serial/JTAG 打印并回显，同时翻转 GPIO2（两个驱动共享 `HP_SYS_CLKRST`） |
 | `usb_cdc` | 全速 OTG（GPIO26/27）上的 CDC-ACM 虚拟串口，回显主机发来的字节 |
 | `usb_cdc_hs` | 高速 OTG（内部 UTMI+ PHY）上的 CDC-ACM，512 字节 bulk 包 |
+| `timer` | `TIMG0` 的两路通用定时器：100 ms 周期中断闪灯，外加 1 s 的倒计时闹钟 |
 | `emac` | 初始化 RMII 以太网、自动协商、打印链路状态并收发 ARP 帧 |
 | `net_tcp_echo` | DHCP + TCP echo 服务器（需 `--features net`，无堆、无 async） |
 | `defmt_usb` | `defmt` 日志直接走 USB Serial/JTAG（需 `--features defmt-usb`，`espflash monitor` 可见） |
@@ -398,6 +399,50 @@ interrupt::free(|cs| COUNTER.borrow(cs).set(0));
 - **矩阵状态**：`source_pending(source)` 读 `CORE0_INTR_STATUS_REG_n`，共享中断线的
   处理器据此判断是自己的哪个源。
 
+## 定时器
+
+按用途分成两层：
+
+| 模块 | 硬件 | 计数单位 | 用途 |
+|------|------|----------|------|
+| [`time`](esp32p4/src/time.rs) | `SYSTIMER` unit 0 | 16 MHz tick（62.5 ns） | 单调时钟：`Instant` / `Duration`；52 位，约 8.9 年回绕 |
+| [`timer`](esp32p4/src/timer.rs) | `TIMG0` / `TIMG1`，各 2 路 | 可配预分频，默认 1 µs | 一次性 / 周期性闹钟，带中断与自动重载 |
+
+`time` 只读计数器，永远自由运行；`Delay` 在它上面借 comparator 0 睡到指定 tick。
+
+```rust
+let start = Instant::now();
+do_work();
+let elapsed: Duration = start.elapsed();   // 与 delay::micros() 同一个时间源
+```
+
+`timer` 的 4 路计数器是完整的通用定时器：
+
+- 时钟源可选 `XTAL_CLK` 40 MHz、`RC_FAST_CLK`（约 17.5 MHz）、`PLL_F80M_CLK` 80 MHz，
+  16 位预分频（2..=65536）；默认 40 → 1 tick = 1 µs。
+- 54 位计数器，可增可减；重载值与闹钟比较值也是 54 位。
+- 闹钟触发后硬件会清掉 `ALARM_EN`。开启 auto-reload 时计数器从重载值重新开始，HAL 的
+  中断壳清状态后自动重新武装，因此周期性闹钟不需要用户干预；一次性闹钟保持关闭。
+- 每路有独立的矩阵源（`TG0_T0` / `TG0_T1` / `TG1_T0` / `TG1_T1`），CPU 线由调用者传入，
+  `enable_interrupt(line, handler)` 内部走 `interrupt::claim`，线被占用会 panic。
+
+```rust
+let (mut fast, mut slow) = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST).split();
+
+fast.enable_interrupt(CpuInterrupt::new(21), tick);      // CPU 线 21
+fast.start_periodic(Duration::from_millis(100));
+
+slow.set_direction(Direction::Down);
+slow.enable_interrupt(CpuInterrupt::new(22), slow_tick); // CPU 线 22
+slow.start_periodic(Duration::from_secs(1));
+
+unsafe { interrupt::enable() };
+```
+
+厂商 SVD 只描述每个 TIMG 的 timer 0，timer 1 落在保留区里，所以这组寄存器没有走 PAC：
+[`timer/regs.rs`](esp32p4/src/timer/regs.rs) 按 TRM 第 18 章手写了偏移与位域
+（两路相隔 0x24，与 ESP-IDF 的 `timg_hwtimer_reg_t hw_timer[2]` 一致）。
+
 ## 内存布局与启动
 
 ESP32-P4 不是“ROM 直接跳到应用”的芯片：镜像由 ESP-IDF 2nd-stage bootloader
@@ -458,7 +503,9 @@ espflash save-image --chip esp32p4 \
 - 从 SVD 生成完整 PAC（89 个外设、约 5600 个展开寄存器）
 - RISC-V 启动、trap 入口、CSR/汇编封装、ESP-IDF 兼容镜像布局
 - GPIO0–GPIO53 的简单推挽输出/输入、IO MUX 配置
-- SYSTIMER 阻塞延时
+- SYSTIMER 阻塞延时与单调时钟（`time::Instant` / `Duration`）
+- 通用定时器（`TIMG0` / `TIMG1` 的 4 路 54 位计数器：时钟源与预分频、增/减计数、
+  软件重载、一次性与周期性闹钟中断）
 - 复位控制与复位原因（`system::software_reset` / `software_reset_cpu` / `reset_reason`，纯寄存器实现）
 - 封装内 PSRAM 初始化（MPLL 250 MHz、16/32 MB 自动检测、MMU 映射、`PsramAllocator`）
 - USB Serial/JTAG（CDC-ACM）收发：`UsbSerialJtag`，以及可选的 `defmt` 全局 logger

@@ -57,6 +57,10 @@ path = "src/net_tcp_echo.rs"
 required-features = ["net"]
 
 [[bin]]
+name = "timer"
+path = "src/timer.rs"
+
+[[bin]]
 name = "usb_serial"
 path = "src/usb_serial.rs"
 

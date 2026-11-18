@@ -30,6 +30,11 @@
 //! | 19 | `SYSTIMER` target 0, used by [`Delay::sleep_us`](crate::delay::Delay::sleep_us) |
 //! | 20 | Ethernet MAC |
 //!
+//! Drivers that cannot know the line at compile time take it as an argument
+//! instead: [`Timer::enable_interrupt`](crate::timer::Timer::enable_interrupt)
+//! claims whatever line the application passes, so the four general-purpose
+//! timers can share the lines nobody else wanted.
+//!
 //! # Levels
 //!
 //! `mcliccfg.MNLBITS` is 3, so each line has an 8-bit level byte: three level
