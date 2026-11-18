@@ -23,6 +23,18 @@
 //! Handlers are plain `fn()`s kept in a table indexed by CPU interrupt line. The
 //! trap entry runs with `MIE = 0`, so a handler cannot be preempted by another
 //! interrupt on this core — nesting is not supported.
+//!
+//! # Levels
+//!
+//! `mcliccfg.MNLBITS` is set to 3, so `clicintctl[i]` programs an 8-bit level
+//! byte: the three high bits are the level (0..=7) and the five low bits are
+//! hardwired to 1. Level 0 therefore reads as `0x1f`, level 7 as `0xff`.
+//!
+//! The hardware compares that byte with `max(mintthresh.TH, mintstatus.MIL)`
+//! and takes the interrupt only when the byte is *greater*. With the reset
+//! threshold of 0 every level is accepted. Levels only order interrupts that are
+//! pending at the same time: preemption would additionally require re-enabling
+//! `MIE` inside the handler, which the runtime deliberately does not do.
 
 use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -41,13 +53,28 @@ pub const FIRST_EXT_INTR_ID: u32 = 16;
 /// Number of CPU interrupt lines the interrupt matrix can drive.
 pub const CPU_INTERRUPT_COUNT: u32 = 32;
 
-/// Level bits used by the CTL byte, matching the `mcliccfg.MNLBITS` value set in
-/// [`init`]: three bits of level, five bits of intra-level priority.
+/// Level bits used by the CTL byte, matching the `mclicfg.MNLBITS` value set in
+/// [`init`]. With three bits every level field is significant and the remaining
+/// five bits of the byte are hardwired to 1.
 const MNLBITS: u32 = 3;
 
-/// Priority given to every line this runtime unmasks: level 1 with the highest
-/// intra-level priority, so it sits above the threshold of 0.
-const PRIORITY_BYTE: u8 = 0x1f;
+/// Highest level `set_level` accepts (`MNLBITS = 3`).
+pub const MAX_LEVEL: u8 = 7;
+
+/// Low bits of the level byte: hardwired to 1 in hardware.
+const LEVEL_BYTE_BASE: u8 = 0x1f;
+
+/// Encode a level (0..=7) as the byte the hardware compares.
+#[inline]
+pub const fn level_byte(level: u8) -> u8 {
+    ((level & MAX_LEVEL) << 5) | LEVEL_BYTE_BASE
+}
+
+/// The level encoded in a `clicintctl` byte.
+#[inline]
+pub const fn level_of_byte(byte: u8) -> u8 {
+    (byte >> 5) & MAX_LEVEL
+}
 
 // The CLIC ids used by the drivers, spelled out as addresses so a typo in the
 // arithmetic below is a compile error rather than a silent write to the wrong
@@ -147,10 +174,20 @@ pub fn set_handler(cpu_int: u32, handler: fn()) {
     HANDLERS[cpu_int as usize].store(handler as usize, Ordering::Release);
 }
 
+/// Remove the handler of CPU interrupt line `cpu_int`.
+///
+/// The line keeps its CLIC configuration; a spurious interrupt dispatches to
+/// nothing. Mask the line first with [`mask`].
+pub fn clear_handler(cpu_int: u32) {
+    assert!(cpu_int < CPU_INTERRUPT_COUNT, "no such CPU interrupt line");
+    HANDLERS[cpu_int as usize].store(0, Ordering::Release);
+}
+
 /// Unmask CPU interrupt line `cpu_int`.
 ///
 /// The line is level-triggered and not hardware-vectored, so it enters through
-/// the common trap entry.
+/// the common trap entry. Its level is whatever [`set_level`] programmed
+/// (level 0 after reset).
 ///
 /// # Safety
 ///
@@ -164,9 +201,51 @@ pub unsafe fn unmask(cpu_int: u32) {
     unsafe {
         // Level-triggered (`TRIG = 0b00`) and direct mode (`SHV = 0`).
         core::ptr::write_volatile(int_byte(cpu_int, 2), 0);
-        core::ptr::write_volatile(int_byte(cpu_int, 3), PRIORITY_BYTE);
         core::ptr::write_volatile(int_byte(cpu_int, 1), 1);
     }
+}
+
+/// Program the CLIC level of CPU interrupt line `cpu_int`.
+///
+/// Levels order interrupts that are pending at the same time; a higher level is
+/// taken first. They do not cause nesting, because the trap entry runs with
+/// `MIE = 0` (see the module documentation).
+///
+/// Must be called before [`unmask`] to take effect on the first interrupt.
+pub fn set_level(cpu_int: u32, level: u8) {
+    assert!(cpu_int < CPU_INTERRUPT_COUNT, "no such CPU interrupt line");
+    assert!(level <= MAX_LEVEL, "level out of range");
+    // SAFETY: fixed MMIO address.
+    unsafe { core::ptr::write_volatile(int_byte(cpu_int, 3), level_byte(level)) };
+}
+
+/// The CLIC level programmed for `cpu_int`.
+#[inline]
+pub fn level(cpu_int: u32) -> u8 {
+    assert!(cpu_int < CPU_INTERRUPT_COUNT, "no such CPU interrupt line");
+    // SAFETY: fixed MMIO address.
+    let byte = unsafe { core::ptr::read_volatile(int_byte(cpu_int, 3)) };
+    level_of_byte(byte)
+}
+
+/// Set the CLIC pending bit of `cpu_int`.
+///
+/// The runtime configures lines as level-triggered, so the bit follows the
+/// source: a write only sticks while the source is asserting. Useful to
+/// re-trigger a line whose source is still active.
+pub fn pend(cpu_int: u32) {
+    assert!(cpu_int < CPU_INTERRUPT_COUNT, "no such CPU interrupt line");
+    // SAFETY: fixed MMIO address.
+    unsafe { core::ptr::write_volatile(int_byte(cpu_int, 0), 1) };
+}
+
+/// Clear the CLIC pending bit of `cpu_int`.
+///
+/// A level-triggered source that is still asserting sets it again immediately.
+pub fn unpend(cpu_int: u32) {
+    assert!(cpu_int < CPU_INTERRUPT_COUNT, "no such CPU interrupt line");
+    // SAFETY: fixed MMIO address.
+    unsafe { core::ptr::write_volatile(int_byte(cpu_int, 0), 0) };
 }
 
 /// Mask CPU interrupt line `cpu_int`.
@@ -210,6 +289,18 @@ pub(crate) fn dispatch(cpu_int: u32) {
 #[inline]
 pub(crate) fn decode_cause(cause: usize) -> (bool, usize) {
     (cause & (1 << 31) != 0, cause & 0x0fff)
+}
+
+/// Whether the core is currently executing an interrupt handler.
+#[inline]
+pub fn in_interrupt() -> bool {
+    crate::register::mintstatus::in_interrupt()
+}
+
+/// The CLIC level of the handler being executed, or 0 outside a handler.
+#[inline]
+pub fn current_level() -> u8 {
+    crate::register::mintstatus::level()
 }
 
 /// Stop the core until an interrupt is pending.

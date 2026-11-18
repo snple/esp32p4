@@ -1,7 +1,13 @@
-//! `mintthresh` register: the CLIC interrupt priority threshold.
+//! `mintthresh` register: the CLIC interrupt level threshold.
 //!
-//! Interrupts whose priority is not *greater* than the threshold are held off.
-//! The reset value is 0, so any interrupt with a nonzero priority is taken.
+//! The 8-bit `TH` field is compared with `mintstatus.MIL`; the larger of the two
+//! is the effective threshold, and an interrupt is only taken when its
+//! `clicintctl` level byte is *greater*. `clicintctl` resets to `0x1f` (level 0,
+//! low bits hardwired to 1) and `TH` to 0, so every level is accepted after
+//! reset.
+//!
+//! The runtime never raises the threshold: handlers run with `MIE = 0`, so no
+//! interrupt can preempt another one in the first place.
 
 use core::arch::asm;
 
