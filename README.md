@@ -13,7 +13,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | [`esp32p4-pac`](esp32p4-pac/) | **PAC**：由 `esp32p4.svd` 生成，提供寄存器块、字段常量和访问器。勿手改 |
 | [`esp32p4-rt`](esp32p4-rt/) | **运行时**：`_start`、trap 入口、`link.x`、CSR/汇编封装 |
 | [`esp32p4-macro`](esp32p4-macro/) | **过程宏**：`#[main]` |
-| [`esp32p4`](esp32p4/) | **HAL**：GPIO / IO MUX、SYSTIMER 延时/单调时钟/闹钟、通用定时器、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
+| [`esp32p4`](esp32p4/) | **HAL**：GPIO / IO MUX、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
 | [`esp32p4-usb`](esp32p4-usb/) | **USB 设备栈**：DWC OTG 全速/高速控制器（slave 模式、轮询）、标准请求与描述符、CDC-ACM 虚拟串口、自定义类 |
 | [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC |
 | [`xtask`](xtask/) | 构建辅助：`cargo xtask gen-pac` |
@@ -33,6 +33,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `usb_cdc_hs` | 高速 OTG（内部 UTMI+ PHY）上的 CDC-ACM，512 字节 bulk 包 |
 | `timer` | `TIMG0` 的两路通用定时器：100 ms 周期中断闪灯，外加 1 s 的倒计时闹钟 |
 | `alarm` | `SYSTIMER` 比较器：250 ms 周期闹钟 + 5 s 一次性 deadline，主循环用 `sleep_until` 睡到下一个检查点 |
+| `watchdog` | `TIMG0` 的 MWDT：1 s 超时复位系统，主循环每 100 ms `feed()` 一次 |
 | `emac` | 初始化 RMII 以太网、自动协商、打印链路状态并收发 ARP 帧 |
 | `net_tcp_echo` | DHCP + TCP echo 服务器（需 `--features net`，无堆、无 async） |
 | `defmt_usb` | `defmt` 日志直接走 USB Serial/JTAG（需 `--features defmt-usb`，`espflash monitor` 可见） |
@@ -408,7 +409,7 @@ interrupt::free(|cs| COUNTER.borrow(cs).set(0));
 |------|------|----------|------|
 | [`time`](esp32p4/src/time.rs) | `SYSTIMER` unit 0 | 16 MHz tick（62.5 ns） | 单调时钟：`Instant` / `Duration`；52 位，约 8.9 年回绕 |
 | [`systimer`](esp32p4/src/systimer.rs) | `SYSTIMER` COMP1 / COMP2 | 同上 | 绝对 deadline（一次性）与固定周期闹钟，带中断 |
-| [`timer`](esp32p4/src/timer/mod.rs) | `TIMG0` / `TIMG1`，各 2 路 | 可配预分频，默认 1 µs | 可重载的通用计数器：一次性 / 周期性闹钟，带中断 |
+| [`timer`](esp32p4/src/timer/mod.rs) | `TIMG0` / `TIMG1`，各 2 路 + 1 个 MWDT | 可配预分频，默认 1 µs | `TimerGroup0/1` → `Timer<G, N>` 通用计数器 + `Watchdog<G>` 看门狗 |
 
 `time` 只读计数器，永远自由运行；`Delay` 在它上面借 comparator 0 睡到指定 tick（`sleep_ms` 睡一段时间，`sleep_until(Instant)` 睡到某个时刻）。
 
@@ -418,28 +419,64 @@ do_work();
 let elapsed: Duration = start.elapsed();   // 与 delay::micros() 同一个时间源
 ```
 
-`timer` 的 4 路计数器是完整的通用定时器：
+### 定时器组：`TimerGroup0/1`、`Timer<G, N>` 与 `Watchdog<G>`
+
+```text
+TimerGroup0 ─┬─ Timer<0, 0>   矩阵源 TG0_T0
+             ├─ Timer<0, 1>   TG0_T1
+             └─ Watchdog<0>   TG0_WDT
+TimerGroup1 ─┬─ Timer<1, 0>   TG1_T0
+             ├─ Timer<1, 1>   TG1_T1
+             └─ Watchdog<1>   TG1_WDT
+```
+
+`TimerGroup0::new(dp.TIMG0, &clkrst)` 打开时钟门、把两路计数器和看门狗复位到已知状态，
+然后 `group.timer0` / `group.timer1` / `group.wdt` 就是那三个外设，字段是公开的，方法全部
+取 `&self`：
 
 - 时钟源可选 `XTAL_CLK` 40 MHz、`RC_FAST_CLK`（约 17.5 MHz）、`PLL_F80M_CLK` 80 MHz，
-  16 位预分频（2..=65536）；默认 40 → 1 tick = 1 µs。
-- 54 位计数器，可增可减；重载值与闹钟比较值也是 54 位。
+  16 位预分频（2..=65536）；默认 40 → 1 tick = 1 µs。`timer.ticks(Duration)` 负责把时间段
+  换算成这个定时器的 tick。
+- 54 位计数器，可增可减；重载值（`set_reload_value`）决定 `start()` 从哪儿开始，
+  闹钟值（`set_alarm`）是绝对 tick 数。
+- **没有东西会自己启动**：配置完再 `timer.start()`——它先停计数器、从重载值重新装入，
+  然后才开始计数，所以重启一定是确定性的。`stop()` / `is_running()` / `counter()` 配套。
 - 闹钟触发后硬件会清掉 `ALARM_EN`。开启 auto-reload 时计数器从重载值重新开始，HAL 的
-  中断壳清状态后自动重新武装，因此周期性闹钟不需要用户干预；一次性闹钟保持关闭。
-- 每路有独立的矩阵源（`TG0_T0` / `TG0_T1` / `TG1_T0` / `TG1_T1`），CPU 线由调用者传入，
-  `enable_interrupt(line, handler)` 内部走 `interrupt::claim`，线被占用会 panic。
+  中断壳清状态后自动重新武装，周期性闹钟因此不需要用户干预；一次性闹钟保持关闭。
+- 每路有独立的矩阵源，CPU 线由调用者传入，`enable_interrupt(line, handler)` 内部走
+  `interrupt::claim`，线被占用会 panic。
 
 ```rust
-let (fast, slow) = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST).split();
+let group = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST);
+let fast = &group.timer0;
+let slow = &group.timer1;
 
-fast.enable_interrupt(CpuInterrupt::new(21), tick);      // CPU 线 21
-fast.start_periodic(Duration::from_millis(100));
+// 100 ms 周期中断
+fast.enable_interrupt(CpuInterrupt::new(21), tick);
+fast.set_reload_value(0);
+fast.set_alarm(fast.ticks(Duration::from_millis(100)));
+fast.set_auto_reload(true);
+fast.start();
 
+// 1 s，倒计数
 slow.set_direction(Direction::Down);
-slow.enable_interrupt(CpuInterrupt::new(22), slow_tick); // CPU 线 22
-slow.start_periodic(Duration::from_secs(1));
+slow.enable_interrupt(CpuInterrupt::new(22), slow_tick);
+slow.set_reload_value(slow.ticks(Duration::from_secs(1)));
+slow.set_alarm(0);
+slow.set_auto_reload(true);
+slow.start();
 
 unsafe { interrupt::enable() };
 ```
+
+中断里没有 `&Timer`，用 `unsafe { Timer::<0, 0>::steal() }` 拿到**同一个类型**的副本
+（和 `Pin::<N>::steal()` 一个模式）：一个寄存器都不写，不启动计数、不持有 CPU 线，
+drop 它也不会影响 owner。
+
+`Watchdog<G>` 是 MWDT：`set_timeout(MwdtStage::Stage0, Duration::from_secs(1))` 配合
+`set_stage_action(stage, MwdtStageAction::ResetSystem)`，然后 `enable()`；之后必须在超时前
+`feed()`，否则系统复位。`startup::init` 已经把 bootloader 留下的看门狗关掉了，所以不碰它
+的程序不会被 reset。
 
 ### `SYSTIMER` 比较器闹钟
 
@@ -463,32 +500,6 @@ periodic.set_period(Duration::from_millis(250));
 let one_shot = Alarm2::new();
 one_shot.set_target(Instant::now() + Duration::from_secs(5));
 ```
-
-### 一个计数器一个类型，`&self` + `steal()`
-
-和 rp2350 的 `Timer0` / `Timer1` 一样，每个硬件计数器都是独立类型（`Tg0T0`、`Tg0T1`、
-`Tg1T0`、`Tg1T1`，名字就是它对应的中断源），由宏生成、共用同一套方法：
-
-- `TimerGroup0/1::new(timg, &clkrst).split()` 交出两路，初始化时把计数器复位到已知状态
-  （停止、清计数、关闹钟、XTAL/40 → 1 tick = 1 µs）。
-- **所有方法取 `&self`**：寄存器是 volatile cell，因此共享引用就够；时钟源、预分频、
-  计数器方向和闹钟都从/向硬件读写，结构体里只缓存“我持有的 CPU 线”。
-- `unsafe { Tg0T0::steal() }` 返回 `Steal<Tg0T0>`：**同一个类型**、不碰任何寄存器，
-  所以中断里能直接拿到和 owner 完全一样的能力，也不需要额外的 handle 类型或 `new` 包装。
-  只有 Ctrl 自己的簿记不同——stolen 副本没有 claim 的 CPU 线，drop 时也不会影响硬件。
-
-```rust
-fn overrun() {
-    // SAFETY: main 里的 Tg0T0 一直活着。
-    let timer = unsafe { Tg0T0::steal() };
-    OVERRUNS.fetch_add(1, Ordering::Relaxed);
-    timer.set_alarm(timer.counter() + PERIOD_TICKS);
-}
-```
-
-CPU 线的所有权放在一个私有的 `Irq` guard 里：`enable_interrupt` 把它放进 `RefCell`，
-`disable_interrupt` 或整个定时器被 drop 时，guard 的 `Drop` 关掉 TIMG 的中断使能、
-清状态、注销 shim 并把线还回去——stolen 副本里没有这个 guard，所以不受影响。
 
 厂商 SVD 只描述每个 TIMG 的 timer 0，timer 1 落在保留区里，所以这组寄存器没有走 PAC：
 [`timer/regs.rs`](esp32p4/src/timer/regs.rs) 按 TRM 第 18 章手写了偏移与位域
@@ -556,8 +567,9 @@ espflash save-image --chip esp32p4 \
 - GPIO0–GPIO53 的简单推挽输出/输入、IO MUX 配置
 - SYSTIMER 阻塞延时（`sleep_ms` / `sleep_until`）与单调时钟（`time::Instant` / `Duration`）
 - SYSTIMER 比较器闹钟（`Alarm1` / `Alarm2`：绝对 deadline 与周期模式，带中断）
-- 通用定时器（`TIMG0` / `TIMG1` 的 4 路 54 位计数器：时钟源与预分频、增/减计数、
-  软件重载、一次性与周期性闹钟中断）
+- 定时器组（`TimerGroup0/1` → `Timer<G, N>`：4 路 54 位计数器，时钟源与预分频、增/减计数、
+  软件重载、一次性与周期性闹钟中断）与主系统看门狗（`Watchdog<G>`：分阶段超时、
+  中断/复位动作、`feed()`）
 - 复位控制与复位原因（`system::software_reset` / `software_reset_cpu` / `reset_reason`，纯寄存器实现）
 - 封装内 PSRAM 初始化（MPLL 250 MHz、16/32 MB 自动检测、MMU 映射、`PsramAllocator`）
 - USB Serial/JTAG（CDC-ACM）收发：`UsbSerialJtag`，以及可选的 `defmt` 全局 logger

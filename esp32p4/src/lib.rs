@@ -137,7 +137,7 @@ unsafe impl critical_section::Impl for SingleCoreCriticalSection {
 /// pin.into_output();                       // &mut self — compile error
 /// ```
 ///
-/// [`timer::Tg0T0`] and [`systimer::Alarm1`] follow the same rule: they take
+/// [`timer::Timer`] and [`systimer::Alarm1`] follow the same rule: they take
 /// `&self` everywhere, so a stolen copy can run the whole register-level API
 /// from an interrupt. What `steal()` never gives access to is a method that
 /// takes `&mut self`.

@@ -27,7 +27,7 @@ use esp32p4::interrupt::{self, CpuInterrupt};
 use esp32p4::main;
 use esp32p4::pac::Peripherals;
 use esp32p4::time::Duration;
-use esp32p4::timer::{Direction, Tg0T0, TimerGroup0};
+use esp32p4::timer::{Direction, Timer, TimerGroup0};
 
 const LED_PIN: u32 = 2;
 /// CPU lines this example borrows out of the 32 the CLIC has.
@@ -42,9 +42,9 @@ static FAST_COUNTER: AtomicU32 = AtomicU32::new(0);
 fn fast_tick() {
     FAST_TICKS.fetch_add(1, Ordering::Relaxed);
 
-    // The handler does not own the timer, but a stolen handle is enough.
+    // The handler does not own the timer, but a stolen copy is enough.
     // SAFETY: `main` keeps this timer alive for the whole program.
-    let timer = unsafe { Tg0T0::steal() };
+    let timer = unsafe { Timer::<0, 0>::steal() };
     FAST_COUNTER.store(timer.counter() as u32, Ordering::Relaxed);
 }
 
@@ -59,17 +59,27 @@ fn main() -> ! {
     let mut led = pins.pin::<LED_PIN>();
     led.into_output();
 
-    let (fast, slow) = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST).split();
+    // The group owns both counters and the watchdog; the fields are the
+    // timers themselves, all methods take `&self`.
+    let group = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST);
+    let fast = &group.timer0;
+    let slow = &group.timer1;
 
     // 100 ms, counting up from zero: the counter restarts on every alarm, so
     // the time spent in the handler does not accumulate.
     fast.enable_interrupt(FAST_LINE, fast_tick);
-    fast.start_periodic(Duration::from_millis(100));
+    fast.set_reload_value(0);
+    fast.set_alarm(fast.ticks(Duration::from_millis(100)));
+    fast.set_auto_reload(true);
+    fast.start();
 
     // One second, counting down from the period to zero.
     slow.set_direction(Direction::Down);
     slow.enable_interrupt(SLOW_LINE, slow_tick);
-    slow.start_periodic(Duration::from_secs(1));
+    slow.set_reload_value(slow.ticks(Duration::from_secs(1)));
+    slow.set_alarm(0);
+    slow.set_auto_reload(true);
+    slow.start();
 
     // The handlers only run once global interrupts are enabled.
     // SAFETY: both shims acknowledge their timer before doing anything else.

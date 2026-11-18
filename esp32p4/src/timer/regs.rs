@@ -20,6 +20,11 @@ pub(crate) const GROUP1_BASE: usize = 0x500c_3000;
 /// Distance between the two timers of a group.
 const UNIT_STRIDE: usize = 0x24;
 
+/// Base address of timer group `group` (0 or 1).
+pub(crate) const fn group_base(group: u8) -> usize {
+    if group == 0 { GROUP0_BASE } else { GROUP1_BASE }
+}
+
 // Timer registers, relative to the timer's own window.
 const CONFIG: usize = 0x00;
 const LO: usize = 0x04;
@@ -80,8 +85,7 @@ impl Regs {
 
     /// The registers of timer `index`, counted as `group * 2 + unit`.
     pub(crate) const fn at(index: usize) -> Self {
-        let base = if index < 2 { GROUP0_BASE } else { GROUP1_BASE };
-        Self::new(base, (index % 2) as u8)
+        Self::new(group_base((index / 2) as u8), (index % 2) as u8)
     }
 
     #[inline(always)]
@@ -205,6 +209,13 @@ impl Regs {
         self.write(LOAD_LO, value as u32);
     }
 
+    /// The reload value last programmed, in ticks.
+    pub(crate) fn reload_value(&self) -> u64 {
+        let hi = self.read(LOAD_HI) as u64;
+        let lo = self.read(LOAD_LO) as u64;
+        (hi << 32) | lo
+    }
+
     /// Copy the reload value into the counter.
     pub(crate) fn reload(&self) {
         self.write(LOAD, 1);
@@ -234,8 +245,168 @@ impl Regs {
         reg(self.group + INT_RAW).read_bits() & (1 << self.unit) != 0
     }
 
+    /// The alarm value last programmed, in ticks.
+    pub(crate) fn alarm_value(&self) -> u64 {
+        let hi = self.read(ALARM_HI) as u64;
+        let lo = self.read(ALARM_LO) as u64;
+        (hi << 32) | lo
+    }
+
     /// Drop the alarm request. `INT_CLR` is write-one-to-clear.
     pub(crate) fn clear_interrupt(&self) {
         reg(self.group + INT_CLR).write_bits(1 << self.unit);
+    }
+}
+
+// Watchdog registers, relative to the group base. The vendor SVD describes
+// them, but as one type per group, so the driver goes through here to stay
+// generic over the group.
+const WDT_CONFIG0: usize = 0x48;
+const WDT_CONFIG1: usize = 0x4c;
+const WDT_CONFIG2: usize = 0x50;
+const WDT_FEED: usize = 0x60;
+const WDT_WPROTECT: usize = 0x64;
+
+/// `WDTCONFIG0.WDT_EN`.
+const WDT_EN: u32 = 1 << 31;
+/// `WDTCONFIG0.WDT_STG0`, the first stage's action (two bits per stage).
+const WDT_STG0_SHIFT: u32 = 29;
+const WDT_STG1_SHIFT: u32 = 27;
+const WDT_STG2_SHIFT: u32 = 25;
+const WDT_STG3_SHIFT: u32 = 23;
+const WDT_STG_MASK: u32 = 0b11;
+/// `WDTCONFIG0.WDT_CONF_UPDATE_EN`: latch the configuration written above.
+const WDT_CONF_UPDATE_EN: u32 = 1 << 22;
+/// `WDTCONFIG0.WDT_CPU_RESET_LENGTH` (3 bits) and `WDT_SYS_RESET_LENGTH`.
+const WDT_CPU_RESET_LENGTH_SHIFT: u32 = 18;
+const WDT_SYS_RESET_LENGTH_SHIFT: u32 = 15;
+/// `WDTCONFIG0.WDT_FLASHBOOT_MOD_EN`, which the bootloader leaves set.
+const WDT_FLASHBOOT_MOD_EN: u32 = 1 << 14;
+/// `WDTCONFIG1.WDT_CLK_PRESCALE`.
+const WDT_CLK_PRESCALE_SHIFT: u32 = 16;
+/// `WDTCONFIG1.WDT_DIVCNT_RST`.
+const WDT_DIVCNT_RST: u32 = 1 << 0;
+
+/// Value that unlocks the watchdog's configuration registers.
+pub(crate) const WDT_UNLOCK_KEY: u32 = 0x50d8_3aa1;
+
+/// The registers of one timer group's main system watchdog.
+#[derive(Clone, Copy)]
+pub(crate) struct WdtRegs {
+    base: usize,
+}
+
+impl WdtRegs {
+    /// The watchdog registers of the group at `group_base`.
+    pub(crate) const fn new(group_base: usize) -> Self {
+        Self { base: group_base }
+    }
+
+    #[inline(always)]
+    fn read(&self, offset: usize) -> u32 {
+        reg(self.base + offset).read_bits()
+    }
+
+    #[inline(always)]
+    fn write(&self, offset: usize, value: u32) {
+        reg(self.base + offset).write_bits(value);
+    }
+
+    #[inline(always)]
+    fn modify(&self, offset: usize, f: impl FnOnce(u32) -> u32) {
+        reg(self.base + offset).modify_bits(f);
+    }
+
+    /// Run `f` with the configuration registers writable, then lock them again.
+    ///
+    /// The unlock key is the register's own reset value: writing anything else
+    /// — zero, in practice — turns write protection back on.
+    pub(crate) fn with_unlocked<R>(&self, f: impl FnOnce(&Self) -> R) -> R {
+        self.write(WDT_WPROTECT, WDT_UNLOCK_KEY);
+        let result = f(self);
+        self.lock();
+        result
+    }
+
+    /// Turn write protection back on.
+    pub(crate) fn lock(&self) {
+        self.write(WDT_WPROTECT, 0);
+    }
+
+    /// Whether the watchdog is running.
+    pub(crate) fn enabled(&self) -> bool {
+        self.read(WDT_CONFIG0) & WDT_EN != 0
+    }
+
+    /// Start or stop the watchdog.
+    pub(crate) fn set_enabled(&self, enable: bool) {
+        self.modify(
+            WDT_CONFIG0,
+            |v| {
+                if enable { v | WDT_EN } else { v & !WDT_EN }
+            },
+        );
+    }
+
+    /// A safe default configuration: stage 0 resets the system, the later
+    /// stages are off, flash-boot protection is off and the reset pulses are
+    /// long enough to be seen.
+    pub(crate) fn set_defaults(&self) {
+        self.modify(WDT_CONFIG0, |v| {
+            let v = v
+                & !(WDT_STG_MASK << WDT_STG0_SHIFT)
+                & !(WDT_STG_MASK << WDT_STG1_SHIFT)
+                & !(WDT_STG_MASK << WDT_STG2_SHIFT)
+                & !(WDT_STG_MASK << WDT_STG3_SHIFT)
+                & !WDT_FLASHBOOT_MOD_EN;
+            // Stage 0: reset the system (3). Stages 1..=3: off (0).
+            v | (3 << WDT_STG0_SHIFT)
+                | (7 << WDT_CPU_RESET_LENGTH_SHIFT)
+                | (7 << WDT_SYS_RESET_LENGTH_SHIFT)
+        });
+    }
+
+    /// Turn off the flash-boot protection, which keeps counting even while the
+    /// watchdog itself is disabled.
+    pub(crate) fn disable_flashboot(&self) {
+        self.modify(WDT_CONFIG0, |v| v & !WDT_FLASHBOOT_MOD_EN);
+    }
+
+    /// Restart the current stage's countdown.
+    pub(crate) fn feed(&self) {
+        self.write(WDT_FEED, 1);
+    }
+
+    /// Set the prescaler, 1 to 65536.
+    pub(crate) fn set_prescaler(&self, prescaler: u32) {
+        debug_assert!((1..=65536).contains(&prescaler));
+        // 65536 is out of reach of the 16-bit field; 0 means "no division".
+        let encoded = if prescaler >= 65536 { 0 } else { prescaler };
+        self.modify(WDT_CONFIG1, |v| {
+            (v & !(0xffff << WDT_CLK_PRESCALE_SHIFT))
+                | (encoded << WDT_CLK_PRESCALE_SHIFT)
+                | WDT_DIVCNT_RST
+        });
+    }
+
+    /// Set the timeout of `stage`, in watchdog clock ticks.
+    pub(crate) fn set_stage_timeout(&self, stage: u8, ticks: u32) {
+        debug_assert!(stage < 4);
+        self.write(WDT_CONFIG2 + stage as usize * 4, ticks);
+    }
+
+    /// Set what `stage` does when it times out: 0 off, 1 interrupt, 2 reset the
+    /// CPU, 3 reset the system.
+    pub(crate) fn set_stage_action(&self, stage: u8, action: u32) {
+        debug_assert!(stage < 4 && action < 4);
+        let shift = WDT_STG0_SHIFT - stage as u32 * 2;
+        self.modify(WDT_CONFIG0, |v| {
+            (v & !(WDT_STG_MASK << shift)) | (action << shift)
+        });
+    }
+
+    /// Ask the hardware to latch the configuration written above.
+    pub(crate) fn update(&self) {
+        self.modify(WDT_CONFIG0, |v| v | WDT_CONF_UPDATE_EN);
     }
 }
