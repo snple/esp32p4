@@ -52,15 +52,16 @@
 //!       │
 //!       ├── GPIO ────────┐
 //!       ├── IO_MUX ──────┼──► Pins::init() ──► pins.pin::<N>()
-//!       ├── HP_SYS_CLKRST┘                          │
-//!       │                                           ├──► led.into_output()
+//!       │                │                          │
+//!       │  HP_SYS_CLKRST ┘  (borrowed)              ├──► led.into_output()
 //!       │                                           └──► button.into_input_pullup()
 //!       │
 //!       └── ...                                    unsafe { Pin::<N>::steal() } (ISR)
 //! ```
 //!
-//! 1. [`Pins`] is created by consuming `GPIO`, `IO_MUX` and `HP_SYS_CLKRST`; it
-//!    opens the register clocks and releases the IO MUX from reset.
+//! 1. [`Pins`] is created by consuming `GPIO` and `IO_MUX` and borrowing
+//!    `HP_SYS_CLKRST`; it opens the register clocks and releases the IO MUX
+//!    from reset.
 //! 2. [`Pins::pin()`] returns a `Pin<N>` token for a specific pin number.
 //! 3. Configuration methods take `&mut self`, I/O methods take `&self`.
 //!
@@ -70,7 +71,7 @@
 //!
 //! ```ignore
 //! let dp = Peripherals::take().unwrap();
-//! let pins = Pins::init(dp.GPIO, dp.IO_MUX, dp.HP_SYS_CLKRST);
+//! let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
 //!
 //! let mut led = pins.pin::<2>();
 //! led.into_output();
@@ -586,7 +587,7 @@ impl_pin!(53, high);
 ///
 /// ```ignore
 /// let dp = Peripherals::take().unwrap();
-/// let pins = Pins::init(dp.GPIO, dp.IO_MUX, dp.HP_SYS_CLKRST);
+/// let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
 ///
 /// let mut led = pins.pin::<2>();
 /// led.into_output();
@@ -597,13 +598,16 @@ impl_pin!(53, high);
 pub struct Pins {
     _gpio: GPIO,
     _io_mux: IO_MUX,
-    _clkrst: HP_SYS_CLKRST,
 }
 
 impl Pins {
     /// Initialise the GPIO subsystem.
     ///
-    /// Consumes the GPIO, IO MUX and clock/reset peripherals and:
+    /// Takes the GPIO and IO MUX peripherals — those are exclusively ours — and
+    /// borrows the clock/reset block, which only a few clock-gate bits are
+    /// flipped in and which other drivers such as
+    /// [`UsbSerialJtag::init`](crate::usb_serial_jtag::UsbSerialJtag::init) need
+    /// as well. Then:
     ///
     /// 1. opens the GPIO register clock (`GPIO_CLOCK_GATE.CLK_EN`);
     /// 2. opens the IO MUX clock gate (`HP_SYS_CLKRST.PERI_CLK_CTRL26`);
@@ -613,7 +617,7 @@ impl Pins {
     /// `HP_SYS_CLKRST` is needed because ESP32-P4 gates and resets the IO MUX
     /// from the HP system clock/reset block rather than from the IO MUX itself.
     #[inline]
-    pub fn init(gpio: GPIO, io_mux: IO_MUX, clkrst: HP_SYS_CLKRST) -> Self {
+    pub fn init(gpio: GPIO, io_mux: IO_MUX, clkrst: &HP_SYS_CLKRST) -> Self {
         gpio.clock_gate.set_clk_en();
 
         clkrst.peri_clk_ctrl26.set_reg_iomux_clk_en();
@@ -629,7 +633,6 @@ impl Pins {
         Self {
             _gpio: gpio,
             _io_mux: io_mux,
-            _clkrst: clkrst,
         }
     }
 
@@ -648,7 +651,7 @@ impl Pins {
 
     /// Release the underlying peripherals.
     #[inline]
-    pub fn release(self) -> (GPIO, IO_MUX, HP_SYS_CLKRST) {
-        (self._gpio, self._io_mux, self._clkrst)
+    pub fn release(self) -> (GPIO, IO_MUX) {
+        (self._gpio, self._io_mux)
     }
 }

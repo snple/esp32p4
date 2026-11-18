@@ -2,7 +2,8 @@
 //!
 //! This is the same port `espflash` uses to flash the chip, so `espflash
 //! monitor` — or any terminal on the resulting `/dev/ttyACM*` — works without
-//! extra wiring.
+//! extra wiring. The LED on GPIO2 keeps blinking, which also shows that the
+//! GPIO and USB drivers share `HP_SYS_CLKRST` through a borrow.
 //!
 //! ```text
 //! cargo run --bin usb_serial
@@ -21,14 +22,20 @@ defmt::timestamp!("{=u64:us}", esp32p4::delay::micros());
 use core::fmt::Write;
 
 use esp32p4::delay::Delay;
+use esp32p4::gpio::Pins;
 use esp32p4::main;
 use esp32p4::pac::Peripherals;
 use esp32p4::usb_serial_jtag::UsbSerialJtag;
+
+const LED_PIN: u32 = 2;
 
 #[main]
 fn main() -> ! {
     let dp = Peripherals::take().unwrap();
     let mut serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
+    let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
+    let mut led = pins.pin::<LED_PIN>();
+    led.into_output();
     let delay = Delay::init(dp.SYSTIMER);
 
     writeln!(serial, "\r\nESP32-P4 USB Serial/JTAG ready").ok();
@@ -46,6 +53,7 @@ fn main() -> ! {
             serial.flush();
         }
 
+        led.toggle();
         writeln!(serial, "tick {ticks}").ok();
         ticks = ticks.wrapping_add(1);
         delay.delay_ms(1000);

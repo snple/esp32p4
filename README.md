@@ -27,7 +27,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `psram` | 初始化封装内 PSRAM，整体作为全局堆使用 |
 | `psram_split` | 把 PSRAM 分成「cached 全局堆 + uncached DMA 池」两部分 |
 | `defmt_log` | 用 `defmt-rtt` 输出日志（需 `--features defmt`，JTAG 读取） |
-| `usb_serial` | 通过 USB Serial/JTAG 打印，并回显主机发送的字节 |
+| `usb_serial` | 通过 USB Serial/JTAG 打印并回显，同时翻转 GPIO2（两个驱动共享 `HP_SYS_CLKRST`） |
 | `defmt_usb` | `defmt` 日志直接走 USB Serial/JTAG（需 `--features defmt-usb`，`espflash monitor` 可见） |
 
 ## 快速开始
@@ -46,7 +46,7 @@ use esp32p4::pac::Peripherals;
 #[main]
 fn main() -> ! {
     let dp = Peripherals::take().unwrap();
-    let pins = Pins::init(dp.GPIO, dp.IO_MUX, dp.HP_SYS_CLKRST);
+    let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
     let mut led = pins.pin::<2>();
     led.into_output();
     let delay = Delay::init(dp.SYSTIMER);
@@ -109,6 +109,8 @@ let n = serial.read(&mut buf);    // 主机发来的字节；没有就返回 0
 - 无法区分「主机很忙」和「没有插线」，因此除 `write_byte` 外的接口都带约
   10 ms 超时：`write` 返回实际写入字节数，`flush` 返回这一包是否被取走。
   `write_byte` 在 FIFO 满且无主机时会一直自旋（文档已注明）。
+- `HP_SYS_CLKRST` 是借用而不是独占的，所以 USB Serial、GPIO（`Pins::init`）等驱动
+  可以同时初始化。
 - USB Serial/JTAG 与 `USB_WRAP` 的 OTG FS 共享两个全速 PHY，默认占用 PHY 0；
   两个口同时使用时才需要 `UsbSerialJtag::select_phy`。
 

@@ -24,7 +24,7 @@
 //! #[main]
 //! fn main() -> ! {
 //!     let dp = Peripherals::take().unwrap();
-//!     let pins = Pins::init(dp.GPIO, dp.IO_MUX, dp.HP_SYS_CLKRST);
+//!     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
 //!     let mut led = pins.pin::<2>();
 //!     led.into_output();
 //!
