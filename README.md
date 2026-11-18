@@ -406,7 +406,7 @@ interrupt::free(|cs| COUNTER.borrow(cs).set(0));
 | 模块 | 硬件 | 计数单位 | 用途 |
 |------|------|----------|------|
 | [`time`](esp32p4/src/time.rs) | `SYSTIMER` unit 0 | 16 MHz tick（62.5 ns） | 单调时钟：`Instant` / `Duration`；52 位，约 8.9 年回绕 |
-| [`timer`](esp32p4/src/timer.rs) | `TIMG0` / `TIMG1`，各 2 路 | 可配预分频，默认 1 µs | 一次性 / 周期性闹钟，带中断与自动重载 |
+| [`timer`](esp32p4/src/timer/mod.rs) | `TIMG0` / `TIMG1`，各 2 路 | 可配预分频，默认 1 µs | 一次性 / 周期性闹钟，带中断与自动重载 |
 
 `time` 只读计数器，永远自由运行；`Delay` 在它上面借 comparator 0 睡到指定 tick。
 
@@ -427,7 +427,7 @@ let elapsed: Duration = start.elapsed();   // 与 delay::micros() 同一个时�
   `enable_interrupt(line, handler)` 内部走 `interrupt::claim`，线被占用会 panic。
 
 ```rust
-let (mut fast, mut slow) = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST).split();
+let (fast, slow) = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST).split();
 
 fast.enable_interrupt(CpuInterrupt::new(21), tick);      // CPU 线 21
 fast.start_periodic(Duration::from_millis(100));
@@ -438,6 +438,26 @@ slow.start_periodic(Duration::from_secs(1));
 
 unsafe { interrupt::enable() };
 ```
+
+### 两个层次：`Timer` 与 `TimerHandle`
+
+`Timer` 是拥有者：它借用 `HP_SYS_CLKRST`、记住时钟源与预分频、在开中断时持有 CPU 线。
+所有寄存器级操作放在 `TimerHandle` 上——`Copy` 值、方法全取 `&self`，`Timer` 通过 `Deref`
+把它暴露出来，所以两者是同一套 API（`timer.counter()` 编译成对 handle 的调用）。
+
+中断里没有 `&Timer`，用 `TimerHandle::steal` 重建一个（和 `Pin::<N>::steal()` 同一个模式）：
+
+```rust
+fn overrun() {
+    // SAFETY: main 里的 Timer 一直活着，且这里只读计数器、重设闹钟。
+    let timer = unsafe { TimerHandle::steal(Interrupt::TG0_T0) };
+    OVERRUNS.fetch_add(1, Ordering::Relaxed);
+    timer.set_alarm(timer.counter() + PERIOD_TICKS);
+}
+```
+
+`Timer::handle()` 是安全版本：拿到副本后可以放进 `static`（`TimerHandle::steal` 是
+`const unsafe fn`，`Steal<TimerHandle>` 因此能直接 const 初始化），主循环和中断各用各的副本。
 
 厂商 SVD 只描述每个 TIMG 的 timer 0，timer 1 落在保留区里，所以这组寄存器没有走 PAC：
 [`timer/regs.rs`](esp32p4/src/timer/regs.rs) 按 TRM 第 18 章手写了偏移与位域

@@ -23,11 +23,11 @@ defmt::timestamp!("{=u64:us}", esp32p4::delay::micros());
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use esp32p4::gpio::Pins;
-use esp32p4::interrupt::{self, CpuInterrupt};
+use esp32p4::interrupt::{self, CpuInterrupt, Interrupt};
 use esp32p4::main;
 use esp32p4::pac::Peripherals;
 use esp32p4::time::Duration;
-use esp32p4::timer::{Direction, TimerGroup0};
+use esp32p4::timer::{Direction, TimerGroup0, TimerHandle};
 
 const LED_PIN: u32 = 2;
 /// CPU lines this example borrows out of the 32 the CLIC has.
@@ -36,9 +36,16 @@ const SLOW_LINE: CpuInterrupt = CpuInterrupt::new(22);
 
 static FAST_TICKS: AtomicU32 = AtomicU32::new(0);
 static SLOW_TICKS: AtomicU32 = AtomicU32::new(0);
+/// Low half of the first timer's counter, sampled by the handler.
+static FAST_COUNTER: AtomicU32 = AtomicU32::new(0);
 
 fn fast_tick() {
     FAST_TICKS.fetch_add(1, Ordering::Relaxed);
+
+    // The handler does not own the timer, but a handle is enough to read it.
+    // SAFETY: `main` keeps this timer alive for the whole program.
+    let timer = unsafe { TimerHandle::steal(Interrupt::TG0_T0) };
+    FAST_COUNTER.store(timer.counter() as u32, Ordering::Relaxed);
 }
 
 fn slow_tick() {
@@ -52,7 +59,7 @@ fn main() -> ! {
     let mut led = pins.pin::<LED_PIN>();
     led.into_output();
 
-    let (mut fast, mut slow) = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST).split();
+    let (fast, slow) = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST).split();
 
     // 100 ms, counting up from zero: the counter restarts on every alarm, so
     // the time spent in the handler does not accumulate.
@@ -83,8 +90,9 @@ fn main() -> ! {
 
                 #[cfg(feature = "defmt")]
                 defmt::info!(
-                    "fast {} slow {} elapsed {}us",
+                    "fast {} at {} slow {} elapsed {}us",
                     fast_ticks,
+                    FAST_COUNTER.load(Ordering::Relaxed),
                     SLOW_TICKS.load(Ordering::Relaxed),
                     started.elapsed().as_micros()
                 );

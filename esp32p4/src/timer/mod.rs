@@ -15,7 +15,7 @@
 //!
 //! Each timer has its own matrix source, so a handler does not have to work out
 //! which timer fired; the two timers of a group still share the group's
-//! interrupt enable/status registers, which [`Timer`] handles for you.
+//! interrupt enable/status registers, which the driver handles for you.
 //!
 //! Unlike `SYSTIMER`, these counters are not free-running across the whole
 //! program: they stop, reload and reset on request. Use them for alarms and
@@ -25,10 +25,31 @@
 //! talks to the registers through a hand-written register layer (`regs.rs`),
 //! derived from the TRM.
 //!
+//! # Two levels of handle
+//!
+//! [`Timer`] owns a counter: it borrows the clock controller, remembers the
+//! clock source and prescaler, and owns the CPU line when an interrupt is
+//! enabled. Every register-level operation lives on [`TimerHandle`] instead,
+//! which is a plain `Copy` value whose methods all take `&self`, so a copy can
+//! be kept in a `static` or rebuilt inside an interrupt handler with
+//! [`TimerHandle::steal`]. [`Timer`] dereferences to its handle, so both expose
+//! one API.
+//!
+//! ```ignore
+//! const PERIOD_TICKS: u64 = 500_000; // 500 ms at 1 MHz
+//!
+//! fn overrun() {
+//!     // SAFETY: `main` created this timer and keeps it for the whole program.
+//!     let timer = unsafe { TimerHandle::steal(Interrupt::TG0_T0) };
+//!     OVERRUNS.fetch_add(1, Ordering::Relaxed);
+//!     timer.set_alarm(timer.counter() + PERIOD_TICKS);
+//! }
+//! ```
+//!
 //! # Example
 //!
 //! ```ignore
-//! use esp32p4::interrupt::{self, CpuInterrupt, Level};
+//! use esp32p4::interrupt::{self, CpuInterrupt};
 //! use esp32p4::time::Duration;
 //! use esp32p4::timer::TimerGroup0;
 //!
@@ -36,16 +57,19 @@
 //!     // Runs in interrupt context: keep it short.
 //! }
 //!
-//! let (mut timer, _unused) = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST).split();
+//! let (timer, _unused) = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST).split();
 //! timer.enable_interrupt(CpuInterrupt::new(21), tick);
 //! timer.start_periodic(Duration::from_millis(500));
 //! interrupt::enable();
 //! ```
 
+use core::cell::{Cell, RefCell};
+use core::ops::Deref;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use esp32p4_pac::{HP_SYS_CLKRST, TIMG0, TIMG1};
 
+use crate::Steal;
 use crate::interrupt::{self, CpuInterrupt, Interrupt, InterruptHandler, Level};
 use crate::time::{self, Duration};
 
@@ -207,8 +231,8 @@ impl<'d> TimerGroup0<'d> {
     /// Hand out the group's two timers, each reset and clocked from the crystal.
     pub fn split(self) -> (Timer<'d>, Timer<'d>) {
         (
-            Timer::new(GROUP0_BASE, 0, 0, self.clkrst),
-            Timer::new(GROUP0_BASE, 0, 1, self.clkrst),
+            Timer::new(TimerHandle::new(0, 0), self.clkrst),
+            Timer::new(TimerHandle::new(0, 1), self.clkrst),
         )
     }
 }
@@ -231,113 +255,78 @@ impl<'d> TimerGroup1<'d> {
     /// Hand out the group's two timers, each reset and clocked from the crystal.
     pub fn split(self) -> (Timer<'d>, Timer<'d>) {
         (
-            Timer::new(GROUP1_BASE, 1, 0, self.clkrst),
-            Timer::new(GROUP1_BASE, 1, 1, self.clkrst),
+            Timer::new(TimerHandle::new(1, 0), self.clkrst),
+            Timer::new(TimerHandle::new(1, 1), self.clkrst),
         )
     }
 }
 
-/// One general-purpose timer.
-pub struct Timer<'d> {
+/// A handle to one general-purpose timer's registers.
+///
+/// A handle owns nothing and claims nothing: every method takes `&self` and
+/// only touches the hardware, so a copy can be taken with [`Timer::handle`] and
+/// used where the owning [`Timer`] cannot go, or rebuilt in an interrupt
+/// handler with [`TimerHandle::steal`].
+#[derive(Clone, Copy)]
+pub struct TimerHandle {
     regs: Regs,
     group: u8,
     unit: u8,
-    clock: ClockSource,
-    divider: u32,
-    clkrst: &'d HP_SYS_CLKRST,
-    handler: Option<InterruptHandler>,
 }
 
-impl<'d> Timer<'d> {
-    /// Reset the timer to a known state: stopped, cleared, alarm disarmed,
-    /// crystal clock divided by 40, counting up.
-    fn new(group_base: usize, group: u8, unit: u8, clkrst: &'d HP_SYS_CLKRST) -> Self {
-        let regs = Regs::new(group_base, unit);
-        let clock = ClockSource::Xtal;
-
-        // The bootloader may have left the timer running with an alarm armed.
-        // Stop it before touching the prescaler, and open the clock gate before
-        // anything else so the configuration actually reaches the hardware.
-        regs.set_running(false);
-        program_clock(clkrst, group, unit, clock);
-        regs.set_divider(DEFAULT_DIVIDER);
-
-        regs.set_alarm_enabled(false);
-        regs.enable_interrupt(false);
-        regs.clear_interrupt();
-        regs.set_auto_reload(false);
-        regs.set_counting_up(true);
-        regs.set_reload_value(0);
-        regs.reload();
-
+impl TimerHandle {
+    const fn new(group: u8, unit: u8) -> Self {
+        let base = if group == 0 { GROUP0_BASE } else { GROUP1_BASE };
         Self {
-            regs,
+            regs: Regs::new(base, unit),
             group,
             unit,
-            clock,
-            divider: DEFAULT_DIVIDER,
-            clkrst,
-            handler: None,
+        }
+    }
+
+    /// The handle of the timer fed by `source`, or `None` if `source` is not a
+    /// general-purpose timer.
+    pub const fn from_source(source: Interrupt) -> Option<Self> {
+        let (group, unit) = match source {
+            Interrupt::TG0_T0 => (0, 0),
+            Interrupt::TG0_T1 => (0, 1),
+            Interrupt::TG1_T0 => (1, 0),
+            Interrupt::TG1_T1 => (1, 1),
+            _ => return None,
+        };
+        Some(Self::new(group, unit))
+    }
+
+    /// Take a handle without owning the timer, for use in an interrupt handler
+    /// or another module.
+    ///
+    /// Panics if `source` is not one of the four general-purpose timers.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that a [`Timer`] for this timer exists and stays
+    /// alive, so its clock is on and its prescaler is programmed, and that the
+    /// handle is not used to reconfigure the counter behind the owner's back.
+    pub const unsafe fn steal(source: Interrupt) -> Steal<Self> {
+        match Self::from_source(source) {
+            Some(handle) => Steal(handle),
+            None => panic!("not a general-purpose timer source"),
         }
     }
 
     /// Index of this timer in the HAL's tables.
-    fn index(&self) -> usize {
+    const fn index(&self) -> usize {
         self.group as usize * 2 + self.unit as usize
     }
 
     /// The interrupt matrix source feeding this timer.
-    fn source(&self) -> Interrupt {
+    const fn source(&self) -> Interrupt {
         match (self.group, self.unit) {
             (0, 0) => Interrupt::TG0_T0,
-            (0, _) => Interrupt::TG0_T1,
+            (0, 1) => Interrupt::TG0_T1,
             (1, 0) => Interrupt::TG1_T0,
             _ => Interrupt::TG1_T1,
         }
-    }
-
-    /// The clock feeding this timer's prescaler.
-    pub fn clock_source(&self) -> ClockSource {
-        self.clock
-    }
-
-    /// Switch the timer to another clock source.
-    ///
-    /// The prescaler divisor stays as it is, so the tick rate changes with the
-    /// source. Stop the counter first if it is running.
-    pub fn set_clock_source(&mut self, clock: ClockSource) {
-        program_clock(self.clkrst, self.group, self.unit, clock);
-        self.clock = clock;
-    }
-
-    /// The prescaler divisor, 2 to 65536.
-    pub fn divider(&self) -> u32 {
-        self.divider
-    }
-
-    /// Reprogram the prescaler. The counter must be stopped.
-    ///
-    /// The counter clock is `clock_source().frequency_hz() / divider`; the
-    /// default of 40 turns the 40 MHz crystal into a 1 MHz tick.
-    pub fn set_divider(&mut self, divider: u32) {
-        assert!(
-            (2..=65536).contains(&divider),
-            "the prescaler divides by 2..=65536"
-        );
-        assert!(
-            !self.regs.running(),
-            "stop the timer before changing its prescaler"
-        );
-        self.regs.set_divider(divider);
-        self.divider = divider;
-    }
-
-    /// The frequency of the counter clock, in Hz.
-    ///
-    /// Rounded down, so a prescaler that does not divide the source exactly
-    /// makes this slightly pessimistic.
-    pub fn tick_hz(&self) -> u32 {
-        self.clock.frequency_hz() / self.divider
     }
 
     /// Which way the counter runs.
@@ -350,17 +339,17 @@ impl<'d> Timer<'d> {
     }
 
     /// Count up or down. The change takes effect immediately.
-    pub fn set_direction(&mut self, direction: Direction) {
+    pub fn set_direction(&self, direction: Direction) {
         self.regs.set_counting_up(direction == Direction::Up);
     }
 
     /// Start the counter.
-    pub fn start(&mut self) {
+    pub fn start(&self) {
         self.regs.set_running(true);
     }
 
     /// Stop the counter; it keeps its value and resumes from it.
-    pub fn stop(&mut self) {
+    pub fn stop(&self) {
         self.regs.set_running(false);
     }
 
@@ -375,7 +364,7 @@ impl<'d> Timer<'d> {
     }
 
     /// Copy `value` into the counter immediately.
-    pub fn set_counter(&mut self, value: u64) {
+    pub fn set_counter(&self, value: u64) {
         assert!(value <= MAX_VALUE, "the counter is 54 bits wide");
         self.regs.set_reload_value(value);
         self.regs.reload();
@@ -383,15 +372,15 @@ impl<'d> Timer<'d> {
 
     /// Set the value the counter reloads from, now or at the next alarm.
     ///
-    /// This does not change the running counter; call [`Timer::reload`] or let
-    /// an auto-reload alarm do it.
-    pub fn set_reload_value(&mut self, value: u64) {
+    /// This does not change the running counter; call [`TimerHandle::reload`]
+    /// or let an auto-reload alarm do it.
+    pub fn set_reload_value(&self, value: u64) {
         assert!(value <= MAX_VALUE, "the counter is 54 bits wide");
         self.regs.set_reload_value(value);
     }
 
     /// Copy the reload value into the counter now.
-    pub fn reload(&mut self) {
+    pub fn reload(&self) {
         self.regs.reload();
     }
 
@@ -401,7 +390,7 @@ impl<'d> Timer<'d> {
     /// it re-arms the alarm after acknowledging it, which is what makes
     /// [`Timer::start_periodic`] periodic. If auto-reload is turned off while
     /// an alarm is armed, the next alarm is the last one.
-    pub fn set_auto_reload(&mut self, enable: bool) {
+    pub fn set_auto_reload(&self, enable: bool) {
         self.regs.set_auto_reload(enable);
     }
 
@@ -414,7 +403,7 @@ impl<'d> Timer<'d> {
     ///
     /// A value the counter has already passed fires the alarm immediately (for
     /// an up-counter); use [`Timer::set_alarm_in`] to avoid that.
-    pub fn set_alarm(&mut self, ticks: u64) {
+    pub fn set_alarm(&self, ticks: u64) {
         assert!(ticks <= MAX_VALUE, "the alarm is 54 bits wide");
         self.regs.set_alarm_value(ticks);
         // A request left over from an earlier alarm would fire immediately.
@@ -422,56 +411,9 @@ impl<'d> Timer<'d> {
         self.regs.set_alarm_enabled(true);
     }
 
-    /// Arm the alarm for `delay` from now.
-    pub fn set_alarm_in(&mut self, delay: Duration) {
-        let ticks = self.duration_to_ticks(delay);
-        let now = self.regs.counter();
-        let deadline = match self.direction() {
-            Direction::Up => now.saturating_add(ticks),
-            Direction::Down => now.saturating_sub(ticks),
-        };
-        self.set_alarm(deadline);
-    }
-
-    /// Arm a one-shot alarm `delay` from now and start the counter.
-    ///
-    /// The alarm fires once; the counter keeps running past the alarm value
-    /// unless auto-reload is enabled.
-    pub fn start_alarm(&mut self, delay: Duration) {
-        self.regs.set_auto_reload(false);
-        self.set_alarm_in(delay);
-        self.start();
-    }
-
-    /// Start a periodic alarm that repeats every `period`.
-    ///
-    /// The counter restarts from zero (or from `period`, when counting down)
-    /// each time the alarm fires, so the period does not accumulate the delay
-    /// of the interrupt handler. [`Timer::enable_interrupt`] decides what runs
-    /// at each alarm.
-    pub fn start_periodic(&mut self, period: Duration) {
-        let ticks = self.duration_to_ticks(period);
-
-        self.regs.set_running(false);
-        match self.direction() {
-            Direction::Up => {
-                self.regs.set_reload_value(0);
-                self.regs.reload();
-                self.set_alarm(ticks);
-            }
-            Direction::Down => {
-                self.regs.set_reload_value(ticks);
-                self.regs.reload();
-                self.set_alarm(0);
-            }
-        }
-        self.regs.set_auto_reload(true);
-        self.start();
-    }
-
     /// Disarm the alarm. A request that is already pending stays pending until
-    /// [`Timer::clear_alarm`].
-    pub fn disarm(&mut self) {
+    /// [`TimerHandle::clear_alarm`].
+    pub fn disarm(&self) {
         self.regs.set_alarm_enabled(false);
     }
 
@@ -486,8 +428,162 @@ impl<'d> Timer<'d> {
     }
 
     /// Drop a pending alarm request.
-    pub fn clear_alarm(&mut self) {
+    pub fn clear_alarm(&self) {
         self.regs.clear_interrupt();
+    }
+
+    /// Whether the alarm interrupt is unmasked.
+    pub fn interrupt_enabled(&self) -> bool {
+        self.regs.interrupt_enabled()
+    }
+}
+
+/// One general-purpose timer, owned by the caller.
+///
+/// Dereferences to the [`TimerHandle`] with the register-level API; the methods
+/// here are the ones that need the clock configuration or the CPU line.
+pub struct Timer<'d> {
+    handle: TimerHandle,
+    clock: Cell<ClockSource>,
+    divider: Cell<u32>,
+    clkrst: &'d HP_SYS_CLKRST,
+    handler: RefCell<Option<InterruptHandler>>,
+}
+
+impl Deref for Timer<'_> {
+    type Target = TimerHandle;
+
+    #[inline]
+    fn deref(&self) -> &TimerHandle {
+        &self.handle
+    }
+}
+
+impl<'d> Timer<'d> {
+    /// Reset the timer to a known state: stopped, cleared, alarm disarmed,
+    /// crystal clock divided by 40, counting up.
+    fn new(handle: TimerHandle, clkrst: &'d HP_SYS_CLKRST) -> Self {
+        let clock = ClockSource::Xtal;
+
+        // The bootloader may have left the timer running with an alarm armed.
+        // Stop it before touching the prescaler, and open the clock gate before
+        // anything else so the configuration actually reaches the hardware.
+        handle.stop();
+        program_clock(clkrst, handle.group, handle.unit, clock);
+        handle.regs.set_divider(DEFAULT_DIVIDER);
+
+        handle.disarm();
+        handle.regs.enable_interrupt(false);
+        handle.clear_alarm();
+        handle.set_auto_reload(false);
+        handle.set_direction(Direction::Up);
+        handle.set_reload_value(0);
+        handle.reload();
+
+        Self {
+            handle,
+            clock: Cell::new(clock),
+            divider: Cell::new(DEFAULT_DIVIDER),
+            clkrst,
+            handler: RefCell::new(None),
+        }
+    }
+
+    /// A copy of this timer's register handle, for use outside the owning scope.
+    #[inline]
+    pub fn handle(&self) -> TimerHandle {
+        self.handle
+    }
+
+    /// The clock feeding this timer's prescaler.
+    pub fn clock_source(&self) -> ClockSource {
+        self.clock.get()
+    }
+
+    /// Switch the timer to another clock source.
+    ///
+    /// The prescaler divisor stays as it is, so the tick rate changes with the
+    /// source. Stop the counter first if it is running.
+    pub fn set_clock_source(&self, clock: ClockSource) {
+        program_clock(self.clkrst, self.handle.group, self.handle.unit, clock);
+        self.clock.set(clock);
+    }
+
+    /// The prescaler divisor, 2 to 65536.
+    pub fn divider(&self) -> u32 {
+        self.divider.get()
+    }
+
+    /// Reprogram the prescaler. The counter must be stopped.
+    ///
+    /// The counter clock is `clock_source().frequency_hz() / divider`; the
+    /// default of 40 turns the 40 MHz crystal into a 1 MHz tick.
+    pub fn set_divider(&self, divider: u32) {
+        assert!(
+            (2..=65536).contains(&divider),
+            "the prescaler divides by 2..=65536"
+        );
+        assert!(
+            !self.is_running(),
+            "stop the timer before changing its prescaler"
+        );
+        self.handle.regs.set_divider(divider);
+        self.divider.set(divider);
+    }
+
+    /// The frequency of the counter clock, in Hz.
+    ///
+    /// Rounded down, so a prescaler that does not divide the source exactly
+    /// makes this slightly pessimistic.
+    pub fn tick_hz(&self) -> u32 {
+        self.clock.get().frequency_hz() / self.divider.get()
+    }
+
+    /// Arm the alarm for `delay` from now.
+    pub fn set_alarm_in(&self, delay: Duration) {
+        let ticks = self.duration_to_ticks(delay);
+        let now = self.counter();
+        let deadline = match self.direction() {
+            Direction::Up => now.saturating_add(ticks),
+            Direction::Down => now.saturating_sub(ticks),
+        };
+        self.set_alarm(deadline);
+    }
+
+    /// Arm a one-shot alarm `delay` from now and start the counter.
+    ///
+    /// The alarm fires once; the counter keeps running past the alarm value
+    /// unless auto-reload is enabled.
+    pub fn start_alarm(&self, delay: Duration) {
+        self.set_auto_reload(false);
+        self.set_alarm_in(delay);
+        self.start();
+    }
+
+    /// Start a periodic alarm that repeats every `period`.
+    ///
+    /// The counter restarts from zero (or from `period`, when counting down)
+    /// each time the alarm fires, so the period does not accumulate the delay
+    /// of the interrupt handler. [`Timer::enable_interrupt`] decides what runs
+    /// at each alarm.
+    pub fn start_periodic(&self, period: Duration) {
+        let ticks = self.duration_to_ticks(period);
+
+        self.stop();
+        match self.direction() {
+            Direction::Up => {
+                self.set_reload_value(0);
+                self.reload();
+                self.set_alarm(ticks);
+            }
+            Direction::Down => {
+                self.set_reload_value(ticks);
+                self.reload();
+                self.set_alarm(0);
+            }
+        }
+        self.set_auto_reload(true);
+        self.start();
     }
 
     /// Route this timer's alarm to `line` and call `handler` in interrupt
@@ -495,40 +591,36 @@ impl<'d> Timer<'d> {
     ///
     /// Claims the line the way [`interrupt::claim`] does, so the timer panics if
     /// the line is already taken. The alarm still has to be armed with
-    /// [`Timer::set_alarm`], [`Timer::start_alarm`] or
+    /// [`TimerHandle::set_alarm`], [`Timer::start_alarm`] or
     /// [`Timer::start_periodic`], and global interrupts have to be enabled with
     /// [`interrupt::enable`].
-    pub fn enable_interrupt(&mut self, line: CpuInterrupt, handler: fn()) {
+    pub fn enable_interrupt(&self, line: CpuInterrupt, handler: fn()) {
         assert!(
-            self.handler.is_none(),
+            self.handler.borrow().is_none(),
             "this timer already has an interrupt handler"
         );
 
-        let index = self.index();
+        let index = self.handle.index();
         HANDLERS[index].store(handler as usize, Ordering::Release);
 
         // SAFETY: the shim only touches this timer's status bits before calling
         // the user's function, and `claim` makes sure no other driver uses the
         // line.
-        let claimed = unsafe { interrupt::claim(self.source(), line, Level::LOW, SHIMS[index]) };
+        let claimed =
+            unsafe { interrupt::claim(self.handle.source(), line, Level::LOW, SHIMS[index]) };
         claimed.enable();
-        self.regs.clear_interrupt();
-        self.regs.enable_interrupt(true);
-        self.handler = Some(claimed);
+        self.clear_alarm();
+        self.handle.regs.enable_interrupt(true);
+        *self.handler.borrow_mut() = Some(claimed);
     }
 
     /// Mask the alarm interrupt and give its CPU line back.
-    pub fn disable_interrupt(&mut self) {
-        self.regs.enable_interrupt(false);
-        self.regs.clear_interrupt();
-        HANDLERS[self.index()].store(0, Ordering::Release);
+    pub fn disable_interrupt(&self) {
+        self.handle.regs.enable_interrupt(false);
+        self.clear_alarm();
+        HANDLERS[self.handle.index()].store(0, Ordering::Release);
         // Dropping the handler masks the line, forgets the shim and releases it.
-        self.handler = None;
-    }
-
-    /// Whether the alarm interrupt is unmasked.
-    pub fn interrupt_enabled(&self) -> bool {
-        self.regs.interrupt_enabled()
+        self.handler.borrow_mut().take();
     }
 
     /// Convert a span to timer ticks, rounding down but never to zero.
@@ -541,10 +633,10 @@ impl<'d> Timer<'d> {
 impl Drop for Timer<'_> {
     fn drop(&mut self) {
         // A dropped timer must not keep running or poking the interrupt matrix.
-        self.regs.set_alarm_enabled(false);
-        self.regs.enable_interrupt(false);
-        self.regs.clear_interrupt();
-        self.regs.set_running(false);
-        HANDLERS[self.index()].store(0, Ordering::Release);
+        self.handle.disarm();
+        self.handle.regs.enable_interrupt(false);
+        self.handle.clear_alarm();
+        self.handle.stop();
+        HANDLERS[self.handle.index()].store(0, Ordering::Release);
     }
 }
