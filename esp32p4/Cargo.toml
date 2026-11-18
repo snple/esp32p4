@@ -19,6 +19,7 @@ pastey.workspace = true
 esp32p4-pac.workspace = true
 esp32p4-rt.workspace = true
 esp32p4-macro.workspace = true
+linked_list_allocator = "0.10"
 
 [package.metadata.docs.rs]
 targets = ["riscv32imafc-unknown-none-elf"]

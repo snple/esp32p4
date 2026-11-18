@@ -85,3 +85,9 @@ SECTIONS
 }
 
 PROVIDE(__global_pointer$ = MIN(_sdata + 0x800, _edata));
+
+/* Mask ROM entry points used by the PSRAM bring-up (addresses from
+ * ESP-IDF's `esp32p4.rom.ld`; the ROM lives at 0x4FC0_0000). */
+PROVIDE(esp_rom_spi_cmd_config = 0x4fc00108);
+PROVIDE(esp_rom_spi_set_op_mode = 0x4fc00110);
+PROVIDE(Cache_Invalidate_Addr = 0x4fc003e4);

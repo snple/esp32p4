@@ -13,7 +13,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | [`esp32p4-pac`](esp32p4-pac/) | **PAC**：由 `esp32p4.svd` 生成，提供寄存器块、字段常量和访问器。勿手改 |
 | [`esp32p4-rt`](esp32p4-rt/) | **运行时**：`_start`、trap 入口、`link.x`、CSR/汇编封装 |
 | [`esp32p4-macro`](esp32p4-macro/) | **过程宏**：`#[main]` |
-| [`esp32p4`](esp32p4/) | **HAL**：GPIO / IO MUX、SYSTIMER 延时 |
+| [`esp32p4`](esp32p4/) | **HAL**：GPIO / IO MUX、SYSTIMER 延时、复位、封装内 PSRAM |
 | [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink |
 | [`xtask`](xtask/) | 构建辅助：`cargo xtask gen-pac` |
 
@@ -100,6 +100,12 @@ cargo xtask gen-pac --check    # 仅校验生成代码是否与 SVD 一致
 生成器会展开 ESP SVD 的 `<dim>` 寄存器数组（`GPIO%s`、`IV_MEM[%s]` 等），
 并处理数组元素与普通寄存器重名的情况。生成代码已自动 `rustfmt`。
 
+## 工具链
+
+- Rust **1.100+**（`workspace.package.rust-version = "1.100"`）：用到了 1.100
+  稳定的 `core::alloc::Allocator`（`Vec::new_in` / `Box::new_in` 指定分配器）。
+- 默认 target：`riscv32imafc-unknown-none-elf`。
+
 ## 验证
 
 ```bash
@@ -125,6 +131,7 @@ espflash save-image --chip esp32p4 \
 - GPIO0–GPIO53 的简单推挽输出/输入、IO MUX 配置
 - SYSTIMER 阻塞延时
 - 复位控制与复位原因（`system::software_reset` / `software_reset_cpu` / `reset_reason`，纯寄存器实现）
+- 封装内 PSRAM 初始化（MPLL 250 MHz、16/32 MB 自动检测、MMU 映射、`PsramAllocator`）
 - `#[main]`（注入 `startup::init()`：关 bootloader 遗留的 RTC/MWDT 看门狗、停放 core 1、
   启用分支预测器）、默认 panic handler
 - stable `riscv32imafc-unknown-none-elf`（RV32IMAFC、ilp32f 硬浮点 ABI），启动时使能 FPU

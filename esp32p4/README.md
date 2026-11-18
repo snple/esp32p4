@@ -10,6 +10,7 @@ ESP32-P4 的最小硬件抽象层。
 | `gpio` | `Pins` 控制器、`Pin<N>` 句柄（输入/输出/上拉/驱动强度）；GPIO0–GPIO53 |
 | `delay` | 基于 `SYSTIMER` unit 0 的 `delay_us` / `delay_ms` |
 | `system` | `Cpu`/`ResetReason` 枚举、`reset_reason`、`software_reset`、`software_reset_cpu` |
+| `psram` | 封装内 PSRAM 初始化（MPLL 250 MHz、16/32 MB 自动检测、MMU 映射）与 `PsramAllocator` |
 
 `lib.rs` 统一重导出：
 
@@ -64,6 +65,53 @@ software_reset(); // 不复返
 `software_reset()` 复位整个 HP 域（两个核、外设、HP 内存），LP/RTC 域保留状态，
 随后 ROM bootloader 重新从 flash 加载应用；`software_reset_cpu()` 只复位单个核，
 外设状态保留，需要调用者自己清理。
+
+## PSRAM
+
+封装内的 16 MB / 32 MB PSRAM 上电后不可见，`psram::Psram::init` 会完成全部初始化
+（PHY LDO → 时钟 → 复位 → 引脚 → 控制器 → Mode Register → MMU 映射）：
+
+```rust
+use esp32p4::psram::{Psram, PsramAllocator, PsramConfig};
+
+#[global_allocator]
+static HEAP: PsramAllocator = PsramAllocator::empty();
+
+let psram = Psram::init(PsramConfig::default()).unwrap(); // 250 MHz, 自动检测容量
+HEAP.init(&psram);
+
+let boxed = alloc::boxed::Box::new(42u32);
+```
+
+Rust 1.100 起 `core::alloc::Allocator` 已稳定，`PsramAllocator` 同时实现
+`GlobalAlloc` 和 `Allocator`，可以只把部分集合放到 PSRAM：
+
+```rust
+let mut v: Vec<u32, &PsramAllocator> = Vec::new_in(&HEAP);
+```
+
+| 窗口 | 地址 | 用途 |
+|------|------|------|
+| cached | `0x4800_0000` 起 | 普通读写，经 L2 cache |
+| uncached | `0x8800_0000` 起 | DMA / 自检，`Psram::uncached_base()` |
+
+`PsramAllocator::init_raw` 可以在窗口内开多个互不重叠的子堆，例如把尾部一段留给
+DMA（示例见 `esp32p4-examples/src/psram_split.rs`）：
+
+```rust
+unsafe {
+    HEAP.init_raw(psram.base(), heap_len);                             // cached
+    DMA_POOL.init_raw(psram.uncached_base().add(heap_len), dma_len);   // uncached
+}
+let mut buf: Vec<u8, &PsramAllocator> = Vec::new_in(&DMA_POOL);        // 无需 cache 维护
+```
+
+- 时钟：MPLL 500 MHz → 总线 250 MHz（`psram_clk_src_sel = MPLL`）。MPLL 的倍频写在
+  模拟寄存器里，由 `psram::regi2c`（`LP_I2C_ANA_MST`）写入，不依赖 ROM。
+- Mode Register（MR0/MR2/MR4/MR8）读写走 `SPI1` 直接命令，需要 ROM 的
+  `esp_rom_spi_set_op_mode` / `esp_rom_spi_cmd_config`（在 `link.x` 里 `PROVIDE` 为固定地址）。
+- `PsramConfig::rev3_workaround`：ESP32-P4 v3.0（ECO5）需要，默认关闭。
+- `PsramConfig::verify`（默认开）会用 uncached 别名写读校验，失败返回 `Error::VerifyFailed`。
 
 ## GPIO
 
@@ -124,3 +172,5 @@ delay.delay_ms(500);
 - 没有 UART/SPI/I2C/DMA/RMT 等驱动。
 - `system` 的复位路径未经硬件验证（无板可测）；复位码表按 TRM 12-RESCLK 与
   ESP-IDF `soc/reset_reasons.h` 对齐。
+- PSRAM 初始化同样未上板验证：寄存器序列对齐 ESP-IDF/esp-hal，容量检测与自检都
+  在 `Psram::init` 内完成；v3.0 (ECO5) 芯片需要打开 `PsramConfig::rev3_workaround`。

@@ -238,7 +238,8 @@ bootloader 的具体版本。新增外设时，如果它有自己的时钟门控
 ## 10. 命名与文档风格
 
 - 模块名与外设缩写一致：`gpio`、`delay`、`systimer`、`io_mux`；跨外设的系统级功能放
-  `system`（复位、复位原因、核间信息）。
+  `system`（复位、复位原因、核间信息）。带子部件的模块用目录形式（`psram/` 下
+  `mod.rs` + `regi2c.rs`/`mpll.rs`/`pads.rs`/`mspi.rs`/`alloc.rs`）。
 - 类型：`Pins`（控制器）、`Pin<N>`（零大小令牌，配置 `&mut self`、读写 `&self`，
   `into_output()` 返回 `&Self`，与 rp2350 一致）。
 - 模块文档统一结构：一段概述 → `## Features` 列表 → `## Example`
