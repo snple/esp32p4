@@ -1,7 +1,9 @@
 //! Logs over RTT with `defmt`.
 //!
-//! The HAL emits its own `debug`/`info` messages on the same channel, so the
-//! PSRAM bring-up can be watched step by step.
+//! This is the one example wired for RTT; every other example takes the
+//! default `defmt-usb` transport. The HAL emits its own `debug`/`info` messages
+//! on the same channel, so its bring-up steps appear alongside the
+//! application's output.
 //!
 //! Requires a debugger attached over JTAG (`probe-rs run --chip esp32p4 ...`);
 //! RTT data is not visible over the UART used by `espflash monitor`.
@@ -23,18 +25,12 @@ defmt::timestamp!("{=u64:us}", esp32p4::delay::micros());
 use esp32p4::delay::Delay;
 use esp32p4::main;
 use esp32p4::pac::Peripherals;
-use esp32p4::psram::{Psram, PsramConfig};
 
 #[main]
 fn main() -> ! {
     let dp = Peripherals::take().unwrap();
 
     defmt::info!("hello from ESP32-P4");
-
-    match Psram::init(PsramConfig::default()) {
-        Ok(psram) => defmt::info!("PSRAM: {} bytes available", psram.size()),
-        Err(err) => defmt::error!("PSRAM: init failed: {}", err),
-    }
 
     let delay = Delay::init(dp.SYSTIMER);
     let mut ticks = 0u32;

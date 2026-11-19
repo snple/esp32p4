@@ -26,8 +26,10 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 |--------|------|
 | `blink` | GPIO2 每 500 ms 翻转一次 |
 | `gpio_interrupt` | GPIO3 下降沿中断（`GPIO_INTR0` + CPU 线 21）翻转 GPIO2 |
-| `efuse` | 打印芯片版本、MAC、Flash/PSRAM 参数，并用版本号配置时钟树（RTT，需 `--no-default-features --features defmt-rtt`） |
-| `mmu` | 把 PSRAM 物理页 0 映射到 MMU 表项 512，验证 cached/uncached 别名（RTT，需 `--no-default-features --features defmt-rtt`） |
+| `efuse` | 打印芯片版本、MAC、Flash/PSRAM 参数，并用版本号配置时钟树 |
+| `mmu` | 把 PSRAM 物理页 0 映射到 MMU 表项 512，验证 cached/uncached 别名 |
+| `clock` | 打印时钟树的根/CPU/MEM/SYS/APB 频率与参考时钟状态 |
+| `tcm` | 用 `#[tcmfunc]`/`#[ramfunc]` 把代码放进 8 KB scratchpad / SRAM，并打印落点 |
 | `psram` | 初始化封装内 PSRAM，整体作为全局堆使用 |
 | `psram_split` | 把 PSRAM 分成「cached 全局堆 + uncached DMA 池」两部分 |
 | `defmt_log` | 用 `defmt-rtt` 输出日志（需 `--no-default-features --features defmt-rtt`，JTAG 读取） |
@@ -39,7 +41,6 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `watchdog` | `TIMG0` 的 MWDT：1 s 超时复位系统，主循环每 100 ms `feed()` 一次 |
 | `emac` | 初始化 RMII 以太网、自动协商、打印链路状态并收发 ARP 帧 |
 | `net_tcp_echo` | DHCP + TCP echo 服务器（需 `--features net`，无堆、无 async） |
-| `defmt_usb` | `defmt` 日志直接走 USB Serial/JTAG（默认 features 即可，`espflash monitor` 可见） |
 
 ## 快速开始
 
@@ -53,10 +54,12 @@ use esp32p4::delay::Delay;
 use esp32p4::gpio::Pins;
 use esp32p4::main;
 use esp32p4::pac::Peripherals;
+use esp32p4::usb_serial_jtag::UsbSerialJtag;
 
 #[main]
 fn main() -> ! {
     let dp = Peripherals::take().unwrap();
+    let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
     let mut led = pins.pin::<2>();
     led.into_output();
@@ -101,6 +104,11 @@ espflash save-image --chip esp32p4 \
 | `espflash monitor`（只插 USB 线） | `defmt-usb` | `espflash flash --chip esp32p4 --monitor` | USB Serial/JTAG（CDC-ACM），espflash 直接解码 |
 | `probe-rs run`（需要 JTAG 调试器） | `defmt-rtt` | `probe-rs run --chip esp32p4` | RAM 里的 RTT 缓冲，只有调试器能读 |
 
+panic 消息也走同一个 logger：默认 panic handler 先关中断，再用 `defmt` 输出
+`PanicInfo`，最后执行 `ebreak`。接了调试器就停在 panic 现场；没接调试器时
+breakpoint 异常进入 trap 入口，把 `mcause`/`mepc` 存进 `TRAP_CAUSE`/`TRAP_EPC`
+后停住核。
+
 两个 logger 各定义一份全局 `defmt` 符号，同时启用会链接失败（build script 会
 直接报 `mutually exclusive`）。`esp32p4-examples/.cargo/config.toml` 里的 runner
 也要跟着配对切换：
@@ -118,18 +126,21 @@ cd esp32p4-examples
 
 # A. 只插 USB 线：日志走 espflash（默认 features 就是 defmt-usb，
 #    帧前缀和 ELF 里的 LOG_FORMAT 标记让 espflash 自动按 defmt 解码）
-cargo run --bin blink          # HAL 自己的日志直接可见
-cargo run --bin defmt_usb
+cargo run --bin efuse          # HAL 和示例自己的日志都可见
 
 # B. 接了 JTAG 调试器：日志走 RTT（runner 也要换成 probe-rs）
 cargo run --bin defmt_log --no-default-features --features defmt-rtt
 ```
 
-默认 features 是 `defmt-usb` + `net`（`defmt` 由它隐含，走 espflash 工作流）。想默认改用
-probe-rs/RTT，把 [esp32p4-examples/Cargo.toml](esp32p4-examples/Cargo.toml) 里的
-`default` 改成 `["defmt", "defmt-rtt", "net"]`；纯 RTT 的示例（`defmt_log`、
-`clock`、`efuse`、`mmu`、`tcm`）声明了 `required-features = ["defmt-rtt"]`，
-默认配置下不会被构建。
+默认 features 是 `defmt-usb` + `net`（`defmt` 由它隐含，走 espflash 工作流）。
+除 `defmt_log` 外，所有示例都用默认的 `defmt-usb` transport，并在 `main` 开头
+调用 `UsbSerialJtag::init` 打开端口——logger 在时钟未打开时会直接丢帧，panic
+消息也一样。只有 `defmt_log` 声明了 `required-features = ["defmt-rtt"]`，
+是保留的 RTT 示例。
+
+想默认改用 probe-rs/RTT，把 [esp32p4-examples/Cargo.toml](esp32p4-examples/Cargo.toml)
+里的 `default` 改成 `["defmt", "defmt-rtt", "net"]`；各示例开头的
+`#[cfg(feature = "defmt-rtt")] use defmt_rtt as _;` 会让它们照常走 RTT。
 
 > `DEFMT_LOG` 必须保留（仓库已配成 `debug`）。defmt 1.x 在没有它时只编译 `error!`，
 > 所有 `info!`/`debug!` 会直接在编译期消失，看起来就像"日志没工作"。
@@ -168,9 +179,10 @@ let n = serial.read(&mut buf);    // 主机发来的字节；没有就返回 0
 - USB Serial/JTAG 与 `USB_WRAP` 的 OTG FS 共享两个全速 PHY，默认占用 PHY 0；
   两个口同时使用时才需要 `UsbSerialJtag::select_phy`。
 
-`defmt` 也可以直接走这个端口（示例 `defmt_usb`），这时日志用 `espflash monitor`
-就能看到，不需要调试器——详见[日志怎么才能看见](#日志怎么才能看见选一个-logger)。
-时钟未打开时 logger 丢弃日志，而不是去访问未上时钟的寄存器。
+`defmt` 默认就走这个端口（`defmt-usb`），日志用 `espflash monitor` 就能看到，
+不需要调试器——详见[日志怎么才能看见](#日志怎么才能看见选一个-logger)。示例都在
+`main` 开头调用 `UsbSerialJtag::init`；时钟未打开时 logger 丢弃日志，而不是去访问
+未上时钟的寄存器。
 
 ## USB OTG（设备模式）
 
@@ -773,7 +785,7 @@ espflash save-image --chip esp32p4 \
 - `defmt` 日志支持（`Format` 实现 + 关键路径日志 + 基于 `mstatus.MIE` 的
   `critical-section` 实现）
 - `#[main]`（注入 `startup::init()`：关 bootloader 遗留的 RTC/MWDT 看门狗、停放 core 1、
-  启用分支预测器）、默认 panic handler
+  启用分支预测器）、默认 panic handler（`defmt` 输出 + `ebreak`，无调试器时停在 trap）
 - stable `riscv32imafc-unknown-none-elf`（RV32IMAFC、ilp32f 硬浮点 ABI），启动时使能 FPU
 
 尚未实现：

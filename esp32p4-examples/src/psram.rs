@@ -1,14 +1,15 @@
 //! Initializes the in-package PSRAM and uses it as a heap.
 //!
-//! Success is indicated by a slow blink; if the bring-up or the read-back
-//! check fails, the panic handler parks the core with the LED off.
+//! Success is indicated by a slow blink; the PSRAM bring-up is logged over the
+//! USB Serial/JTAG port. If the read-back check fails, the panic handler parks
+//! the core with the LED off.
 
 #![no_std]
 #![no_main]
 
-// `--features defmt` turns on the HAL's log statements for every binary, so
-// each of them needs a logger and a timestamp source of its own: `defmt-rtt`
-// installs the RTT one, `defmt-usb` the USB Serial/JTAG one.
+// The default `defmt-usb` transport installs the USB Serial/JTAG logger; `main`
+// opens its port first so log statements are not dropped.
+// `--no-default-features --features defmt-rtt` selects RTT instead.
 #[cfg(feature = "defmt-rtt")]
 use defmt_rtt as _;
 #[cfg(feature = "defmt")]
@@ -24,6 +25,7 @@ use esp32p4::gpio::Pins;
 use esp32p4::main;
 use esp32p4::pac::Peripherals;
 use esp32p4::psram::{Psram, PsramAllocator, PsramConfig};
+use esp32p4::usb_serial_jtag::UsbSerialJtag;
 
 /// LED pin (GPIO2).
 const LED_PIN: u32 = 2;
@@ -34,6 +36,7 @@ static HEAP: PsramAllocator = PsramAllocator::empty();
 #[main]
 fn main() -> ! {
     let dp = Peripherals::take().unwrap();
+    let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
     let mut led = pins.pin::<LED_PIN>();
     led.into_output();

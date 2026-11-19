@@ -11,14 +11,19 @@ autobins = false
 
 [features]
 default = ["defmt-usb", "net"]
-# Turns on the `defmt` log statements in the HAL and the examples. A transport
-# has to be picked on top of it: exactly one of `defmt-rtt` and `defmt-usb`.
+# Turns on the `defmt` log statements in the HAL and the examples. The default
+# build uses the `defmt-usb` transport; exactly one of `defmt-rtt` and
+# `defmt-usb` may be enabled.
 defmt = ["esp32p4/defmt", "esp32p4-usb/defmt", "dep:defmt"]
 # Installs the `defmt-rtt` logger. Frames land in an RTT buffer in RAM, so only
-# a debug probe sees them: `probe-rs run --chip esp32p4 <elf>`.
+# a debug probe sees them: `probe-rs run --chip esp32p4 <elf>`. Used by the
+# `defmt_log` example, which is built with
+# `--no-default-features --features defmt-rtt`; every other example takes the
+# default `defmt-usb` transport.
 defmt-rtt = ["defmt", "dep:defmt-rtt"]
-# Installs the USB Serial/JTAG logger. `espflash monitor` decodes the frames, so
-# the flashing cable is all it takes. Mutually exclusive with `defmt-rtt`.
+# Installs the USB Serial/JTAG logger. This is the default transport:
+# `espflash monitor` decodes the frames, so the flashing cable is all it takes.
+# Mutually exclusive with `defmt-rtt`.
 defmt-usb = ["defmt", "esp32p4/defmt-usb"]
 # Synchronous TCP/IP over the EMAC (smoltcp), heap-free.
 net = ["esp32p4/net"]
@@ -44,12 +49,12 @@ path = "src/gpio_interrupt.rs"
 [[bin]]
 name = "efuse"
 path = "src/efuse.rs"
-required-features = ["defmt-rtt"]
+required-features = ["defmt"]
 
 [[bin]]
 name = "mmu"
 path = "src/mmu.rs"
-required-features = ["defmt-rtt"]
+required-features = ["defmt"]
 
 [[bin]]
 name = "psram"
@@ -67,12 +72,12 @@ required-features = ["defmt-rtt"]
 [[bin]]
 name = "clock"
 path = "src/clock.rs"
-required-features = ["defmt-rtt"]
+required-features = ["defmt"]
 
 [[bin]]
 name = "tcm"
 path = "src/tcm.rs"
-required-features = ["defmt-rtt"]
+required-features = ["defmt"]
 
 [[bin]]
 name = "emac"
@@ -106,8 +111,3 @@ path = "src/usb_cdc.rs"
 [[bin]]
 name = "usb_cdc_hs"
 path = "src/usb_cdc_hs.rs"
-
-[[bin]]
-name = "defmt_usb"
-path = "src/defmt_usb.rs"
-required-features = ["defmt-usb"]

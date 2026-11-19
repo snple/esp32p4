@@ -12,9 +12,9 @@
 #![no_std]
 #![no_main]
 
-// `--features defmt` turns on the HAL's log statements for every binary, so
-// each of them needs a logger and a timestamp source of its own: `defmt-rtt`
-// installs the RTT one, `defmt-usb` the USB Serial/JTAG one.
+// The default `defmt-usb` transport installs the USB Serial/JTAG logger; `main`
+// opens its port first so log statements are not dropped.
+// `--no-default-features --features defmt-rtt` selects RTT instead.
 #[cfg(feature = "defmt-rtt")]
 use defmt_rtt as _;
 #[cfg(feature = "defmt")]
@@ -22,6 +22,7 @@ defmt::timestamp!("{=u64:us}", esp32p4::delay::micros());
 
 use esp32p4::main;
 use esp32p4::pac::Peripherals;
+use esp32p4::usb_serial_jtag::UsbSerialJtag;
 use esp32p4_usb::class::cdc_acm::CdcAcm;
 use esp32p4_usb::p4::{HsResources, UsbHs};
 use esp32p4_usb::{UsbBusAllocator, UsbDeviceBuilder};
@@ -32,6 +33,7 @@ const MAX_PACKET: u16 = 512;
 #[main]
 fn main() -> ! {
     let dp = Peripherals::take().unwrap();
+    let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
 
     let allocator = UsbBusAllocator::new(UsbHs::new(HsResources {
         clkrst: &dp.HP_SYS_CLKRST,

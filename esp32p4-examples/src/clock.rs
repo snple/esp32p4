@@ -1,20 +1,18 @@
-//! Prints the clock tree over RTT.
-//!
-//! Requires a debugger attached over JTAG (`probe-rs run --chip esp32p4 ...`);
-//! RTT data is not visible over the UART used by `espflash monitor`.
-//!
-//! Build it with `--no-default-features --features defmt-rtt`:
+//! Prints the clock tree over the USB Serial/JTAG port.
 //!
 //! ```text
-//! cargo run --bin clock --no-default-features --features defmt-rtt
+//! cargo run --bin clock
 //! ```
 
 #![no_std]
 #![no_main]
 
+// The default `defmt-usb` transport installs the USB Serial/JTAG logger; `main`
+// opens its port first so log statements are not dropped.
+// `--no-default-features --features defmt-rtt` selects RTT instead.
 #[cfg(feature = "defmt-rtt")]
 use defmt_rtt as _;
-
+#[cfg(feature = "defmt")]
 defmt::timestamp!("{=u64:us}", esp32p4::delay::micros());
 
 use esp32p4::clock::{ClockTree, RefClock};
@@ -22,10 +20,12 @@ use esp32p4::delay::Delay;
 use esp32p4::main;
 use esp32p4::pac::Peripherals;
 use esp32p4::timer::TimerGroup0;
+use esp32p4::usb_serial_jtag::UsbSerialJtag;
 
 #[main]
 fn main() -> ! {
     let dp = Peripherals::take().unwrap();
+    let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
     let clocks = ClockTree::init(dp.HP_SYS_CLKRST, dp.LP_AON_CLKRST);
 
     // The drivers take the clock tree where they used to take the HP registers:
