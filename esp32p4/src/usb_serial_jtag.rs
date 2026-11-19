@@ -291,9 +291,9 @@ impl core::fmt::Write for UsbSerialJtag {
 ///
 /// `espflash monitor` decodes the frames without any extra hardware, which
 /// makes this the most convenient logger on a board that only has a USB-C
-/// connector. Enabling the `defmt-usb-logger` feature registers it as *the*
+/// connector. Enabling the `defmt-usb` feature registers it as *the*
 /// global logger, so it cannot be combined with `defmt-rtt`.
-#[cfg(feature = "defmt-usb-logger")]
+#[cfg(feature = "defmt-usb")]
 pub mod logger {
     use core::cell::UnsafeCell;
     use core::sync::atomic::{AtomicBool, Ordering};
@@ -301,6 +301,17 @@ pub mod logger {
     use esp32p4_pac::USB_DEVICE;
 
     use super::{EP1_CONF_WR_DONE, HOST_TIMEOUT_SPINS};
+
+    /// Tells `espflash` that the bytes leaving this port are `defmt` frames, so
+    /// its monitor decodes them instead of printing them raw.
+    ///
+    /// `espflash` reads the symbol from the ELF (the section is not part of the
+    /// image). This is the marker `esp-println` emits for its `defmt-espflash`
+    /// feature; without it a monitor needs an explicit `--log-format defmt`.
+    #[unsafe(link_section = ".espressif.metadata")]
+    #[used]
+    #[unsafe(export_name = "espflash.LOG_FORMAT")]
+    static LOG_FORMAT: [u8; 14] = *b"defmt-espflash";
 
     /// Global `defmt` logger writing to the USB Serial/JTAG port.
     #[defmt::global_logger]
@@ -425,6 +436,10 @@ pub mod logger {
             // SAFETY: the critical section guarantees exclusive access.
             unsafe {
                 STATE.restore.get().write(restore);
+                // Non-UTF-8 frame delimiter, the same one `esp-println` writes:
+                // it lets the host find frame boundaries even when plain text is
+                // interleaved on the same port.
+                sink(&[0xff, 0x00]);
                 (*STATE.encoder.get()).start_frame(sink);
             }
         }

@@ -132,6 +132,15 @@ SECTIONS
         *(.eh_frame_hdr)
         *(.comment)
     }
+
+    /* Metadata espflash reads from the ELF rather than from the image: the
+     * `espflash.LOG_FORMAT` symbol produced by the `defmt` USB logger lives
+     * here and tells espflash to decode the serial stream as `defmt` frames.
+     * Non-allocated, so it is not part of the flashed application. */
+    .espressif.metadata 0 (INFO) :
+    {
+        KEEP(*(.espressif.metadata));
+    }
 }
 
 PROVIDE(__global_pointer$ = MIN(_sdata + 0x800, _edata));
