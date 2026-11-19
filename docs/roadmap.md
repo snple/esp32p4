@@ -27,6 +27,7 @@
 | `usb_serial_jtag` | [usb_serial_jtag.rs](../esp32p4/src/usb_serial_jtag.rs) | USB Serial/JTAG 控制台 |
 | `system` / `startup` | [system.rs](../esp32p4/src/system.rs) / [startup.rs](../esp32p4/src/startup.rs) | 软复位、复位原因、看门狗与核 1 的启动清理 |
 | `cache` | [cache.rs](../esp32p4/src/cache.rs) | 只有 writeback/invalidate |
+| `tcm` | [tcm.rs](../esp32p4/src/tcm.rs) | 8 KB HP SPM（寄存器里叫 HP TCM）：`#[ramfunc]` / `#[tcmfunc]` / `#[tcmdata]` 放置、范围查询、奇偶校验初始化 |
 
 ## 2. 第 0 层：先补现有模块的缺口
 
@@ -73,6 +74,7 @@ I3C、UHCI、SOC_ETM（事件矩阵）、APM/访问权限、eFuse 编程、运�
 
 | 阶段 | 内容 | 验收 |
 |------|------|------|
+| 0 | eFuse / 芯片版本、MMU/cache 公共 API | `clock`/`psram` 不再需要手工参数 |
 | 1 | GPIO 信号矩阵 + GPIO 中断 | 引脚可以路由到任一外设信号；按键中断示例可编译 |
 | 2 | UART（含 LP UART） | 轮询与中断收发示例，README 与模块文档更新 |
 | 3 | eFuse / 芯片版本 | `clock` 与 `psram` 按版本判断，不再需要手工 `Sources` |

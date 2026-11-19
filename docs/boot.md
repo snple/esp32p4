@@ -65,12 +65,18 @@ MEMORY
 {
     ROM : ORIGIN = 0x40000020, LENGTH = 0x4000000 - 0x20
     RAM : ORIGIN = 0x4FF20000, LENGTH = 0x8DFC0
+    SPM : ORIGIN = 0x30100000, LENGTH = 0x2000
 }
 ```
 
 `0x40000020` 跳过 24 字节 image header + 8 字节第一个 segment header。
 `0x4FF20000` 是 bootloader 默认保留 128 KB L2 cache 后的 L2 RAM 起点；
 `0x4FFADFC0` 是可用 RAM 顶端（上方约 72 KB 留给 ROM BSS/stack）。
+
+`0x30100000` 是 8 KB HP SPM（寄存器里叫 HP TCM），同时也被 CPU 复位向量
+占用；ESP-IDF 的 `spm_idram_seg` 把整块交给应用，bootloader 的
+`verify_load_addresses()` 有专门的 `esp_ptr_in_spm()` 分支接受它。
+`link.x` 用它放 `#[tcmfunc]` / `#[tcmdata]` 的代码和数据。
 
 输出段顺序：
 
@@ -79,29 +85,49 @@ MEMORY
 .rodata          ROM  紧随其后
 .drom_gap        ROM  NOLOAD，仅推进地址
 .text            ROM  下一个 0x100 边界
+.ramfunc         RAM  bootloader 拷贝（#[ramfunc]）
+.tcm.text        SPM  bootloader 拷贝（#[tcmfunc]）
+.tcm.data        SPM  bootloader 拷贝（#[tcmdata]）
 .data            RAM  bootloader 拷贝
 .bss             RAM  _start 清零
 .stack           RAM  NOLOAD
 ```
 
-debug 构建的典型镜像（`espflash save-image` 解析结果）：
+debug 构建的 `blink` 镜像（`espflash save-image` 解析结果）：
 
 ```text
-seg0: addr=0x40000020 len=0x600   # appdesc + rodata
-seg1: addr=0x00000000 len=0x1d0   # espflash 填充段，bootloader 忽略
-seg2: addr=0x40000800 len=0x1120  # text
+seg0: addr=0x40000020 len=0x1108   # appdesc + rodata
+seg1: addr=0x00000000 len=0x1c8    # espflash 填充段，bootloader 忽略
+seg2: addr=0x40001300 len=0x3400   # text
 ```
 
-`unpack_load_app` 只会数到 seg0 和 seg2，满足 `rom_index == 2`。
-seg1 的 `addr=0` 不在 RAM/flash 范围，`should_load/should_map` 都为 false。
+`unpack_load_app` 只数 load address 落在 flash 窗口的段，这里正好是 seg0 和
+seg2，满足 `rom_index == 2`。seg1 的 `addr=0` 不在 RAM/flash 范围，
+`should_load/should_map` 都为 false。
 
-## 4. `.data` 和 `.bss`
+带 RAM 段的镜像（例如 `tcm` 例程）在这些之外再加 RAM/SPM 段，flash 段仍然只有
+两个：
+
+```text
+seg0: addr=0x40000020 len=6544    # flash: appdesc + rodata
+seg1: addr=0x30100000 len=120     # SPM: .tcm.text + .tcm.data
+seg2: addr=0x4ff20000 len=192     # RAM: .ramfunc + .data
+seg3: addr=0x40001b00 len=16944   # flash: text
+seg4: addr=0x4ff200c0 len=976     # RAM: 未初始化但仍需加载的数据
+```
+
+## 4. `.data`、`.ramfunc`、`.tcm.text` 和 `.bss`
 
 - `.data`：VMA 在 RAM，espflash 把它作为 RAM segment 写进 app image；
   bootloader 在验证阶段 `memcpy` 到 VMA。因此 `_start` **不**需要从 flash
   拷贝 `.data`。
 - `.bss`：NOLOAD，不进入镜像；`_start` 用 `sw zero` 清零。
 - `.stack`：NOLOAD，`_stack_start` 在段尾。
+- `.ramfunc` / `.tcm.text` / `.tcm.data`：与 `.data` 同一个机制——VMA 在 RAM
+  （或 SPM），espflash 把它们作为 RAM segment 写进镜像，bootloader 拷贝。
+  `#[ramfunc]` 的函数在 flash cache 挂起时仍可执行，`#[tcmfunc]` 的走 CPU
+  自己的总线、不经 cache；两者都只影响被标记的那个函数，它调用的东西仍在
+  flash。
 
 如果以后把 `.data` 的 LMA 放到 flash，需要自己加 `AT > ROM` 并在 `_start`
 里拷贝；同时注意 espflash 的 `load_address()` 会把 LMA 在 flash 的段按 VMA

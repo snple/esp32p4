@@ -11,4 +11,6 @@ MEMORY
 {
     ROM : ORIGIN = 0x40000020, LENGTH = 0x4000000 - 0x20
     RAM : ORIGIN = 0x4FF20000, LENGTH = 0x8DFC0
+    /* 8 KB HP scratchpad ("TCM"): direct, uncached code and data. */
+    SPM : ORIGIN = 0x30100000, LENGTH = 0x2000
 }

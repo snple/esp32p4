@@ -552,13 +552,41 @@ ESP32-P4 不是“ROM 直接跳到应用”的芯片：镜像由 ESP-IDF 2nd-sta
 |----|------|------|
 | flash segment 0 (DROM) | `0x4000_0020` | `esp_app_desc_t` + `.rodata` |
 | flash segment 1 (IROM) | `0x4000_0xxx` | `.init` + `.text` + `.trap` |
-| RAM | `0x4FF2_0000` | `.data` / `.bss` / stack |
+| RAM | `0x4FF2_0000` | `.ramfunc` / `.data` / `.bss` / stack |
+| SPM ("TCM") | `0x3010_0000` | `.tcm.text` / `.tcm.data` |
 
 - `0x4FF0_0000..0x4FF1_FFFF` 预留给 bootloader 配置的 128 KB L2 cache。
 - RAM 顶端在 `0x4FFA_DFC0`，避开 ROM 的 BSS/stack。
-- bootloader 会拷贝 RAM 段；`_start` 只需要清零 `.bss`。
-- bootloader 在 P4 上要求恰好两个 flash 段，因此 `link.x` 用一个 NOLOAD
-  间隙段把 DROM 和 IROM 分开。
+- bootloader 会拷贝每个 RAM 段到镜像里写的加载地址；`_start` 只需要清零 `.bss`。
+- bootloader 在 P4 上要求恰好两个 **flash** 段，因此 `link.x` 用一个 NOLOAD
+  间隙段把 DROM 和 IROM 分开；RAM 段数量不受这个限制（idf 的
+  `verify_load_addresses` 明确接受 SPM 段）。
+
+### 把代码放进 RAM / TCM
+
+两个属性宏对应两种 RAM，都是“镜像里在 flash、启动时被 bootloader 拷到 RAM”：
+
+```rust
+#[esp32p4::ramfunc]           // .ramfunc → SRAM，flash cache 挂起时仍可运行
+fn mspi_retune() { /* ... */ }
+
+#[esp32p4::tcmfunc]           // .tcm.text → 0x3010_0000，CPU 自己的总线，无 cache
+fn fast_isr() { /* ... */ }
+
+#[esp32p4::tcmdata]           // .tcm.data → 0x3010_0000
+static SAMPLES: [u32; 64] = [0; 64];
+```
+
+- **TCM 就是 HP SPM**（8 KB，`0x3010_0000..0x3010_1FFF`）：寄存器里叫 `HP_TCM`，
+  文档里叫 SPM。只有它不经过 cache，访问延迟两个周期，也是 CPU 复位向量地址。
+- `#[ramfunc]` 标记的函数会被补上 `#[inline(never)]`（否则内联副本仍在 flash），
+  它调用的函数不跟着走，需要一起标。
+- 初始化值随镜像在 flash，`link.x` 把 `.tcm.text` / `.tcm.data` 放进 `SPM` 区，
+  `memory.x` 提供该区（本仓库两份 `memory.x` 已包含）。
+- [`tcm`](esp32p4/src/tcm.rs) 模块提供 `contains()`、`used_range()` 以及
+  `init_parity()`（SPM 的奇偶校验初始化，bootloader 不做）。
+- 例程见 [`esp32p4-examples/src/tcm.rs`](esp32p4-examples/src/tcm.rs)，它会打印每个
+  函数实际落在哪个地址。
 
 细节见 [`docs/boot.md`](docs/boot.md)。
 
@@ -616,6 +644,7 @@ espflash save-image --chip esp32p4 \
 - 定时器组（`TimerGroup0/1` → `Timer00/01/10/11`：4 路 54 位计数器，时钟源与预分频、增/减计数、
   软件重载、一次性与周期性闹钟中断）与主系统看门狗（`Watchdog0/1`：分阶段超时、
   中断/复位动作、`feed()`）
+- 代码放置（`#[ramfunc]` / `#[tcmfunc]` / `#[tcmdata]`：SRAM 与 8 KB HP SPM，`tcm` 模块提供范围与奇偶校验）
 - 时钟树（`clock::ClockTree`：ROOT_CLK 选源、CPU/MEM/SYS/APB 分频与 CPU 变频、
   PLL_FxxM 参考时钟、LP 慢/快时钟、源门控）
 - 复位控制与复位原因（`system::software_reset` / `software_reset_cpu` / `reset_reason`，纯寄存器实现）；

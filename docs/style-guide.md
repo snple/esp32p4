@@ -229,6 +229,10 @@ bootloader 的具体版本。新增外设时，如果它有自己的时钟门控
 
 - **过程宏在 `esp32p4-macro`**：`#[main]` 把 `fn main() -> !` 展开为
   `#[unsafe(no_mangle)] pub extern "C" fn main() -> !`。
+- **放置类宏**：`#[ramfunc]` / `#[tcmfunc]` / `#[tcmdata]` 只改 `link_section`
+  （`.ramfunc` / `.tcm.text` / `.tcm.data`）并补 `#[inline(never)]`。
+  函数类宏拒绝 `async fn`、`#[inline]` 和重复的 `link_section`，因为这三种情况
+  都会让函数在无提示的情况下仍然从 flash 运行。
 - 实例化宏用 `macro_rules!`：GPIO 的 54 个 pin 用 `impl_pin!` 展开，
   每个 pin 生成 `Pin<N>` 的寄存器操作和 `PinOps` 实现。
 - 宏内部引用的寄存器字段名必须由宏参数传入，避免卫生问题。

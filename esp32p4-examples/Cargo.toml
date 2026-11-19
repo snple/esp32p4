@@ -10,7 +10,7 @@ publish = false
 autobins = false
 
 [features]
-default = []
+default = ["defmt", "net"]
 # Enables defmt logging in the HAL and provides an RTT logger.
 defmt = ["esp32p4/defmt", "esp32p4-usb/defmt", "dep:defmt", "dep:defmt-rtt"]
 # Enables defmt logging in the HAL and lets it own the global logger, writing to
@@ -50,6 +50,11 @@ required-features = ["defmt"]
 [[bin]]
 name = "clock"
 path = "src/clock.rs"
+required-features = ["defmt"]
+
+[[bin]]
+name = "tcm"
+path = "src/tcm.rs"
 required-features = ["defmt"]
 
 [[bin]]

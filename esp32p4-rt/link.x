@@ -7,7 +7,24 @@
  * Layout:
  *   segment 0 (R)  : `.flash.appdesc` + `.rodata`  (DROM, mapped from flash)
  *   segment 1 (RX) : `.init` + `.text` + `.trap`   (IROM, mapped from flash)
- *   RAM segments   : `.data` (copied by the bootloader), `.bss` (zeroed here)
+ *   RAM segments   : `.ramfunc` and `.tcm.text` / `.tcm.data` (copied by the
+ *                    bootloader), `.data` (copied by the bootloader),
+ *                    `.bss` (zeroed here)
+ *
+ * The bootloader copies a segment to whatever load address the image names, so
+ * `.ramfunc` (in `RAM`) and `.tcm.text` (in `SPM`) are ordinary RAM segments:
+ * `#[ramfunc]` and `#[tcmfunc]` functions live in flash in the image and run
+ * from their RAM address.
+ *
+ * The `SPM` region is the 8 KB HP scratchpad at 0x3010_0000, which the register
+ * set calls the HP TCM. `memory.x` has to define it:
+ *
+ *     MEMORY
+ *     {
+ *         ROM : ORIGIN = 0x40000020, LENGTH = 0x4000000 - 0x20
+ *         RAM : ORIGIN = 0x4FF20000, LENGTH = 0x8DFC0
+ *         SPM : ORIGIN = 0x30100000, LENGTH = 0x2000
+ *     }
  */
 
 ENTRY(_start)
@@ -47,6 +64,37 @@ SECTIONS
         *(.trap .trap.*)
     } > ROM
 
+    /* Functions marked `#[ramfunc]`: copied to SRAM by the bootloader, so they
+     * keep running while the flash cache is suspended. */
+    .ramfunc : ALIGN(4)
+    {
+        _sramfunc = .;
+        KEEP(*(.ramfunc .ramfunc.*))
+        . = ALIGN(4);
+        _eramfunc = .;
+    } > RAM
+
+    /* Functions and data marked `#[tcmfunc]` / `#[tcmdata]`: the 8 KB HP
+     * scratchpad, reachable over the CPU's own instruction and data buses with
+     * a two-cycle latency and no cache in the way. */
+    .tcm.text : ALIGN(4)
+    {
+        _stcmtext = .;
+        KEEP(*(.tcm.text .tcm.text.*))
+        . = ALIGN(4);
+        _etcmtext = .;
+    } > SPM
+
+    .tcm.data : ALIGN(4)
+    {
+        _stcmdata = .;
+        KEEP(*(.tcm.data .tcm.data.*))
+        . = ALIGN(4);
+        _etcmdata = .;
+    } > SPM
+
+    /* Everything past this point is not looked at by the TCM code. */
+
     .data : ALIGN(4)
     {
         _sdata = .;
@@ -75,6 +123,8 @@ SECTIONS
     } > RAM
 
     ASSERT(_stack_start <= ORIGIN(RAM) + LENGTH(RAM), "esp32p4-rt: stack overflows RAM")
+    ASSERT(_etcmdata <= ORIGIN(SPM) + LENGTH(SPM),
+           "esp32p4-rt: #[tcmfunc]/#[tcmdata] overflows the 8 KB HP scratchpad")
 
     /DISCARD/ :
     {

@@ -160,7 +160,7 @@ impl<T> AsRef<T> for Steal<T> {
 
 pub use pastey;
 
-pub use esp32p4_macro::main;
+pub use esp32p4_macro::{main, ramfunc, tcmdata, tcmfunc};
 pub use esp32p4_pac as pac;
 pub use esp32p4_pac::{Interrupt, Peripherals};
 pub use esp32p4_rt as rt;
@@ -179,6 +179,7 @@ pub mod reset;
 pub mod startup;
 pub mod system;
 pub mod systimer;
+pub mod tcm;
 pub mod time;
 pub mod timer;
 pub mod usb_serial_jtag;
