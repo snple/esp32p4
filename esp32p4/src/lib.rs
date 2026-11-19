@@ -5,8 +5,8 @@
 //! ## Features
 //!
 //! - `rt` - Link the `esp32p4-rt` startup code and trap handler
-//! - `panic-handler` - Provide a default `#[panic_handler]` that parks the
-//!   core (disable it if the application supplies its own)
+//! - `panic-handler` - Provide the default `#[panic_handler]` (disable it if
+//!   the application supplies its own)
 //! - `defmt` - `defmt::Format` implementations and log statements
 //! - `defmt-usb` - Also register the USB Serial/JTAG port as the global
 //!   `defmt` logger, so `espflash monitor` shows the logs
@@ -14,6 +14,22 @@
 //! - `net-alloc` - Same, with the socket table allocated from the global
 //!   allocator
 //! - `net-ipv6` - Add IPv6, SLAAC and fragmentation to `net`
+//!
+//! ## Panic And Logging
+//!
+//! `panic-handler` is enabled by default. On a panic it first disables machine
+//! interrupts:
+//!
+//! - With `defmt` enabled, the message is emitted through the active `defmt`
+//!   transport selected by the binary, such as `defmt-rtt` or the USB
+//!   Serial/JTAG logger.
+//! - Without `defmt`, no formatted output is attempted.
+//!
+//! The core then executes `ebreak`. A debugger halts at the panic site; on a
+//! board with no debugger the breakpoint takes the runtime's exception path,
+//! which stores `mcause`/`mepc` in [`rt::TRAP_CAUSE`] / [`rt::TRAP_EPC`] and
+//! parks the core. A reentrant panic, for example from the logger while the
+//! message is being formatted, skips the second print instead of recursing.
 //!
 //! ## Example
 //!
