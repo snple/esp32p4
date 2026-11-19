@@ -125,7 +125,7 @@ impl VolatileU32 {
 /// lines: writing one descriptor back also wrote the stale copy of its
 /// neighbour over whatever the DMA had just put there. Skipped updates then lose
 /// frames with no error recorded anywhere.
-#[repr(C, align(8))]
+#[repr(C, align(64))]
 pub struct TDes {
     tdes0: VolatileU32,
     tdes1: VolatileU32,
@@ -169,7 +169,7 @@ impl Default for TDes {
 /// Padded to a cache line for the same reason as [`TDes`]: the DMA sets the
 /// owner bit of the next descriptor while the CPU owns this one, and a
 /// line-granular writeback of this one must not revert it.
-#[repr(C, align(8))]
+#[repr(C, align(64))]
 pub struct RDes {
     rdes0: VolatileU32,
     rdes1: VolatileU32,

@@ -341,6 +341,13 @@ if let Some(rx) = emac.receive() {
 - **DMA**：32 字节增强描述符、`ALT_DESC_SIZE = 1`，描述符和缓冲区必须常驻
   `static`。驱动通过 [`cache`](esp32p4/src/cache.rs) 在交给 MAC 前 writeback、
   在读回前 invalidate；放在 PSRAM uncached 窗口则不需要维护。
+- **描述符和缓冲区各自独占一个 cache 行**（`#[repr(C, align(64))]`）。cache 维护以整行
+  为单位，而描述符只有 32 字节：两个描述符共用一行时，写回当前描述符会把它邻居里 DMA 刚
+  写好的 `OWN`/状态字一起写回成旧值——那一帧就凭空消失，而**所有错误计数器仍然是 0**
+  （MAC 没丢，是驱动把它"写没"了）。症状极隐蔽：跑一阵流量后空闲 ping 从 3 ms 变成
+  1–4 s、`rx` 计数每秒为 0 然后一次跳满整个环、TCP 连接大面积超时，重启板子又好一阵。
+  诊断方法是把环的"待处理描述符数"（`Emac::rx_pending()`）打出来：卡住时它停在几十个，
+  说明帧在环里、是驱动没读。
 - **中断**：当前是轮询驱动，`DMAIN_EN` 和 `EMACINTMASK` 全部屏蔽，
   `transmit`/`receive` 都不阻塞等待。
 - **统计**：P4 的 EMAC 没有 Synopsys 那套 MMC 计数器块，[`Stats`](esp32p4/src/emac/stats.rs)
