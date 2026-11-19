@@ -411,7 +411,10 @@ loop {
 - **监听池**：一个 socket 在 `LastAck` 里等对端最后一个 ACK 时不能接受新连接，对端此时连
   过来会直接吃 RST（`Connection refused`）。示例在 7 端口上挂两个 socket，把关闭窗口遮住。
 - **空闲连接要回收**：对端不发 FIN 就消失时 socket 会永远停在 `Established`，两个监听槽都被
-  占住后端口就再也接不了连接。示例对 10 s 没有任何数据流动的连接直接 `abort()`。
+  占住后端口就再也接不了连接。示例对 10 s 没有任何数据流动的连接直接 `abort()`；握手/拆链
+  中途的状态（`SynSent`/`SynReceived`/`FinWait1`/`FinWait2`/`Closing`）3 s 没进展也直接
+  丢掉 —— 半开连接会一直重传，而这些重传会把整条链路拖慢（实测几个半死连接之后，空闲板子的
+  ping RTT 从 3 ms 涨到 800 ms）。
 - **ICMP echo 回复**已随 `smoltcp/auto-icmp-echo-reply` 打开，板子可以被 `ping`，这是现场
   判断"链路还在不在"最省事的工具。
 

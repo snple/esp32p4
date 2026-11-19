@@ -65,6 +65,13 @@ const CLOSE_TIMEOUT_US: u64 = 500_000;
 /// forever, and both listeners can end up parked on dead connections. Ten
 /// seconds of silence is well past anything an echo client needs.
 const IDLE_TIMEOUT_US: u64 = 10_000_000;
+/// How long a handshake or a teardown may stay unfinished.
+///
+/// A `SynReceived` socket whose SYN-ACK or final ACK was lost keeps
+/// retransmitting for minutes, and on a shared medium those retransmissions are
+/// what everybody else waits behind: ping latency to an otherwise idle board
+/// went from 3 ms to 800 ms after a handful of aborted clients.
+const HANDSHAKE_TIMEOUT_US: u64 = 3_000_000;
 
 /// Number of sockets listening on the echo port.
 ///
@@ -131,16 +138,15 @@ impl EchoSocket {
             defmt::info!("tcp: echoed {} bytes ({} total)", moved, self.echoed);
         }
 
-        // Track the state before acting on it: the idle check below must not
-        // fire on the very pass that brings the socket up.
+        // Track the state before acting on it: the timeouts below must not fire
+        // on the very pass that brings the socket up.
         let state = socket.state();
         if state != self.last_state {
             defmt::info!("tcp {}: {} after {} bytes", self.handle, state, self.echoed);
-            if state == tcp::State::Established {
-                self.last_activity = now_us;
-            }
+            self.last_activity = now_us;
             self.last_state = state;
         }
+        let idle = now_us.wrapping_sub(self.last_activity);
 
         match state {
             // A peer that closed leaves the socket half-closed: without our own
@@ -170,11 +176,25 @@ impl EchoSocket {
             // An established connection that goes quiet is dead: drop it, or
             // the socket never returns to `Listen`.
             tcp::State::Established => {
-                if now_us.wrapping_sub(self.last_activity) > IDLE_TIMEOUT_US {
+                if idle > IDLE_TIMEOUT_US {
                     defmt::warn!("tcp {}: no data for 10 s, dropping", self.handle);
                     socket.abort();
                     self.last_activity = now_us;
                 }
+            }
+            // Half-open and half-closed sockets are transient. Letting one
+            // linger means a retransmission storm that delays everything else.
+            tcp::State::SynSent
+            | tcp::State::SynReceived
+            | tcp::State::FinWait1
+            | tcp::State::FinWait2
+            | tcp::State::Closing => {
+                if idle > HANDSHAKE_TIMEOUT_US {
+                    defmt::warn!("tcp {}: stuck in {}, dropping", self.handle, state);
+                    socket.abort();
+                    self.last_activity = now_us;
+                }
+                self.closing_since = None;
             }
             _ => self.closing_since = None,
         }
@@ -341,10 +361,12 @@ fn main() -> ! {
                 net.sockets().get::<tcp::Socket>(echoes[i].handle).state()
             });
             defmt::info!(
-                "tick {} at {} ms: link {}, ip {:?}, tcp {:?} / {:?}",
+                "tick {} at {} ms: link {} {} {}, ip {:?}, tcp {:?} / {:?}",
                 ticks,
                 delay.now_us() / 1000,
                 link.up,
+                link.speed,
+                link.duplex,
                 ip,
                 states[0],
                 states[1]
