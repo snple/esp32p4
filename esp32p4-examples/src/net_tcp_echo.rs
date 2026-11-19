@@ -27,22 +27,29 @@ use defmt_rtt as _;
 defmt::timestamp!("{=u64:us}", esp32p4::delay::micros());
 
 use esp32p4::delay::{self, Delay};
+use esp32p4::efuse::Efuse;
 use esp32p4::emac::{Emac, EmacBuffers, EmacConfig, EmacResources, RmiiPins};
 use esp32p4::gpio::Pins;
 use esp32p4::main;
 use esp32p4::net::{Net, SocketSet, SocketStorage, TcpBuffers, smoltcp};
 use esp32p4::pac::Peripherals;
 use esp32p4::usb_serial_jtag::UsbSerialJtag;
+use smoltcp::iface::SocketHandle;
 use smoltcp::socket::tcp;
 
-/// Eight receive slots keep a burst of frames while the loop is busy echoing.
-static mut EMAC_BUFFERS: EmacBuffers<8, 4> = EmacBuffers::new();
+/// Receive and transmit slots for the DMA rings.
+///
+/// At 100 Mbit/s a full-size frame arrives every ~120 µs, while the loop below
+/// spends far longer than that on the console output, so a short ring overflows
+/// and the stack sees holes it has to repair with retransmissions. Sixteen slots
+/// ride out a burst long enough for the loop to come back and harvest them.
+static mut EMAC_BUFFERS: EmacBuffers<16, 8> = EmacBuffers::new();
 
-/// Room for the DHCP socket plus a couple of application sockets.
+/// Room for the DHCP socket plus the pool of echo sockets.
 static mut SOCKET_STORAGE: [SocketStorage<'static>; 4] = [SocketStorage::EMPTY; 4];
 
-/// Receive and transmit windows of the echo socket.
-static mut TCP_BUFFERS: TcpBuffers = TcpBuffers::new();
+/// Receive and transmit windows, one pair per echo socket.
+static mut TCP_BUFFERS: [TcpBuffers; ECHO_SOCKETS] = [TcpBuffers::new(), TcpBuffers::new()];
 
 /// MDIO address the IP101GRI is strapped to: `PHY_AD0` high, `PHY_AD3` low.
 const PHY_ADDRESS: u8 = 1;
@@ -52,6 +59,127 @@ const PHY_RESET_PIN: u32 = 51;
 const ECHO_PORT: u16 = 7;
 /// How long a graceful close may take before the socket is reset instead.
 const CLOSE_TIMEOUT_US: u64 = 500_000;
+/// How long an established connection may stay silent before it is dropped.
+///
+/// A peer that times out without closing leaves its socket in `Established`
+/// forever, and both listeners can end up parked on dead connections. Ten
+/// seconds of silence is well past anything an echo client needs.
+const IDLE_TIMEOUT_US: u64 = 10_000_000;
+
+/// Number of sockets listening on the echo port.
+///
+/// A closing socket sits in `LastAck` for up to [`CLOSE_TIMEOUT_US`] waiting for
+/// the peer's last ACK and cannot accept anything meanwhile. A spare listener
+/// makes that window harmless: a client arriving while the other socket is
+/// closing is served instead of being reset.
+const ECHO_SOCKETS: usize = 2;
+
+/// One echo socket plus the bookkeeping its close path needs.
+struct EchoSocket {
+    handle: SocketHandle,
+    closing_since: Option<u64>,
+    last_state: tcp::State,
+    /// Last time bytes moved on this socket, or it became established.
+    last_activity: u64,
+    echoed: u32,
+}
+
+impl EchoSocket {
+    /// Placeholder for a socket that is added to the table later.
+    fn new() -> Self {
+        Self {
+            handle: SocketHandle::default(),
+            closing_since: None,
+            last_state: tcp::State::Closed,
+            last_activity: 0,
+            echoed: 0,
+        }
+    }
+
+    /// Echo whatever the peer sent and keep the socket listening between
+    /// connections.
+    fn service(&mut self, sockets: &mut SocketSet<'_>, now_us: u64) {
+        let socket = sockets.get_mut::<tcp::Socket>(self.handle);
+
+        // Only take what the transmit window can hold: bytes taken out of the
+        // receive window are already acknowledged, so the peer never sends them
+        // again and dropping them here would silently shorten the stream.
+        let mut buf = [0u8; 512];
+        let mut moved = 0u32;
+        while socket.may_send() && socket.can_recv() {
+            let room = socket.send_capacity() - socket.send_queue();
+            if room == 0 {
+                break;
+            }
+            let want = room.min(buf.len());
+            let Ok(n) = socket.recv_slice(&mut buf[..want]) else {
+                break;
+            };
+            // `n <= room`, so the send cannot fail; if it ever does, the bytes
+            // are already gone from the receive buffer and there is nothing
+            // better to do than let the next pass continue.
+            if socket.send_slice(&buf[..n]).is_err() {
+                break;
+            }
+            moved += n as u32;
+        }
+        // One line per pass: a log statement per 512-byte chunk is slow enough
+        // over USB to let the next burst overrun the receive ring.
+        if moved > 0 {
+            self.echoed += moved;
+            self.last_activity = now_us;
+            defmt::info!("tcp: echoed {} bytes ({} total)", moved, self.echoed);
+        }
+
+        // Track the state before acting on it: the idle check below must not
+        // fire on the very pass that brings the socket up.
+        let state = socket.state();
+        if state != self.last_state {
+            defmt::info!("tcp {}: {} after {} bytes", self.handle, state, self.echoed);
+            if state == tcp::State::Established {
+                self.last_activity = now_us;
+            }
+            self.last_state = state;
+        }
+
+        match state {
+            // A peer that closed leaves the socket half-closed: without our own
+            // FIN it stays in CloseWait and the next client gets a reset.
+            tcp::State::CloseWait => {
+                socket.close();
+                self.closing_since = Some(now_us);
+            }
+            // Our FIN is out and the peer has to acknowledge it. If that last
+            // ACK never comes (a lossy link drops it), waiting keeps this socket
+            // out of `Listen`, so give the graceful close a bounded time.
+            tcp::State::LastAck => {
+                let since = *self.closing_since.get_or_insert(now_us);
+                if now_us.wrapping_sub(since) > CLOSE_TIMEOUT_US {
+                    socket.abort();
+                    self.closing_since = None;
+                }
+            }
+            // Closed and TIME-WAIT both accept a fresh `listen`, and asking
+            // while already listening succeeds without doing anything.
+            tcp::State::Closed | tcp::State::TimeWait => {
+                if socket.listen(ECHO_PORT).is_ok() {
+                    self.echoed = 0;
+                }
+                self.closing_since = None;
+            }
+            // An established connection that goes quiet is dead: drop it, or
+            // the socket never returns to `Listen`.
+            tcp::State::Established => {
+                if now_us.wrapping_sub(self.last_activity) > IDLE_TIMEOUT_US {
+                    defmt::warn!("tcp {}: no data for 10 s, dropping", self.handle);
+                    socket.abort();
+                    self.last_activity = now_us;
+                }
+            }
+            _ => self.closing_since = None,
+        }
+    }
+}
 
 #[main]
 fn main() -> ! {
@@ -84,12 +212,18 @@ fn main() -> ! {
     );
     let (gpio, io_mux) = pins.release();
 
+    // The factory address from eFuse beats the driver's `02:00:00:00:00:01`
+    // default: a locally administered address upsets some bridges, and every
+    // board on the same LAN would otherwise look alike.
+    let mac = Efuse::init(dp.EFUSE).mac();
+
     // SAFETY: the storages are only used by this function, for the whole run.
     let emac_buffers = unsafe { &mut *core::ptr::addr_of_mut!(EMAC_BUFFERS) };
     let mut emac = Emac::init(
         dp.EMAC,
         rmii,
         EmacConfig {
+            mac_address: mac,
             phy_address: PHY_ADDRESS,
             ..EmacConfig::default()
         },
@@ -173,75 +307,25 @@ fn main() -> ! {
     // SAFETY: both handlers are installed and the peripheral sources cleared.
     unsafe { esp32p4::interrupt::enable() };
 
-    // SAFETY: handed to the socket once, below.
+    // SAFETY: handed to the sockets once, below.
     let tcp_buffers = unsafe { &mut *core::ptr::addr_of_mut!(TCP_BUFFERS) };
-    let socket = tcp::Socket::new(
-        tcp::SocketBuffer::new(&mut tcp_buffers.rx[..]),
-        tcp::SocketBuffer::new(&mut tcp_buffers.tx[..]),
-    );
-    let server = net.sockets_mut().add(socket);
+    let mut echoes: [EchoSocket; ECHO_SOCKETS] = core::array::from_fn(|_| EchoSocket::new());
+    for (echo, buffers) in echoes.iter_mut().zip(tcp_buffers.iter_mut()) {
+        let socket = tcp::Socket::new(
+            tcp::SocketBuffer::new(&mut buffers.rx[..]),
+            tcp::SocketBuffer::new(&mut buffers.tx[..]),
+        );
+        echo.handle = net.sockets_mut().add(socket);
+    }
 
     let mut ticks = 0u32;
-    let mut echoed = 0u32;
-    let mut closing_since: Option<u64> = None;
-    let mut last_state = tcp::State::Closed;
     loop {
         // Park the core until the MAC or the stack's next timer has something
         // to do, then run the whole loop body.
         net.poll_wait(&mut emac, 20);
 
-        // Serve whatever the echo socket currently has room for. The borrow of
-        // the socket ends before the status report below.
-        {
-            let socket = net.sockets_mut().get_mut::<tcp::Socket>(server);
-
-            let mut buf = [0u8; 512];
-            while socket.can_recv() {
-                let Ok(n) = socket.recv_slice(&mut buf) else {
-                    break;
-                };
-                if socket.send_slice(&buf[..n]).is_err() {
-                    break;
-                }
-                echoed += n as u32;
-                defmt::info!("tcp: echoed {} bytes ({} total)", n, echoed);
-            }
-
-            let state = socket.state();
-            match state {
-                // A peer that closed leaves the socket half-closed: without our
-                // own FIN it stays in CloseWait and the next client gets a reset.
-                tcp::State::CloseWait => {
-                    socket.close();
-                    closing_since = Some(delay.now_us());
-                }
-                // Our FIN is out and the peer has to acknowledge it. If that
-                // last ACK never comes (a lossy link drops it), waiting keeps
-                // the only socket out of `Listen` and every new client is
-                // refused, so give the graceful close a bounded amount of time.
-                tcp::State::LastAck => {
-                    let since = *closing_since.get_or_insert_with(|| delay.now_us());
-                    if delay.now_us().wrapping_sub(since) > CLOSE_TIMEOUT_US {
-                        socket.abort();
-                        closing_since = None;
-                    }
-                }
-                // Closed and TIME-WAIT both accept a fresh `listen`, and asking
-                // while already listening succeeds without doing anything.
-                tcp::State::Closed | tcp::State::TimeWait => {
-                    if socket.listen(ECHO_PORT).is_ok() {
-                        echoed = 0;
-                    }
-                    closing_since = None;
-                }
-                _ => closing_since = None,
-            }
-
-            let state = socket.state();
-            if state != last_state {
-                defmt::info!("tcp: {} after {} bytes", state, echoed);
-                last_state = state;
-            }
+        for echo in &mut echoes {
+            echo.service(net.sockets_mut(), delay.now_us());
         }
 
         // Data written to a socket only leaves the stack on the next `poll`.
@@ -253,14 +337,17 @@ fn main() -> ! {
         if ticks.is_multiple_of(50) {
             let link = emac.poll_link();
             let ip = net.ipv4_addr().map(|addr| addr.octets());
-            let state = net.sockets().get::<tcp::Socket>(server).state();
+            let states: [tcp::State; ECHO_SOCKETS] = core::array::from_fn(|i| {
+                net.sockets().get::<tcp::Socket>(echoes[i].handle).state()
+            });
             defmt::info!(
-                "tick {} at {} ms: link {}, ip {:?}, tcp {:?}",
+                "tick {} at {} ms: link {}, ip {:?}, tcp {:?} / {:?}",
                 ticks,
                 delay.now_us() / 1000,
                 link.up,
                 ip,
-                state
+                states[0],
+                states[1]
             );
         }
         ticks = ticks.wrapping_add(1);
