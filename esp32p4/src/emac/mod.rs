@@ -31,6 +31,22 @@
 //! MAC (`OEN_SEL = 0`), because MDIO is bidirectional — the MAC has to stop
 //! driving the bus before the PHY answers.
 //!
+//! # Clocks
+//!
+//! `HP_SYS_CLKRST.SOC_CLK_CTRL1.EMAC_SYS_CLK_EN` gates the block's own clock;
+//! while it is clear every MAC register access faults, so it is raised before
+//! the first read. The 50 MHz RMII clock is routed through
+//! `PERI_CLK_CTRL00/01`, and the block reset lives in `LP_AON_CLKRST` — the HP
+//! reset gate does not cover the EMAC, which is why [`Emac::init`] pulses
+//! `HP_SDMMC_EMAC_RST_CTRL` by hand.
+//!
+//! # Frame filtering
+//!
+//! The station address goes into filter slot 0 of the MAC: bytes 5-4 into
+//! `ADDR0HIGH`, bytes 3-0 into `ADDR0LOW` with byte 0 in bits 7:0. Getting that
+//! order wrong leaves broadcasts and multicasts working while unicast frames to
+//! the station address are silently dropped.
+//!
 //! # DMA
 //!
 //! Frames move through descriptor rings in memory. Provide the storage once,
@@ -744,6 +760,11 @@ const ANLPAR_100FD: u16 = 1 << 8;
 
 /// Enable the clock tree and release the MAC from reset.
 fn configure_clock(res: &EmacResources<'_>, clock: RefClock) {
+    // Gate the EMAC AHB/APB clock on before any MAC register is touched; while
+    // `EMAC_SYS_CLK_EN` is clear the peripheral is unclocked and the first
+    // access faults. ESP-IDF does this from `periph_module_enable`.
+    res.clkrst.soc_clk_ctrl1.set_reg_emac_sys_clk_en();
+
     // RMII instead of MII.
     res.hp_sys.gmac_ctrl0.write_phy_intf_sel(4);
 
@@ -1007,12 +1028,15 @@ fn configure_mac(emac: &EMAC, config: &EmacConfig) {
 }
 
 /// Program station address filter slot 0.
+///
+/// The address is little-endian across the two words: `ADDR0LOW` holds bytes
+/// 0-3 with byte 0 in bits 7:0, `ADDR0HIGH` holds bytes 4-5 in bits 15:0.
 fn program_mac_address(emac: &EMAC, address: &[u8; 6]) {
     let high = (address[5] as u32) << 8 | address[4] as u32;
-    let low = address[3] as u32
-        | (address[2] as u32) << 8
-        | (address[1] as u32) << 16
-        | (address[0] as u32) << 24;
+    let low = address[0] as u32
+        | (address[1] as u32) << 8
+        | (address[2] as u32) << 16
+        | (address[3] as u32) << 24;
     emac.emacaddr0high.write_bits(high | 1 << 31); // ADDRESS_ENABLE0
     emac.emacaddr0low.write_bits(low);
 }

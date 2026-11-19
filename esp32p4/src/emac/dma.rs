@@ -236,6 +236,7 @@ impl<const RX: usize, const TX: usize> Default for EmacBuffers<RX, TX> {
 
 /// Why a frame was rejected.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum TxError {
     /// Every transmit descriptor is still owned by the MAC.
     RingFull,
