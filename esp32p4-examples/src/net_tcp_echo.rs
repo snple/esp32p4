@@ -375,32 +375,16 @@ fn main() -> ! {
                 states[1]
             );
 
-            let pending = emac.rx_pending();
             let stats = emac.stats();
-            let sec = stats.delta_since(&last_stats);
+            defmt::info!(
+                "  ring {} pending, dropped {} + {} fifo",
+                emac.rx_pending(),
+                stats.rx_missed.wrapping_sub(last_stats.rx_missed),
+                stats
+                    .rx_fifo_overflows
+                    .wrapping_sub(last_stats.rx_fifo_overflows),
+            );
             last_stats = stats;
-            defmt::info!(
-                "  rx {} f/{} B, tx {} f/{} B, ring {} pending, dropped {} + {} fifo",
-                sec.rx_frames,
-                sec.rx_bytes,
-                sec.tx_frames,
-                sec.tx_bytes,
-                pending,
-                sec.rx_missed,
-                sec.rx_fifo_overflows,
-            );
-            defmt::info!(
-                "  errors rx {} (crc {} align {} mii {} len {} ovf {} desc {}), tx {} (uf {})",
-                sec.rx_errors,
-                sec.rx_crc_errors,
-                sec.rx_alignment_errors,
-                sec.rx_mii_errors,
-                sec.rx_length_errors,
-                sec.rx_overrun_errors,
-                sec.rx_descriptor_errors,
-                sec.tx_errors,
-                sec.tx_underflows,
-            );
         }
         ticks = ticks.wrapping_add(1);
     }

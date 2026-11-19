@@ -24,7 +24,6 @@ use core::ptr::{read_volatile, write_volatile};
 use core::sync::atomic::{Ordering, fence};
 
 use crate::cache;
-use super::stats::Stats;
 
 /// Largest frame the MAC forwards: 1518 bytes plus the 4-byte FCS.
 pub const MAX_FRAME_SIZE: usize = 1524;
@@ -47,22 +46,6 @@ const TDES0_TCH: u32 = 1 << 20;
 /// Status a transmit descriptor leaves with while the MAC owns it.
 const TDES0_TX_READY: u32 = TDES0_FS | TDES0_LS | TDES0_IC | TDES0_TCH;
 
-// ── TDES0 status bits the MAC writes when it releases the descriptor ────────
-
-/// Error summary: set when any of the error bits below is set.
-const TDES0_ES: u32 = 1 << 15;
-/// The DMA ran out of frame data while the frame was going out.
-const TDES0_UF: u32 = 1 << 1;
-/// Sixteen collisions in a row; the frame was abandoned.
-const TDES0_EC: u32 = 1 << 8;
-/// A collision arrived after the 64-byte window.
-const TDES0_LC: u32 = 1 << 9;
-/// The PHY never asserted carrier.
-const TDES0_NC: u32 = 1 << 10;
-/// Carrier disappeared during the frame.
-const TDES0_LOC: u32 = 1 << 11;
-/// The DMA flushed the frame instead of sending it.
-const TDES0_FF: u32 = 1 << 13;
 
 // ── RDES0 bits ───────────────────────────────────────────────────────────────
 
@@ -72,20 +55,6 @@ const RDES0_FL_MASK: u32 = 0x3fff;
 const RDES0_ES: u32 = 1 << 15;
 const RDES0_FS: u32 = 1 << 9;
 const RDES0_LS: u32 = 1 << 8;
-/// FCS mismatch on the received frame.
-const RDES0_CE: u32 = 1 << 1;
-/// Non-integer number of bytes (odd nibble) — a PHY/RMII timing smell.
-const RDES0_DRIBBLE: u32 = 1 << 2;
-/// `MII_RXER` was asserted while a frame was coming in.
-const RDES0_RE: u32 = 1 << 3;
-/// The receive watchdog cut the frame short.
-const RDES0_RWT: u32 = 1 << 4;
-/// The RX FIFO overflowed in the middle of the frame.
-const RDES0_OE: u32 = 1 << 11;
-/// The length in the frame header disagreed with the frame.
-const RDES0_LE: u32 = 1 << 12;
-/// The DMA did not own the next descriptor, so the frame is truncated.
-const RDES0_DE: u32 = 1 << 14;
 
 /// Buffer size field shared by TDES1 and RDES1.
 const BUF1_SIZE_MASK: u32 = 0x1fff;
@@ -291,7 +260,6 @@ pub(super) struct TxRing<'a> {
     bufs: *mut DmaBuffer,
     len: usize,
     index: Cell<usize>,
-    counters: Cell<Stats>,
 }
 
 impl<'a> TxRing<'a> {
@@ -301,7 +269,6 @@ impl<'a> TxRing<'a> {
             bufs: bufs.as_mut_ptr(),
             len: descs.len(),
             index: Cell::new(0),
-            counters: Cell::new(Stats::default()),
         };
         ring.reset();
         ring
@@ -380,18 +347,9 @@ impl<'a> TxRing<'a> {
         }
 
         let idx = self.index.get();
-        let desc = self.desc(idx);
-        if desc.owned_by_dma() {
+        if self.desc(idx).owned_by_dma() {
             return Err(TxError::RingFull);
         }
-        // The status of the frame that used this slot last is still in TDES0.
-        // Decode it before the write below throws it away.
-        self.account_status(desc.tdes0.get());
-
-        let mut counters = self.counters.get();
-        counters.tx_frames = counters.tx_frames.wrapping_add(1);
-        counters.tx_bytes = counters.tx_bytes.wrapping_add(len as u32);
-        self.counters.set(counters);
 
         let result = f(&mut self.buffer(idx).0[..len]);
         cache::writeback(self.buffer_addr(idx) as *const c_void, len);
@@ -415,38 +373,6 @@ impl<'a> TxRing<'a> {
         !self.desc(self.index.get()).owned_by_dma()
     }
 
-    /// A snapshot of this ring's counters.
-    pub(super) fn stats(&self) -> Stats {
-        self.counters.get()
-    }
-
-    /// Fold the status word of a finished frame into the counters.
-    fn account_status(&self, status: u32) {
-        // A descriptor that has never been used reads back as zero, and the
-        // control bits this driver sets are all above bit 15, so nothing has to
-        // be remembered about which slots were used.
-        let mut counters = self.counters.get();
-        if status & TDES0_ES != 0 {
-            counters.tx_errors = counters.tx_errors.wrapping_add(1);
-        }
-        if status & TDES0_UF != 0 {
-            counters.tx_underflows = counters.tx_underflows.wrapping_add(1);
-        }
-        if status & TDES0_EC != 0 {
-            counters.tx_excessive_collisions =
-                counters.tx_excessive_collisions.wrapping_add(1);
-        }
-        if status & TDES0_LC != 0 {
-            counters.tx_late_collisions = counters.tx_late_collisions.wrapping_add(1);
-        }
-        if status & (TDES0_NC | TDES0_LOC) != 0 {
-            counters.tx_carrier_errors = counters.tx_carrier_errors.wrapping_add(1);
-        }
-        if status & TDES0_FF != 0 {
-            counters.tx_flushed = counters.tx_flushed.wrapping_add(1);
-        }
-        self.counters.set(counters);
-    }
 }
 
 /// Receive ring.
@@ -458,7 +384,6 @@ pub(super) struct RxRing<'a> {
     bufs: *mut DmaBuffer,
     len: usize,
     index: Cell<usize>,
-    counters: Cell<Stats>,
 }
 
 impl<'a> RxRing<'a> {
@@ -468,7 +393,6 @@ impl<'a> RxRing<'a> {
             bufs: bufs.as_mut_ptr(),
             len: descs.len(),
             index: Cell::new(0),
-            counters: Cell::new(Stats::default()),
         };
         ring.reset();
         ring
@@ -529,15 +453,9 @@ impl<'a> RxRing<'a> {
             let len = len.saturating_sub(4);
 
             if !complete || !(MIN_FRAME_SIZE..=MAX_FRAME_SIZE).contains(&len) {
-                self.account_error(status, len);
                 self.hand_back(idx);
                 continue;
             }
-
-            let mut counters = self.counters.get();
-            counters.rx_frames = counters.rx_frames.wrapping_add(1);
-            counters.rx_bytes = counters.rx_bytes.wrapping_add(len as u32);
-            self.counters.set(counters);
 
             // SAFETY: `idx` is a ring index and the CPU owns the descriptor.
             let buffer = unsafe {
@@ -549,53 +467,11 @@ impl<'a> RxRing<'a> {
         }
     }
 
-    /// A snapshot of this ring's counters.
-    pub(super) fn stats(&self) -> Stats {
-        self.counters.get()
-    }
-
     /// How many descriptors currently hold a frame the stack has not read.
     pub(super) fn pending(&self) -> usize {
         (0..self.len)
             .filter(|&i| !self.desc(i).owned_by_dma())
             .count()
-    }
-
-    /// Fold the status word of a rejected frame into the counters.
-    ///
-    /// This is the only place a bad frame is visible: the driver drops it
-    /// silently otherwise, and a CRC or dribble error here means the wire, the
-    /// PHY or the RMII timing is in trouble rather than the network stack.
-    fn account_error(&self, status: u32, len: usize) {
-        let mut counters = self.counters.get();
-        if status & RDES0_ES != 0 {
-            counters.rx_errors = counters.rx_errors.wrapping_add(1);
-        }
-        if status & RDES0_CE != 0 {
-            counters.rx_crc_errors = counters.rx_crc_errors.wrapping_add(1);
-        }
-        if status & RDES0_DRIBBLE != 0 {
-            counters.rx_alignment_errors = counters.rx_alignment_errors.wrapping_add(1);
-        }
-        if status & RDES0_RE != 0 {
-            counters.rx_mii_errors = counters.rx_mii_errors.wrapping_add(1);
-        }
-        if status & RDES0_RWT != 0 {
-            counters.rx_watchdog_errors = counters.rx_watchdog_errors.wrapping_add(1);
-        }
-        if status & RDES0_OE != 0 {
-            counters.rx_overrun_errors = counters.rx_overrun_errors.wrapping_add(1);
-        }
-        if status & RDES0_LE != 0 {
-            counters.rx_length_errors = counters.rx_length_errors.wrapping_add(1);
-        }
-        if status & RDES0_DE != 0 {
-            counters.rx_descriptor_errors = counters.rx_descriptor_errors.wrapping_add(1);
-        }
-        if !(MIN_FRAME_SIZE..=MAX_FRAME_SIZE).contains(&len) {
-            counters.rx_bad_frames = counters.rx_bad_frames.wrapping_add(1);
-        }
-        self.counters.set(counters);
     }
 
     /// Give the current slot back to the MAC.

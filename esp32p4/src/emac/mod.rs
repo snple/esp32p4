@@ -120,9 +120,6 @@ const DMAIN_TRANSMIT: u32 = 1 << 0;
 /// Set by the MAC interrupt handler; consumed by [`Emac::take_interrupt`].
 static INTERRUPT_PENDING: AtomicBool = AtomicBool::new(false);
 
-/// The error flags the handler has seen, since `DMASTATUS` clears on write.
-static DMA_ERRORS: stats::DmaErrors = stats::DmaErrors::new();
-
 /// `DMAMISSEDFR.Missed_FC`: frames dropped because no descriptor was free.
 const MISSED_FRAME_MASK: u32 = 0xffff;
 /// `DMAMISSEDFR.Overflow_FC`: frames dropped by an RX FIFO overflow.
@@ -138,9 +135,7 @@ const FIFO_OVERFLOW_MASK: u32 = 0x7ff;
 fn emac_isr() {
     let emac = unsafe { &*EMAC::PTR };
     let status = emac.dmastatus.read_bits();
-    // The status register is write-one-to-clear, so this is the last chance to
-    // count what it reports; `Emac::stats` later merges the totals in.
-    DMA_ERRORS.account(status);
+    // DMASTATUS is write-one-to-clear.
     emac.dmastatus.write_bits(status);
 
     // A bus error or a descriptor we cannot supply would re-assert the line
@@ -540,36 +535,25 @@ impl<'d, const RX: usize, const TX: usize> Emac<'d, RX, TX> {
         self.rx.pending()
     }
 
-    /// Snapshot of the frame and error counters.
+    /// The MAC's dropped-frame counters.
     ///
-    /// The MAC has no MMC counter block, so the numbers come from three places:
-    /// the descriptor status words the driver records as it walks the rings, the
-    /// DMA error flags the interrupt handler latches, and `DMAMISSEDFR`.
-    ///
-    /// Sampling consumes the hardware counters — `DMAMISSEDFR` clears on read —
-    /// but the values reported here are totals since [`Emac::init`], so repeated
-    /// calls are monotonic. Take [`Stats::delta_since`] to log rates.
+    /// `DMAMISSEDFR` is the only real counter block this MAC has, and it clears
+    /// on read, so this accumulates it: the result is a total since
+    /// [`Emac::init`] and stays monotonic however often it is sampled.
     pub fn stats(&self) -> Stats {
-        let mut stats = self.rx.stats();
-        stats.merge(&self.tx.stats());
-
-        // Whatever the hardware counter holds now has not been counted yet.
         let missed = self.emac.dmamissedfr.read_bits();
-        self.rx_missed.set(
-            self.rx_missed
-                .get()
-                .wrapping_add(missed & MISSED_FRAME_MASK),
-        );
+        self.rx_missed
+            .set(self.rx_missed.get().wrapping_add(missed & MISSED_FRAME_MASK));
         self.rx_fifo_overflows.set(
             self.rx_fifo_overflows
                 .get()
                 .wrapping_add((missed >> FIFO_OVERFLOW_SHIFT) & FIFO_OVERFLOW_MASK),
         );
-        stats.rx_missed = self.rx_missed.get();
-        stats.rx_fifo_overflows = self.rx_fifo_overflows.get();
 
-        DMA_ERRORS.merge_into(&mut stats);
-        stats
+        Stats {
+            rx_missed: self.rx_missed.get(),
+            rx_fifo_overflows: self.rx_fifo_overflows.get(),
+        }
     }
 
     /// Route the MAC's interrupt source to `cpu_int` and start taking it.
