@@ -339,8 +339,14 @@ pub trait PinOps {
     /// Attach or detach the pad's pull-up.
     fn set_pull_up_enabled(&mut self, enabled: bool);
 
+    /// Attach or detach the pad's pull-down.
+    fn set_pull_down_enabled(&mut self, enabled: bool);
+
     /// Enable or disable the input buffer.
     fn set_input_buffer_enabled(&mut self, enabled: bool);
+
+    /// Enable or disable the pad's output driver (`GPIO_ENABLE`).
+    fn set_output_enabled(&mut self, enabled: bool);
 
     /// Switch the pad's output driver to open-drain.
     fn set_open_drain_enabled(&mut self, enabled: bool);

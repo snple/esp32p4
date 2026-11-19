@@ -13,9 +13,9 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | [`esp32p4-pac`](esp32p4-pac/) | **PAC**：由 `esp32p4.svd` 生成，提供寄存器块、字段常量和访问器。勿手改 |
 | [`esp32p4-rt`](esp32p4-rt/) | **运行时**：`_start`、trap 入口、`link.x`、CSR/汇编封装 |
 | [`esp32p4-macro`](esp32p4-macro/) | **过程宏**：`#[main]` |
-| [`esp32p4`](esp32p4/) | **HAL**：时钟树、GPIO / IO MUX、UART、I2C 主机、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
+| [`esp32p4`](esp32p4/) | **HAL**：时钟树、GPIO / IO MUX、UART、I2C 主机、ADC、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
 | [`esp32p4-usb`](esp32p4-usb/) | **USB 设备栈**：DWC OTG 全速/高速控制器（slave 模式、轮询）、标准请求与描述符、CDC-ACM 虚拟串口、自定义类 |
-| [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、UART 回环、I2C 扫描、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC |
+| [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、UART 回环、I2C 扫描、ADC 采样、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC |
 | [`xtask`](xtask/) | 构建辅助：`cargo xtask gen-pac` |
 
 依赖方向是单向的：`macro` / `rt` → `pac` → `esp32p4` / `esp32p4-usb` → `examples`。
@@ -44,6 +44,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `net_tcp_echo` | DHCP + TCP echo 服务器（需 `--features net`，无堆、无 async） |
 | `uart` | `UART1` 内部回环自检：三组数据原样收发，并打印波特率与帧格式 |
 | `i2c_scan` | `I2C0` 扫描 7 位地址空间，逐个探测并打印应答的从机 |
+| `adc` | 报告 eFuse 校准是否可用，并在四档衰减下采样 13 个 ADC 焊盘 |
 
 ## 快速开始
 
@@ -571,6 +572,32 @@ i2c.write_read(0x48, &[0x0f], &mut value).unwrap();
 
 示例 [`i2c_scan`](esp32p4-examples/src/i2c_scan.rs) 扫描 7 位地址空间；空总线上每个探测
 立刻返回 `NoAcknowledge`（实测 112 个地址约 5 ms）。
+
+## ADC
+
+[`adc`](esp32p4/src/adc.rs) 是两路 12 位 SAR ADC 的 one-shot 驱动（RTC/LP 控制器；
+HP 数字控制器 + DMA 的连续采样模式还没做）：
+
+- `ADC1` 八通道（GPIO16–23）、`ADC2` 六通道（GPIO49–54）；ADC 通道不是 GPIO 矩阵信号，
+  `AdcInput::new` 从焊盘功能表（[`gpio::pins`](esp32p4/src/gpio/pins.rs)）反查通道号，
+  并把焊盘设成浮空（关输入缓冲、关上下拉、关输出）；
+- 每个通道独立衰减：0 / 2.5 / 6 / 12 dB，随 `AdcInput` 携带；
+- 阻塞读取 `read_raw`（0–4095）与 `read_millivolts`，也可以 `start` / `is_done` /
+  `read_result` 自己轮询；
+- 工厂校准来自 eFuse：每次转换前把该单元/衰减对应的 offset 码写进 SAR（模拟 I2C
+  寄存器 `ADC_SARn_DREF` + `INITIAL_CODE`），`read_millivolts` 再用参考点、误差多项式
+  与逐通道补偿换算成毫伏；eFuse 未烧录时退回标称满量程并如实报告。
+
+```rust
+let adc = Adc::init(dp.ADC, dp.LP_ADC, &dp.HP_SYS_CLKRST, &dp.LP_PERI);
+let mut sense = pins.pin::<16>();
+let input = AdcInput::new(&mut sense, Attenuation::_12dB);
+let millivolts = adc.read_millivolts(&input);
+```
+
+示例 [`adc`](esp32p4-examples/src/adc.rs) 先报告校准是否可用，再把 13 个 ADC 焊盘在四档
+衰减下各采两次。实测同一浮空焊盘在四档衰减下换算出的电压互相吻合（例如 743/716/668/606
+mV，差异来自采样把焊盘电容一点点放掉），说明衰减与校准系数是对得上的。
 
 ## eFuse 与芯片版本
 

@@ -57,7 +57,9 @@
    字节序/位宽配置。UART/SPI/I2S/ADC 的“能用”与“好用”之间就差这一块；
    `emac` 有自己的 DMA，不必依赖它。
 4. **GPSPI2/3（SPI master/slave）+ SDHOST**：SD 卡、传感器、外部模块。
-5. **ADC + TSENS**：电压/电池/温度采样。
+5. ~~**ADC**：电压/电池采样。~~ 已完成 `ADC1`/`ADC2` 的 one-shot 读取（每通道衰减、
+   eFuse 工厂校准与毫伏换算）；HP 数字控制器（pattern 表 + DMA）与 LP 核侧的 LP ADC 待补。
+   **TSENS**（`LP_TSENS`，独立的温度传感器）仍未实现。
 6. **PWM 家族：LEDC、MCPWM、RMT、PCNT**：调光、电机、WS2812/红外、编码器。
 7. **TWAI（CAN-FD ×3）、I2S0/1/2（音频）、SDIO slave、USB OTG host**：
    `esp32p4-usb` 现在只有设备侧，host 侧缺失。

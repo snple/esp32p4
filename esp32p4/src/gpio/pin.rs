@@ -634,6 +634,20 @@ macro_rules! impl_pin {
                 }
 
                 #[inline]
+                fn set_pull_down_enabled(&mut self, enabled: bool) {
+                    Pin::<$n>::set_pull(self, if enabled { Pull::Down } else { Pull::None });
+                }
+
+                #[inline]
+                fn set_output_enabled(&mut self, enabled: bool) {
+                    if enabled {
+                        Pin::<$n>::set_direction_out(self);
+                    } else {
+                        Pin::<$n>::set_direction_in(self);
+                    }
+                }
+
+                #[inline]
                 fn set_input_buffer_enabled(&mut self, enabled: bool) {
                     if enabled {
                         Pin::<$n>::enable_input(self);
