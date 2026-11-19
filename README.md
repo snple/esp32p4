@@ -409,7 +409,7 @@ interrupt::free(|cs| COUNTER.borrow(cs).set(0));
 |------|------|----------|------|
 | [`time`](esp32p4/src/time.rs) | `SYSTIMER` unit 0 | 16 MHz tick（62.5 ns） | 单调时钟：`Instant` / `Duration`；52 位，约 8.9 年回绕 |
 | [`systimer`](esp32p4/src/systimer.rs) | `SYSTIMER` COMP1 / COMP2 | 同上 | 绝对 deadline（一次性）与固定周期闹钟，带中断 |
-| [`timer`](esp32p4/src/timer/mod.rs) | `TIMG0` / `TIMG1`，各 2 路 + 1 个 MWDT | 可配预分频，默认 1 µs | `TimerGroup0/1` → `Timer<G, N>` 通用计数器 + `Watchdog<G>` 看门狗 |
+| [`timer`](esp32p4/src/timer/mod.rs) | `TIMG0` / `TIMG1`，各 2 路 + 1 个 MWDT | 可配预分频，默认 1 µs | `TimerGroup0/1` → `Timer00/01/10/11` 通用计数器 + `Watchdog0/1` 看门狗 |
 
 `time` 只读计数器，永远自由运行；`Delay` 在它上面借 comparator 0 睡到指定 tick（`sleep_ms` 睡一段时间，`sleep_until(Instant)` 睡到某个时刻）。
 
@@ -419,20 +419,22 @@ do_work();
 let elapsed: Duration = start.elapsed();   // 与 delay::micros() 同一个时间源
 ```
 
-### 定时器组：`TimerGroup0/1`、`Timer<G, N>` 与 `Watchdog<G>`
+### 定时器组：`TimerGroup0/1`、`Timer00/01/10/11` 与 `Watchdog0/1`
 
 ```text
-TimerGroup0 ─┬─ Timer<0, 0>   矩阵源 TG0_T0
-             ├─ Timer<0, 1>   TG0_T1
-             └─ Watchdog<0>   TG0_WDT
-TimerGroup1 ─┬─ Timer<1, 0>   TG1_T0
-             ├─ Timer<1, 1>   TG1_T1
-             └─ Watchdog<1>   TG1_WDT
+TimerGroup0 ─┬─ Timer00      矩阵源 TG0_T0
+             ├─ Timer01      TG0_T1
+             └─ Watchdog0    TG0_WDT
+TimerGroup1 ─┬─ Timer10      TG1_T0
+             ├─ Timer11      TG1_T1
+             └─ Watchdog1    TG1_WDT
 ```
 
-`TimerGroup0::new(dp.TIMG0, &clkrst)` 打开时钟门、把两路计数器和看门狗复位到已知状态，
-然后像硬件那样把部件作为**公开字段**持有——`group.timer0`、`group.timer1`、`group.wdt`，
-每个部件是独立类型，寄存器、矩阵源和中断接线都在编译期定死。计时器的方法全部取 `&self`：
+`TimerGroup0::init(dp.TIMG0, &clkrst)` 接管 `TIMG0` 的所有权，打开时钟门、把两路计数器和
+看门狗复位到已知状态，然后像硬件那样把部件作为**公开字段**持有——`group.timer0`、
+`group.timer1`、`group.wdt`。每个部件是独立类型，各持有一个指向本组寄存器的 `TIMG` 句柄
+（不是全局指针、也没有类型转换）；CPU 线由 group 拥有，`group.enable_timer0_interrupt(...)` /
+`enable_timer1_interrupt(...)` 负责申请、路由、释放。计时器的方法全部取 `&self`：
 
 - 时钟源可选 `XTAL_CLK` 40 MHz、`RC_FAST_CLK`（约 17.5 MHz）、`PLL_F80M_CLK` 80 MHz，
   16 位预分频（2..=65536）；默认 40 → 1 tick = 1 µs。`timer.ticks(Duration)` 负责把时间段
@@ -443,16 +445,17 @@ TimerGroup1 ─┬─ Timer<1, 0>   TG1_T0
   然后才开始计数，所以重启一定是确定性的。`stop()` / `is_running()` / `counter()` 配套。
 - 闹钟触发后硬件会清掉 `ALARM_EN`。开启 auto-reload 时计数器从重载值重新开始，HAL 的
   中断壳清状态后自动重新武装，周期性闹钟因此不需要用户干预；一次性闹钟保持关闭。
-- 每路有独立的矩阵源，CPU 线由调用者传入，`enable_interrupt(line, handler)` 内部走
-  `interrupt::claim`，线被占用会 panic。
+- 每路有独立的矩阵源，CPU 线由调用者传入；`group.enable_timer0_interrupt(line, handler)`
+  （或 `..._timer1_...`）内部走 `interrupt::claim`，线被占用会 panic，drop group 或调用
+  `disable_timer0_interrupt()` 时自动屏蔽并交还该线。
 
 ```rust
-let group = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST);
+let group = TimerGroup0::init(dp.TIMG0, &dp.HP_SYS_CLKRST);
 let fast = &group.timer0;
 let slow = &group.timer1;
 
 // 100 ms 周期中断
-fast.enable_interrupt(CpuInterrupt::new(21), tick);
+group.enable_timer0_interrupt(CpuInterrupt::new(21), tick);
 fast.set_reload_value(0);
 fast.set_alarm(fast.ticks(Duration::from_millis(100)));
 fast.set_auto_reload(true);
@@ -460,7 +463,7 @@ fast.start();
 
 // 1 s，倒计数
 slow.set_direction(Direction::Down);
-slow.enable_interrupt(CpuInterrupt::new(22), slow_tick);
+group.enable_timer1_interrupt(CpuInterrupt::new(22), slow_tick);
 slow.set_reload_value(slow.ticks(Duration::from_secs(1)));
 slow.set_alarm(0);
 slow.set_auto_reload(true);
@@ -469,11 +472,12 @@ slow.start();
 unsafe { interrupt::enable() };
 ```
 
-中断里没有 `&Timer`，用 `unsafe { Timer::<0, 0>::steal() }` 拿到**同一个类型**的副本
+中断里没有 `&Timer00`，用 `unsafe { Timer00::steal() }` 拿到**同一个类型**的副本
 （和 `Pin::<N>::steal()` 一个模式）：一个寄存器都不写，不启动计数、不持有 CPU 线，
-drop 它也不会影响 owner。
+drop 它也不会影响 owner。四路计数器和两个看门狗都能这样 `steal()`；中断的申请与交还则
+始终留在 group 上。
 
-`Watchdog<G>` 是 MWDT，就是 `group.wdt`：`set_timeout(MwdtStage::Stage0,
+`Watchdog0` / `Watchdog1` 是 MWDT，就是 `group.wdt`：`set_timeout(MwdtStage::Stage0,
 Duration::from_secs(1))` 配合 `set_stage_action(stage, MwdtStageAction::ResetSystem)`，
 然后 `enable()`；之后必须在超时前 `feed()`，否则系统复位。它也有 `steal()`，因此在别处
 喂狗不需要持有 group。`startup::init` 已经把 bootloader 留下的看门狗关掉了，所以不碰它的
@@ -481,24 +485,30 @@ Duration::from_secs(1))` 配合 `set_stage_action(stage, MwdtStageAction::ResetS
 
 ### `SYSTIMER` 比较器闹钟
 
-`SYSTIMER` 的 3 个比较器里，COMP0 归 `Delay`，另外两个各是一个类型：
-[`systimer::Alarm1`](esp32p4/src/systimer.rs) 与 `Alarm2`（`Alarm1::new()` 占用比较器，
-重复占用会 panic）：
+`SYSTIMER` 的 3 个比较器里，COMP0 归 `Delay`，另外两个是
+[`systimer::Systimer`](esp32p4/src/systimer.rs) 的部件：`systimer.alarm1`（COMP1）与
+`systimer.alarm2`（COMP2）。`Systimer::init(dp.SYSTIMER)` 接管外设所有权，每个 alarm 各持有
+一个指向同一寄存器的句柄；CPU 线由 `Systimer` 拥有，`enable_alarm1_interrupt(line, handler)` /
+`enable_alarm2_interrupt(...)` 负责申请与释放，drop 时自动屏蔽并交还。
 
 - **target 模式**：一次中断，比较值是完整的 52 位计数器值，也就是一个 `Instant`
   （`alarm.set_target(Instant::now() + Duration::from_secs(5))`）。
 - **period 模式**：每 δt 一次中断，δt 存在 26 位寄存器里，因此上限约 67 秒
   （`alarm.set_period(Duration::from_millis(10))`）。周期模式由硬件自己重新武装，
   handler 只要应答。
-- 中断是电平型，HAL 的中断壳负责清 `int_clr`；`enable_interrupt(line, handler)` 同样走
-  `interrupt::claim`，CPU 线由调用者选。
+- 中断是电平型，HAL 的中断壳负责清 `int_clr`；`enable_alarmN_interrupt` 内部走
+  `interrupt::claim`，线被占用会 panic。`unsafe { Alarm1::steal() }` 同样给中断上下文
+  一份只访问寄存器的副本。
 
 ```rust
-let periodic = Alarm1::new();
-periodic.enable_interrupt(CpuInterrupt::new(21), tick);
+let systimer = Systimer::init(dp.SYSTIMER);
+let delay = systimer.delay();          // COMP0，独占的 Delay 驱动
+
+let periodic = &systimer.alarm1;
+systimer.enable_alarm1_interrupt(CpuInterrupt::new(21), tick);
 periodic.set_period(Duration::from_millis(250));
 
-let one_shot = Alarm2::new();
+let one_shot = &systimer.alarm2;
 one_shot.set_target(Instant::now() + Duration::from_secs(5));
 ```
 
@@ -574,9 +584,9 @@ espflash save-image --chip esp32p4 \
 - RISC-V 启动、trap 入口、CSR/汇编封装、ESP-IDF 兼容镜像布局
 - GPIO0–GPIO53 的简单推挽输出/输入、IO MUX 配置
 - SYSTIMER 阻塞延时（`sleep_ms` / `sleep_until`）与单调时钟（`time::Instant` / `Duration`）
-- SYSTIMER 比较器闹钟（`Alarm1` / `Alarm2`：绝对 deadline 与周期模式，带中断）
-- 定时器组（`TimerGroup0/1` → `Timer<G, N>`：4 路 54 位计数器，时钟源与预分频、增/减计数、
-  软件重载、一次性与周期性闹钟中断）与主系统看门狗（`Watchdog<G>`：分阶段超时、
+- SYSTIMER 比较器闹钟（`Systimer` → `Alarm1` / `Alarm2`：绝对 deadline 与周期模式，带中断）
+- 定时器组（`TimerGroup0/1` → `Timer00/01/10/11`：4 路 54 位计数器，时钟源与预分频、增/减计数、
+  软件重载、一次性与周期性闹钟中断）与主系统看门狗（`Watchdog0/1`：分阶段超时、
   中断/复位动作、`feed()`）
 - 复位控制与复位原因（`system::software_reset` / `software_reset_cpu` / `reset_reason`，纯寄存器实现）
 - 封装内 PSRAM 初始化（MPLL 250 MHz、16/32 MB 自动检测、MMU 映射、`PsramAllocator`）

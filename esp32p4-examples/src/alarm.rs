@@ -20,12 +20,11 @@ defmt::timestamp!("{=u64:us}", esp32p4::delay::micros());
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use esp32p4::delay::Delay;
 use esp32p4::gpio::Pins;
 use esp32p4::interrupt::{self, CpuInterrupt};
 use esp32p4::main;
 use esp32p4::pac::Peripherals;
-use esp32p4::systimer::{Alarm1, Alarm2};
+use esp32p4::systimer::Systimer;
 use esp32p4::time::{Duration, Instant};
 
 const LED_PIN: u32 = 2;
@@ -43,16 +42,19 @@ fn main() -> ! {
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
     let mut led = pins.pin::<LED_PIN>();
     led.into_output();
-    let delay = Delay::init(dp.SYSTIMER);
+    // The timer owns the peripheral and the alarms' CPU lines; the delay
+    // driver shares comparator 0 through its own handle.
+    let systimer = Systimer::init(dp.SYSTIMER);
+    let delay = systimer.delay();
 
     // COMP1: an interrupt every 250 ms. The hardware re-arms the comparator,
     // so the handler only has to acknowledge it (which the shim does).
-    let periodic = Alarm1::new();
-    periodic.enable_interrupt(ALARM_LINE, tick);
+    let periodic = &systimer.alarm1;
+    systimer.enable_alarm1_interrupt(ALARM_LINE, tick);
     periodic.set_period(Duration::from_millis(250));
 
     // COMP2: a single deadline 5 s out, polled from the main loop.
-    let one_shot = Alarm2::new();
+    let one_shot = &systimer.alarm2;
     one_shot.set_target(Instant::now() + Duration::from_secs(5));
 
     unsafe { interrupt::enable() };

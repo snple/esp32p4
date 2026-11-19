@@ -27,7 +27,7 @@ use esp32p4::interrupt::{self, CpuInterrupt};
 use esp32p4::main;
 use esp32p4::pac::Peripherals;
 use esp32p4::time::Duration;
-use esp32p4::timer::{Direction, Timer, TimerGroup0};
+use esp32p4::timer::{Direction, Timer00, TimerGroup0};
 
 const LED_PIN: u32 = 2;
 /// CPU lines this example borrows out of the 32 the CLIC has.
@@ -44,7 +44,7 @@ fn fast_tick() {
 
     // The handler does not own the timer, but a stolen copy is enough.
     // SAFETY: `main` keeps this timer alive for the whole program.
-    let timer = unsafe { Timer::<0, 0>::steal() };
+    let timer = unsafe { Timer00::steal() };
     FAST_COUNTER.store(timer.counter() as u32, Ordering::Relaxed);
 }
 
@@ -59,14 +59,15 @@ fn main() -> ! {
     let mut led = pins.pin::<LED_PIN>();
     led.into_output();
 
-    // The group owns both counters and the watchdog, like the hardware.
-    let group = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST);
+    // The group owns the peripheral, both counters, the watchdog and the CPU
+    // lines, like the hardware.
+    let group = TimerGroup0::init(dp.TIMG0, &dp.HP_SYS_CLKRST);
     let fast = &group.timer0;
     let slow = &group.timer1;
 
     // 100 ms, counting up from zero: the counter restarts on every alarm, so
     // the time spent in the handler does not accumulate.
-    fast.enable_interrupt(FAST_LINE, fast_tick);
+    group.enable_timer0_interrupt(FAST_LINE, fast_tick);
     fast.set_reload_value(0);
     fast.set_alarm(fast.ticks(Duration::from_millis(100)));
     fast.set_auto_reload(true);
@@ -74,7 +75,7 @@ fn main() -> ! {
 
     // One second, counting down from the period to zero.
     slow.set_direction(Direction::Down);
-    slow.enable_interrupt(SLOW_LINE, slow_tick);
+    group.enable_timer1_interrupt(SLOW_LINE, slow_tick);
     slow.set_reload_value(slow.ticks(Duration::from_secs(1)));
     slow.set_alarm(0);
     slow.set_auto_reload(true);

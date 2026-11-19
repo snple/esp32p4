@@ -31,8 +31,9 @@
 //! | 20 | Ethernet MAC |
 //!
 //! Drivers that cannot know the line at compile time take it as an argument
-//! instead: [`Timer::enable_interrupt`](crate::timer::Timer::enable_interrupt)
-//! and [`Alarm1::enable_interrupt`](crate::systimer::Alarm1::enable_interrupt)
+//! instead:
+//! [`TimerGroup0::enable_timer0_interrupt`](crate::timer::TimerGroup0::enable_timer0_interrupt)
+//! and [`Systimer::enable_alarm1_interrupt`](crate::systimer::Systimer::enable_alarm1_interrupt)
 //! claim whatever line the application passes, so the general-purpose timers
 //! and the system timer alarms can share the lines nobody else wanted.
 //!

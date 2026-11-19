@@ -4,12 +4,12 @@
 //! general-purpose counters and one main system watchdog (MWDT):
 //!
 //! ```text
-//! TimerGroup0 ─┬─ Timer<0, 0>   (matrix source TG0_T0)
-//!              ├─ Timer<0, 1>   (TG0_T1)
-//!              └─ Watchdog<0>   (TG0_WDT)
-//! TimerGroup1 ─┬─ Timer<1, 0>   (TG1_T0)
-//!              ├─ Timer<1, 1>   (TG1_T1)
-//!              └─ Watchdog<1>   (TG1_WDT)
+//! TimerGroup0 ─┬─ Timer00     (matrix source TG0_T0)
+//!              ├─ Timer01     (TG0_T1)
+//!              └─ Watchdog0   (TG0_WDT)
+//! TimerGroup1 ─┬─ Timer10     (TG1_T0)
+//!              ├─ Timer11     (TG1_T1)
+//!              └─ Watchdog1   (TG1_WDT)
 //! ```
 //!
 //! A counter runs off `XTAL_CLK` (40 MHz), `RC_FAST_CLK` (~17.5 MHz) or
@@ -18,10 +18,10 @@
 //!
 //! # Using a timer
 //!
-//! [`TimerGroup0::new`] brings the group into a known state and hands out its
-//! parts the way the hardware has them: `group.timer0`, `group.timer1` and
-//! `group.wdt`. Nothing starts on its own: configure the counter, then call
-//! [`Timer::start`].
+//! [`TimerGroup0::init`] takes `TIMG0`, brings the group into a known state and
+//! hands out its parts the way the hardware has them: `group.timer0`,
+//! `group.timer1` and `group.wdt`. Nothing starts on its own: configure the
+//! counter, then call [`Timer00::start`].
 //!
 //! ```ignore
 //! use esp32p4::interrupt::{self, CpuInterrupt};
@@ -32,10 +32,13 @@
 //!     // Runs in interrupt context: keep it short.
 //! }
 //!
-//! let group = TimerGroup0::new(dp.TIMG0, &dp.HP_SYS_CLKRST);
-//! let timer = &group.timer0;
+//! let group = TimerGroup0::init(dp.TIMG0, &dp.HP_SYS_CLKRST);
 //!
-//! timer.enable_interrupt(CpuInterrupt::new(21), tick);  // CPU line 21
+//! // The group owns the CPU line: it claims it, routes the counter's alarm to
+//! // it, and gives it back when the interrupt or the whole group is dropped.
+//! group.enable_timer0_interrupt(CpuInterrupt::new(21), tick);  // CPU line 21
+//!
+//! let timer = &group.timer0;
 //! timer.set_reload_value(0);                            // restart from here
 //! timer.set_alarm(timer.ticks(Duration::from_millis(100)));
 //! timer.set_auto_reload(true);                          // and again, every 100 ms
@@ -43,44 +46,35 @@
 //! interrupt::enable();
 //! ```
 //!
-//! Every method takes `&self`, so a timer behind a shared reference is enough,
-//! and `unsafe { Timer::<0, 0>::steal() }` hands the very same type to an
-//! interrupt handler or another module. A stolen timer never touches the
-//! hardware: it neither starts the counter nor owns the CPU line.
+//! Every method of a counter takes `&self`, and `unsafe { Timer00::steal() }`
+//! hands the same register access to an interrupt handler or another module. A
+//! stolen counter never touches the hardware: it neither starts the counter nor
+//! owns a CPU line — the lines belong to the group.
 //!
 //! # The watchdog
 //!
-//! [`Watchdog`] is the MWDT: a four-stage countdown that can raise an interrupt
-//! or reset the CPU or the whole system. It is configured through the group, and
-//! needs feeding before the first stage runs out.
+//! [`Watchdog0`] / [`Watchdog1`] are the MWDTs: four-stage countdowns that can
+//! raise an interrupt or reset the CPU or the whole system. They are configured
+//! through the group, and need feeding before the first stage runs out.
 //!
 //! # Registers
 //!
 //! Everything goes through `esp32p4-pac`. The vendor SVD stops at timer 0 of
 //! each group and leaves timer 1 in a reserved hole, so `timg.svd` completes the
 //! two blocks (see `xtask/gen_timg.py`) and `cargo xtask gen-pac` merges them
-//! over the vendor's peripherals. Both groups are the same IP, so the driver
-//! views group 1 through group 0's register block type.
+//! over the vendor's peripherals. Each part works through a handle to its own
+//! group, so group 1 goes through `TIMG1`'s registers instead of a cast to group
+//! 0's.
 
 use core::cell::RefCell;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use esp32p4_pac::{TIMG0, TIMG1, hp_sys_clkrst, timg0};
+use esp32p4_pac::{TIMG0, TIMG1, hp_sys_clkrst};
 use pastey::paste;
 
 use crate::Steal;
 use crate::interrupt::{self, CpuInterrupt, Interrupt, InterruptHandler, Level};
 use crate::time::{self, Duration};
-
-/// The clock controller's registers, as the timers see them.
-type Clkrst = hp_sys_clkrst::RegisterBlock;
-
-/// The two groups are the same IP, so one register block type covers both.
-const _: () = assert!(
-    core::mem::size_of::<timg0::RegisterBlock>()
-        == core::mem::size_of::<esp32p4_pac::timg1::RegisterBlock>(),
-    "the timer groups must share a register layout"
-);
 
 /// A clock a timer or the watchdog can prescale.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -199,7 +193,7 @@ const DEFAULT_DIVIDER: u32 = 40;
 const MAX_VALUE: u64 = (1 << 54) - 1;
 
 /// Frequency the watchdog counts at: `XTAL_CLK`, selected by
-/// [`TimerGroup0::new`].
+/// [`TimerGroup0::init`].
 const WDT_CLOCK_HZ: u32 = 40_000_000;
 
 /// Value that unlocks the watchdog's configuration registers.
@@ -208,338 +202,23 @@ const WDT_UNLOCK_KEY: u32 = 0x50d8_3aa1;
 /// Number of general-purpose timers on the chip.
 const TIMER_COUNT: usize = 4;
 
-/// User callbacks, one per timer, called by the shims below.
+/// User callbacks, one per counter, called by the generated interrupt shims.
 static HANDLERS: [AtomicUsize; TIMER_COUNT] = [const { AtomicUsize::new(0) }; TIMER_COUNT];
 
-/// The register block of timer group `G`.
-fn block<const G: u8>() -> &'static timg0::RegisterBlock {
-    const { assert!(G < 2, "no such timer group") };
-    // SAFETY: both groups are the same IP at fixed addresses, and the layout
-    // check above keeps the cast honest.
-    unsafe {
-        if G == 0 {
-            &*TIMG0::PTR
-        } else {
-            &*(TIMG1::PTR as *const timg0::RegisterBlock)
-        }
-    }
-}
-
 /// The clock controller's register block.
-fn clkrst() -> &'static Clkrst {
+fn clkrst() -> &'static hp_sys_clkrst::RegisterBlock {
     // SAFETY: the clock controller is always mapped and lives for the program.
     unsafe { &*esp32p4_pac::HP_SYS_CLKRST::PTR }
 }
 
-// ============================================================================
-// Interrupt plumbing
-// ============================================================================
-
-/// Acknowledge the alarm of timer `unit` and re-arm it in periodic mode.
-fn acknowledge(block: &timg0::RegisterBlock, unit: u8) {
-    // Level interrupt: clear the request before returning, or the line stays
-    // asserted and the trap repeats.
-    if unit == 0 {
-        block.int_clr_timers.trigger_t0_int_clr();
-    } else {
-        block.int_clr_timers.trigger_t1_int_clr();
-    }
-
-    // Hardware clears `ALARM_EN` on every alarm. With auto-reload the counter
-    // restarts from the reload value, so arming it again is all that is needed
-    // to get the next period.
-    let auto_reload = if unit == 0 {
-        block.t0config.autoreload()
-    } else {
-        block.t1config.autoreload()
-    };
-    if auto_reload {
-        if unit == 0 {
-            block.t0config.set_alarm_en();
-        } else {
-            block.t1config.set_alarm_en();
-        }
-    }
-}
-
-/// Calls the user's handler of timer `index`.
+/// Calls the user's handler of counter `index`.
 fn dispatch(index: usize) {
     let handler = HANDLERS[index].load(Ordering::Acquire);
     if handler != 0 {
-        // SAFETY: `HANDLERS` only ever holds values stored by
-        // `enable_interrupt`, which stores `fn()` pointers.
+        // SAFETY: `HANDLERS` only ever holds values stored by the timer groups,
+        // which store `fn()` pointers.
         let handler: fn() = unsafe { core::mem::transmute::<usize, fn()>(handler) };
         handler();
-    }
-}
-
-fn alarm00() {
-    acknowledge(block::<0>(), 0);
-    dispatch(0);
-}
-
-fn alarm01() {
-    acknowledge(block::<0>(), 1);
-    dispatch(1);
-}
-
-fn alarm10() {
-    acknowledge(block::<1>(), 0);
-    dispatch(2);
-}
-
-fn alarm11() {
-    acknowledge(block::<1>(), 1);
-    dispatch(3);
-}
-
-/// One shim per timer, so the trap handler knows which registers to poke.
-const SHIMS: [fn(); TIMER_COUNT] = [alarm00, alarm01, alarm10, alarm11];
-
-/// Interrupt bookkeeping for one timer.
-///
-/// Holding this is what owns the CPU line: dropping it masks the timer, drops
-/// the request, unregisters the shim and hands the line back. Keeping it out of
-/// the timer type itself is what lets a stolen copy stay inert.
-struct Irq {
-    /// Held for its `Drop`, which unregisters the shim and releases the line.
-    _handler: InterruptHandler,
-    block: &'static timg0::RegisterBlock,
-    unit: u8,
-    index: usize,
-}
-
-impl Drop for Irq {
-    fn drop(&mut self) {
-        if self.unit == 0 {
-            self.block.int_ena_timers.clr_t0_int_ena();
-            self.block.int_clr_timers.trigger_t0_int_clr();
-        } else {
-            self.block.int_ena_timers.clr_t1_int_ena();
-            self.block.int_clr_timers.trigger_t1_int_clr();
-        }
-        HANDLERS[self.index].store(0, Ordering::Release);
-    }
-}
-
-// ============================================================================
-// Clocking
-// ============================================================================
-
-/// Selects the clock and opens the timer gate of one counter.
-///
-/// Two gates are involved: `SOC_CLK_CTRL2` lets the CPU reach the group's
-/// registers at all, and `PERI_CLK_CTRL2n` picks the source and gates the
-/// counter clock of one timer. ESP-IDF opens both when a timer is claimed.
-fn program_clock(group: u8, unit: u8, clock: ClockSource) {
-    let clkrst = clkrst();
-    let source = clock.select();
-    if group == 0 {
-        clkrst.soc_clk_ctrl2.set_reg_timergrp0_apb_clk_en();
-        let ctrl = &clkrst.peri_clk_ctrl20;
-        if unit == 0 {
-            ctrl.write_reg_timergrp0_t0_src_sel(source);
-            ctrl.set_reg_timergrp0_t0_clk_en();
-        } else {
-            ctrl.write_reg_timergrp0_t1_src_sel(source);
-            ctrl.set_reg_timergrp0_t1_clk_en();
-        }
-    } else {
-        clkrst.soc_clk_ctrl2.set_reg_timergrp1_apb_clk_en();
-        let ctrl = &clkrst.peri_clk_ctrl21;
-        if unit == 0 {
-            ctrl.write_reg_timergrp1_t0_src_sel(source);
-            ctrl.set_reg_timergrp1_t0_clk_en();
-        } else {
-            ctrl.write_reg_timergrp1_t1_src_sel(source);
-            ctrl.set_reg_timergrp1_t1_clk_en();
-        }
-    }
-}
-
-/// The clock currently feeding one timer's prescaler.
-fn clock_source_of(group: u8, unit: u8) -> ClockSource {
-    let clkrst = clkrst();
-    let selected = if group == 0 {
-        let ctrl = &clkrst.peri_clk_ctrl20;
-        if unit == 0 {
-            ctrl.reg_timergrp0_t0_src_sel()
-        } else {
-            ctrl.reg_timergrp0_t1_src_sel()
-        }
-    } else {
-        let ctrl = &clkrst.peri_clk_ctrl21;
-        if unit == 0 {
-            ctrl.reg_timergrp1_t0_src_sel()
-        } else {
-            ctrl.reg_timergrp1_t1_src_sel()
-        }
-    };
-    ClockSource::from_select(selected)
-}
-
-/// Puts one counter back into its reset configuration.
-fn reset_timer(block: &timg0::RegisterBlock, unit: u8) {
-    // The PAC gives each instance its own register types, so the field access
-    // is written once and instantiated per timer.
-    macro_rules! reset {
-        ($config:ident, $load_hi:ident, $load_lo:ident, $load:ident) => {{
-            // The bootloader may have left the timer running with an alarm
-            // armed. Stop it before touching the prescaler.
-            let config = &block.$config;
-            config.clr_en();
-            config.write_divider(DEFAULT_DIVIDER);
-            config.trigger_divcnt_rst();
-            config.clr_alarm_en();
-            config.clr_autoreload();
-            config.set_increase();
-            config.clr_use_xtal();
-            block.$load_hi.write_load_hi(0);
-            block.$load_lo.write_load_lo(0);
-            block.$load.write_load(1);
-        }};
-    }
-
-    if unit == 0 {
-        reset!(t0config, t0loadhi, t0loadlo, t0load);
-        block.int_ena_timers.clr_t0_int_ena();
-        block.int_clr_timers.trigger_t0_int_clr();
-    } else {
-        reset!(t1config, t1loadhi, t1loadlo, t1load);
-        block.int_ena_timers.clr_t1_int_ena();
-        block.int_clr_timers.trigger_t1_int_clr();
-    }
-}
-
-/// Opens the clocks and resets both counters of one group.
-fn init_group(group: u8, clkrst: &hp_sys_clkrst::RegisterBlock) {
-    // The APB gate lets the CPU reach the group at all; the watchdog has its
-    // own gate and source selector.
-    if group == 0 {
-        clkrst.soc_clk_ctrl2.set_reg_timergrp0_apb_clk_en();
-        clkrst.peri_clk_ctrl20.set_reg_timergrp0_wdt_clk_en();
-        clkrst
-            .peri_clk_ctrl20
-            .write_reg_timergrp0_wdt_src_sel(ClockSource::Xtal.select());
-    } else {
-        clkrst.soc_clk_ctrl2.set_reg_timergrp1_apb_clk_en();
-        clkrst.peri_clk_ctrl21.set_reg_timergrp1_wdt_clk_en();
-        clkrst
-            .peri_clk_ctrl21
-            .write_reg_timergrp1_wdt_src_sel(ClockSource::Xtal.select());
-    }
-
-    let block = if group == 0 {
-        block::<0>()
-    } else {
-        block::<1>()
-    };
-
-    for unit in 0..2u8 {
-        program_clock(group, unit, ClockSource::Xtal);
-        reset_timer(block, unit);
-    }
-
-    // The bootloader may leave the watchdog configuration unlocked. Give it a
-    // known stage layout while the registers are writable: stage 0 resets the
-    // system, the others are off, and the reset pulses are long enough to be
-    // seen.
-    block.wdtwprotect.write_wdt_wkey(WDT_UNLOCK_KEY);
-    block
-        .wdtconfig0
-        .write_wdt_stg0(MwdtStageAction::ResetSystem.select());
-    block
-        .wdtconfig0
-        .write_wdt_stg1(MwdtStageAction::Off.select());
-    block
-        .wdtconfig0
-        .write_wdt_stg2(MwdtStageAction::Off.select());
-    block
-        .wdtconfig0
-        .write_wdt_stg3(MwdtStageAction::Off.select());
-    block.wdtconfig0.clr_wdt_flashboot_mod_en();
-    block.wdtconfig0.write_wdt_cpu_reset_length(7);
-    block.wdtconfig0.write_wdt_sys_reset_length(7);
-    block.wdtconfig0.trigger_wdt_conf_update_en();
-    block.wdtwprotect.write_wdt_wkey(0);
-}
-
-// ============================================================================
-// Timer groups
-// ============================================================================
-
-/// `TIMG0`: two general-purpose timers and the main system watchdog.
-///
-/// The group owns its parts, the way the hardware does: [`timer0`](Self::timer0)
-/// and [`timer1`](Self::timer1) are the two counters and [`wdt`](Self::wdt) is
-/// the watchdog, each with its own type so the register, matrix source and
-/// interrupt plumbing are resolved at compile time.
-pub struct TimerGroup0 {
-    /// General-purpose timer 0, the source of `TG0_T0`.
-    pub timer0: Timer<0, 0>,
-    /// General-purpose timer 1, the source of `TG0_T1`.
-    pub timer1: Timer<0, 1>,
-    /// The group's main system watchdog.
-    pub wdt: Watchdog<0>,
-    _timg: TIMG0,
-}
-
-impl TimerGroup0 {
-    /// Take the group and bring it into a known state.
-    ///
-    /// Opens the group's clock gates, selects the crystal for both counters and
-    /// the watchdog, and leaves the counters stopped with their alarms
-    /// disarmed. The bootloader's watchdogs are already off by then (see
-    /// [`crate::startup`]); this does not re-enable them.
-    pub fn new(timg: TIMG0, clkrst: &hp_sys_clkrst::RegisterBlock) -> Self {
-        init_group(0, clkrst);
-        Self {
-            timer0: Timer::new(),
-            timer1: Timer::new(),
-            wdt: Watchdog::new(),
-            _timg: timg,
-        }
-    }
-
-    /// Give the group's parts back.
-    #[inline]
-    pub fn release(self) -> TIMG0 {
-        self._timg
-    }
-}
-
-/// `TIMG1`: two general-purpose timers and the main system watchdog.
-///
-/// See [`TimerGroup0`]; the parts are `Timer<1, 0>`, `Timer<1, 1>` and
-/// `Watchdog<1>`.
-pub struct TimerGroup1 {
-    /// General-purpose timer 0, the source of `TG1_T0`.
-    pub timer0: Timer<1, 0>,
-    /// General-purpose timer 1, the source of `TG1_T1`.
-    pub timer1: Timer<1, 1>,
-    /// The group's main system watchdog.
-    pub wdt: Watchdog<1>,
-    _timg: TIMG1,
-}
-
-impl TimerGroup1 {
-    /// Take the group and bring it into a known state.
-    ///
-    /// See [`TimerGroup0::new`].
-    pub fn new(timg: TIMG1, clkrst: &hp_sys_clkrst::RegisterBlock) -> Self {
-        init_group(1, clkrst);
-        Self {
-            timer0: Timer::new(),
-            timer1: Timer::new(),
-            wdt: Watchdog::new(),
-            _timg: timg,
-        }
-    }
-
-    /// Give the group's parts back.
-    #[inline]
-    pub fn release(self) -> TIMG1 {
-        self._timg
     }
 }
 
@@ -547,80 +226,108 @@ impl TimerGroup1 {
 // General-purpose timer
 // ============================================================================
 
-/// Compile-time identity of one general-purpose timer.
+/// Generates one general-purpose counter and its register-level API.
 ///
-/// `G` is the timer group (0 or 1) and `N` the timer inside it (0 or 1), so
-/// `Timer<1, 0>` is `TIMG1`'s first counter.
-pub struct Timer<const G: u8, const N: u8> {
-    irq: RefCell<Option<Irq>>,
-}
-
-impl<const G: u8, const N: u8> Timer<G, N> {
-    const fn new() -> Self {
-        Self {
-            irq: RefCell::new(None),
-        }
-    }
-
-    /// The clock feeding this timer's prescaler.
-    pub fn clock_source(&self) -> ClockSource {
-        clock_source_of(G, N)
-    }
-
-    /// Switch the timer to another clock source.
-    ///
-    /// The prescaler divisor stays as it is, so the tick rate changes with the
-    /// source. Stop the counter first if it is running.
-    pub fn set_clock_source(&self, clock: ClockSource) {
-        program_clock(G, N, clock);
-    }
-
-    /// Create a copy of this timer without owning it.
-    ///
-    /// This is analogous to [`Pin::steal`](crate::gpio::Pin::steal): it lets an
-    /// interrupt handler or another module reach the timer registers while the
-    /// real owner lives elsewhere (for example in `main`). Nothing is written to
-    /// the hardware, so a stolen copy never disturbs a running timer, and
-    /// dropping it neither stops the counter nor touches the interrupt.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that
-    ///
-    /// - a [`TimerGroup0`]/[`TimerGroup1`] has already been created, so the
-    ///   clock is on and the prescaler is programmed;
-    /// - the copy is not used to reconfigure the counter behind the owner's
-    ///   back, and not used to claim a second CPU line with
-    ///   [`enable_interrupt`](Timer::enable_interrupt).
-    #[inline]
-    pub unsafe fn steal() -> Steal<Self> {
-        const { assert!(G < 2 && N < 2, "no such general-purpose timer") };
-        Steal(Self::new())
-    }
-}
-
-/// Implements the register-level API for one concrete timer.
-///
-/// The PAC names each register after its instance (`t0config`, `t1config`, …),
-/// so the names are pasted per invocation instead of being matched at run time.
+/// The four counters are separate types — `Timer00`, `Timer01`, `Timer10` and
+/// `Timer11` — each holding a handle to its own group, so the registers, the
+/// matrix source and the interrupt shim are all fixed at compile time. The PAC
+/// names each register after its instance (`t0config`, `t1config`, …), so the
+/// register names are pasted per invocation.
 macro_rules! impl_timer {
-    ($G:literal, $N:literal, $source:ident, $shim:ident, $index:literal) => {
-        impl Timer<$G, $N> {
-            /// The register block of this timer's group.
-            #[inline(always)]
-            fn block(&self) -> &'static timg0::RegisterBlock {
-                block::<$G>()
+    (
+        $(#[$attr:meta])*
+        $Timer:ident, $TIMG:ident, $G:literal, $N:literal, $source:ident, $shim:ident,
+        $index:literal
+    ) => {
+        $(#[$attr])*
+        pub struct $Timer {
+            /// This counter's group. The group owns the same peripheral; the
+            /// handle is what makes the registers reachable from a counter.
+            timg: $TIMG,
+        }
+
+        impl $Timer {
+            const fn new() -> Self {
+                // SAFETY: the group that created this counter owns the
+                // peripheral, so the HAL already has exclusive access to its
+                // registers. This is a second handle to them, and the counters
+                // only ever touch their own registers.
+                Self {
+                    timg: unsafe { $TIMG::steal() },
+                }
             }
 
-            /// The interrupt matrix source feeding this timer.
-            const SOURCE: Interrupt = Interrupt::$source;
-            /// Index of this timer in the HAL's tables.
-            const INDEX: usize = $index;
+            /// Create a copy of this counter without owning it.
+            ///
+            /// This is analogous to [`Pin::steal`](crate::gpio::Pin::steal): it
+            /// lets an interrupt handler or another module reach the counter
+            /// registers while the real owner lives elsewhere (for example in
+            /// `main`). Nothing is written to the hardware, so a stolen copy
+            /// never disturbs a running counter, and dropping it neither stops
+            /// the counter nor touches an interrupt — the CPU lines belong to
+            /// the group.
+            ///
+            /// # Safety
+            ///
+            /// The caller must ensure that a [`TimerGroup0`]/[`TimerGroup1`] has
+            /// already been created, so the clock is on and the prescaler is
+            /// programmed, and that the copy is not used to reconfigure the
+            /// counter behind the owner's back.
+            #[inline]
+            pub unsafe fn steal() -> Steal<Self> {
+                Steal(Self::new())
+            }
+
+            /// The clock feeding this counter's prescaler.
+            pub fn clock_source(&self) -> ClockSource {
+                paste! {
+                    let ctrl = &clkrst().[<peri_clk_ctrl2 $G>];
+                    ClockSource::from_select(ctrl.[<reg_timergrp $G _t $N _src_sel>]())
+                }
+            }
+
+            /// Switch the counter to another clock source.
+            ///
+            /// The prescaler divisor stays as it is, so the tick rate changes
+            /// with the source. Stop the counter first if it is running.
+            pub fn set_clock_source(&self, clock: ClockSource) {
+                paste! {
+                    // `SOC_CLK_CTRL2` lets the CPU reach the group's registers
+                    // at all, `PERI_CLK_CTRL2n` selects the source and gates
+                    // this counter's clock.
+                    let clkrst = clkrst();
+                    clkrst.soc_clk_ctrl2.[<set_reg_timergrp $G _apb_clk_en>]();
+                    let ctrl = &clkrst.[<peri_clk_ctrl2 $G>];
+                    ctrl.[<write_reg_timergrp $G _t $N _src_sel>](clock.select());
+                    ctrl.[<set_reg_timergrp $G _t $N _clk_en>]();
+                }
+            }
+
+            /// Put this counter back into its reset configuration.
+            fn reset(&self) {
+                paste! {
+                    // The bootloader may have left the counter running with an
+                    // alarm armed. Stop it before touching the prescaler.
+                    let config = &self.timg.[<t $N config>];
+                    config.clr_en();
+                    config.write_divider(DEFAULT_DIVIDER);
+                    config.trigger_divcnt_rst();
+                    config.clr_alarm_en();
+                    config.clr_autoreload();
+                    config.set_increase();
+                    config.clr_use_xtal();
+                    self.timg.[<t $N loadhi>].write_load_hi(0);
+                    self.timg.[<t $N loadlo>].write_load_lo(0);
+                    self.timg.[<t $N load>].write_load(1);
+                    self.timg.int_ena_timers.[<clr_t $N _int_ena>]();
+                    self.timg.int_clr_timers.[<trigger_t $N _int_clr>]();
+                }
+            }
 
             /// The prescaler divisor, 2 to 65536.
             pub fn divider(&self) -> u32 {
                 paste! {
-                    match self.block().[<t $N config>].divider() {
+                    match self.timg.[<t $N config>].divider() {
                         0 => 65536,
                         1 | 2 => 2,
                         n => n,
@@ -644,7 +351,7 @@ macro_rules! impl_timer {
                 // 65536 does not fit the 16-bit field; zero means 65536.
                 let encoded = if divider >= 65536 { 0 } else { divider };
                 paste! {
-                    let config = &self.block().[<t $N config>];
+                    let config = &self.timg.[<t $N config>];
                     config.write_divider(encoded);
                     config.trigger_divcnt_rst();
                 }
@@ -658,7 +365,7 @@ macro_rules! impl_timer {
                 self.clock_source().frequency_hz() / self.divider()
             }
 
-            /// Convert a span into this timer's ticks, rounding down but never
+            /// Convert a span into this counter's ticks, rounding down but never
             /// to zero.
             ///
             /// Counter and alarm values are in timer ticks, which is why the
@@ -673,7 +380,7 @@ macro_rules! impl_timer {
             /// Which way the counter runs.
             pub fn direction(&self) -> Direction {
                 paste! {
-                    if self.block().[<t $N config>].increase() {
+                    if self.timg.[<t $N config>].increase() {
                         Direction::Up
                     } else {
                         Direction::Down
@@ -684,7 +391,7 @@ macro_rules! impl_timer {
             /// Count up or down. The change takes effect immediately.
             pub fn set_direction(&self, direction: Direction) {
                 paste! {
-                    let config = &self.block().[<t $N config>];
+                    let config = &self.timg.[<t $N config>];
                     if direction == Direction::Up {
                         config.set_increase();
                     } else {
@@ -702,30 +409,29 @@ macro_rules! impl_timer {
             pub fn start(&self) {
                 self.stop();
                 self.reload();
-                paste! { self.block().[<t $N config>].set_en(); }
+                paste! { self.timg.[<t $N config>].set_en(); }
             }
 
             /// Stop the counter; it keeps its value and resumes from it.
             pub fn stop(&self) {
-                paste! { self.block().[<t $N config>].clr_en(); }
+                paste! { self.timg.[<t $N config>].clr_en(); }
             }
 
             /// Whether the counter is running.
             pub fn is_running(&self) -> bool {
-                paste! { self.block().[<t $N config>].en() }
+                paste! { self.timg.[<t $N config>].en() }
             }
 
             /// Latch and return the 54-bit counter value, in timer ticks.
             pub fn counter(&self) -> u64 {
                 paste! {
-                    let block = self.block();
-                    let update = &block.[<t $N update>];
+                    let update = &self.timg.[<t $N update>];
                     update.set_update();
                     while update.update() {
                         core::hint::spin_loop();
                     }
-                    let hi = block.[<t $N hi>].hi() as u64;
-                    let lo = block.[<t $N lo>].lo() as u64;
+                    let hi = self.timg.[<t $N hi>].hi() as u64;
+                    let lo = self.timg.[<t $N lo>].lo() as u64;
                     (hi << 32) | lo
                 }
             }
@@ -739,9 +445,8 @@ macro_rules! impl_timer {
             /// The value the counter starts from.
             pub fn reload_value(&self) -> u64 {
                 paste! {
-                    let block = self.block();
-                    let hi = block.[<t $N loadhi>].load_hi() as u64;
-                    let lo = block.[<t $N loadlo>].load_lo() as u64;
+                    let hi = self.timg.[<t $N loadhi>].load_hi() as u64;
+                    let lo = self.timg.[<t $N loadlo>].load_lo() as u64;
                     (hi << 32) | lo
                 }
             }
@@ -752,15 +457,14 @@ macro_rules! impl_timer {
             pub fn set_reload_value(&self, value: u64) {
                 assert!(value <= MAX_VALUE, "the counter is 54 bits wide");
                 paste! {
-                    let block = self.block();
-                    block.[<t $N loadhi>].write_load_hi((value >> 32) as u32);
-                    block.[<t $N loadlo>].write_load_lo(value as u32);
+                    self.timg.[<t $N loadhi>].write_load_hi((value >> 32) as u32);
+                    self.timg.[<t $N loadlo>].write_load_lo(value as u32);
                 }
             }
 
             /// Copy the reload value into the counter now.
             pub fn reload(&self) {
-                paste! { self.block().[<t $N load>].write_load(1); }
+                paste! { self.timg.[<t $N load>].write_load(1); }
             }
 
             /// Reload the counter from its reload value when the alarm fires.
@@ -771,7 +475,7 @@ macro_rules! impl_timer {
             /// off while an alarm is armed, the next alarm is the last one.
             pub fn set_auto_reload(&self, enable: bool) {
                 paste! {
-                    let config = &self.block().[<t $N config>];
+                    let config = &self.timg.[<t $N config>];
                     if enable {
                         config.set_autoreload();
                     } else {
@@ -782,7 +486,7 @@ macro_rules! impl_timer {
 
             /// Whether the counter reloads itself when the alarm fires.
             pub fn auto_reload(&self) -> bool {
-                paste! { self.block().[<t $N config>].autoreload() }
+                paste! { self.timg.[<t $N config>].autoreload() }
             }
 
             /// Arm the alarm for the absolute counter value `ticks`.
@@ -794,22 +498,20 @@ macro_rules! impl_timer {
             pub fn set_alarm(&self, ticks: u64) {
                 assert!(ticks <= MAX_VALUE, "the alarm is 54 bits wide");
                 paste! {
-                    let block = self.block();
-                    block.[<t $N alarmhi>].write_alarm_hi((ticks >> 32) as u32);
-                    block.[<t $N alarmlo>].write_alarm_lo(ticks as u32);
+                    self.timg.[<t $N alarmhi>].write_alarm_hi((ticks >> 32) as u32);
+                    self.timg.[<t $N alarmlo>].write_alarm_lo(ticks as u32);
                 }
                 // A request left over from an earlier alarm would fire
                 // immediately.
                 self.clear_alarm();
-                paste! { self.block().[<t $N config>].set_alarm_en(); }
+                paste! { self.timg.[<t $N config>].set_alarm_en(); }
             }
 
             /// The armed alarm value, in timer ticks.
             pub fn alarm(&self) -> u64 {
                 paste! {
-                    let block = self.block();
-                    let hi = block.[<t $N alarmhi>].alarm_hi() as u64;
-                    let lo = block.[<t $N alarmlo>].alarm_lo() as u64;
+                    let hi = self.timg.[<t $N alarmhi>].alarm_hi() as u64;
+                    let lo = self.timg.[<t $N alarmlo>].alarm_lo() as u64;
                     (hi << 32) | lo
                 }
             }
@@ -831,206 +533,471 @@ macro_rules! impl_timer {
             /// Disarm the alarm. A request that is already pending stays pending
             /// until [`clear_alarm`](Self::clear_alarm).
             pub fn disarm(&self) {
-                paste! { self.block().[<t $N config>].clr_alarm_en(); }
+                paste! { self.timg.[<t $N config>].clr_alarm_en(); }
             }
 
             /// Whether the alarm is armed.
             pub fn alarm_armed(&self) -> bool {
-                paste! { self.block().[<t $N config>].alarm_en() }
+                paste! { self.timg.[<t $N config>].alarm_en() }
             }
 
             /// Whether the alarm fired since the last clear.
             pub fn alarm_pending(&self) -> bool {
-                paste! { self.block().int_raw_timers.[<t $N _int_raw>]() }
+                paste! { self.timg.int_raw_timers.[<t $N _int_raw>]() }
             }
 
             /// Drop a pending alarm request.
             pub fn clear_alarm(&self) {
-                paste! { self.block().int_clr_timers.[<trigger_t $N _int_clr>]() }
-            }
-
-            /// Route this timer's alarm to `line` and call `handler` in
-            /// interrupt context.
-            ///
-            /// Claims the line the way [`interrupt::claim`] does, so the timer
-            /// panics if the line is already taken. The alarm still has to be
-            /// armed with [`set_alarm`](Self::set_alarm) or
-            /// [`set_alarm_in`](Self::set_alarm_in), and global interrupts have
-            /// to be enabled with [`interrupt::enable`].
-            pub fn enable_interrupt(&self, line: CpuInterrupt, handler: fn()) {
-                assert!(
-                    self.irq.borrow().is_none(),
-                    "this timer already has an interrupt handler"
-                );
-
-                HANDLERS[Self::INDEX].store(handler as usize, Ordering::Release);
-
-                // SAFETY: the shim only touches this timer's status bits before
-                // calling the user's function, and `claim` makes sure no other
-                // driver uses the line.
-                let claimed =
-                    unsafe { interrupt::claim(Self::SOURCE, line, Level::LOW, SHIMS[Self::INDEX]) };
-                claimed.enable();
-                self.clear_alarm();
-                paste! { self.block().int_ena_timers.[<set_t $N _int_ena>](); }
-                *self.irq.borrow_mut() = Some(Irq {
-                    _handler: claimed,
-                    block: self.block(),
-                    unit: $N,
-                    index: Self::INDEX,
-                });
-            }
-
-            /// Mask the alarm interrupt and give its CPU line back.
-            pub fn disable_interrupt(&self) {
-                // Dropping the bookkeeping masks the timer, drops the request,
-                // forgets the shim and releases the line.
-                self.irq.borrow_mut().take();
+                paste! { self.timg.int_clr_timers.[<trigger_t $N _int_clr>]() }
             }
 
             /// Whether the alarm interrupt is unmasked.
-            pub fn interrupt_enabled(&self) -> bool {
-                paste! { self.block().int_ena_timers.[<t $N _int_ena>]() }
+            pub fn alarm_interrupt_enabled(&self) -> bool {
+                paste! { self.timg.int_ena_timers.[<t $N _int_ena>]() }
             }
+
+            /// Unmask the alarm interrupt.
+            fn enable_alarm_interrupt(&self) {
+                paste! { self.timg.int_ena_timers.[<set_t $N _int_ena>](); }
+            }
+
+            /// Mask the alarm interrupt and drop a pending request.
+            fn disable_alarm_interrupt(&self) {
+                paste! {
+                    self.timg.int_ena_timers.[<clr_t $N _int_ena>]();
+                    self.timg.int_clr_timers.[<trigger_t $N _int_clr>]();
+                }
+            }
+
+            /// Acknowledge the alarm and re-arm it in periodic mode.
+            ///
+            /// The request is level-triggered, so it has to be dropped before
+            /// returning or the line stays asserted and the trap repeats. The
+            /// hardware clears `ALARM_EN` on every alarm; with auto-reload the
+            /// counter restarts from the reload value, so arming it again is all
+            /// that is needed to get the next period.
+            fn acknowledge_alarm(&self) {
+                paste! {
+                    self.timg.int_clr_timers.[<trigger_t $N _int_clr>]();
+                    let config = &self.timg.[<t $N config>];
+                    if config.autoreload() {
+                        config.set_alarm_en();
+                    }
+                }
+            }
+
+            /// The interrupt matrix source feeding this counter.
+            const SOURCE: Interrupt = Interrupt::$source;
+            /// The shim the group installs on the counter's CPU line.
+            const SHIM: fn() = $shim;
+            /// Slot of this counter in the HAL's tables.
+            const INDEX: usize = $index;
+        }
+
+        /// Interrupt shim of this counter: acknowledges its alarm, then calls the
+        /// user's handler.
+        fn $shim() {
+            $Timer::new().acknowledge_alarm();
+            dispatch($index);
         }
     };
 }
 
-impl_timer!(0, 0, TG0_T0, alarm00, 0);
-impl_timer!(0, 1, TG0_T1, alarm01, 1);
-impl_timer!(1, 0, TG1_T0, alarm10, 2);
-impl_timer!(1, 1, TG1_T1, alarm11, 3);
+impl_timer! {
+    /// `TIMG0` counter 0, the source of `TG0_T0`.
+    Timer00, TIMG0, 0, 0, TG0_T0, alarm00, 0
+}
+
+impl_timer! {
+    /// `TIMG0` counter 1, the source of `TG0_T1`.
+    Timer01, TIMG0, 0, 1, TG0_T1, alarm01, 1
+}
+
+impl_timer! {
+    /// `TIMG1` counter 0, the source of `TG1_T0`.
+    Timer10, TIMG1, 1, 0, TG1_T0, alarm10, 2
+}
+
+impl_timer! {
+    /// `TIMG1` counter 1, the source of `TG1_T1`.
+    Timer11, TIMG1, 1, 1, TG1_T1, alarm11, 3
+}
 
 // ============================================================================
 // Main system watchdog
 // ============================================================================
 
-/// The main system watchdog of one timer group.
+/// Generates one main system watchdog and its register-level API.
 ///
-/// The MWDT counts at `XTAL_CLK` (40 MHz) divided by a prescaler, through up to
-/// four stages. [`enable`](Self::enable) starts counting; from then on the
-/// program has to [`feed`](Self::feed) it before stage 0 runs out.
-///
-/// [`crate::startup`] disables the watchdogs the bootloader leaves running, so a
-/// program that never touches this type cannot be reset by them.
-pub struct Watchdog<const G: u8> {
-    _private: (),
+/// `Watchdog0` and `Watchdog1` are separate types, each holding a handle to its
+/// own group, exactly like the counters.
+macro_rules! impl_watchdog {
+    ($(#[$attr:meta])* $Watchdog:ident, $TIMG:ident) => {
+        $(#[$attr])*
+        pub struct $Watchdog {
+            /// This watchdog's group.
+            timg: $TIMG,
+        }
+
+        impl $Watchdog {
+            const fn new() -> Self {
+                // SAFETY: the group that created this watchdog owns the
+                // peripheral; this is a second handle to its registers, and the
+                // watchdog only touches the MWDT registers.
+                Self {
+                    timg: unsafe { $TIMG::steal() },
+                }
+            }
+
+            /// Create a copy of this watchdog without owning it.
+            ///
+            /// Useful for feeding the watchdog from a place that does not own
+            /// the group, such as a task tick. Nothing is written to the
+            /// hardware.
+            ///
+            /// # Safety
+            ///
+            /// The caller must ensure that a [`TimerGroup0`]/[`TimerGroup1`] has
+            /// already been created for this group, and that the copy is not
+            /// used to reconfigure the watchdog behind the owner's back.
+            #[inline]
+            pub unsafe fn steal() -> Steal<Self> {
+                Steal(Self::new())
+            }
+
+            /// Leave a known stage layout behind, while the registers are
+            /// writable.
+            ///
+            /// The bootloader may leave the watchdog configuration unlocked.
+            /// Stage 0 resets the system, the others are off, and the reset
+            /// pulses are long enough to be seen.
+            fn init(&self) {
+                self.unlocked(|timg| {
+                    timg.wdtconfig0
+                        .write_wdt_stg0(MwdtStageAction::ResetSystem.select());
+                    timg.wdtconfig0
+                        .write_wdt_stg1(MwdtStageAction::Off.select());
+                    timg.wdtconfig0
+                        .write_wdt_stg2(MwdtStageAction::Off.select());
+                    timg.wdtconfig0
+                        .write_wdt_stg3(MwdtStageAction::Off.select());
+                    timg.wdtconfig0.clr_wdt_flashboot_mod_en();
+                    timg.wdtconfig0.write_wdt_cpu_reset_length(7);
+                    timg.wdtconfig0.write_wdt_sys_reset_length(7);
+                    timg.wdtconfig0.trigger_wdt_conf_update_en();
+                });
+            }
+
+            /// Whether the watchdog is counting.
+            pub fn is_enabled(&self) -> bool {
+                self.timg.wdtconfig0.wdt_en()
+            }
+
+            /// Unlock the configuration registers, run `f`, and lock them again.
+            ///
+            /// The unlock key is the register's own reset value: writing anything
+            /// else — zero, in practice — turns write protection back on.
+            fn unlocked<R>(&self, f: impl FnOnce(&$TIMG) -> R) -> R {
+                self.timg.wdtwprotect.write_wdt_wkey(WDT_UNLOCK_KEY);
+                let result = f(&self.timg);
+                self.timg.wdtwprotect.write_wdt_wkey(0);
+                result
+            }
+
+            /// Start the watchdog.
+            ///
+            /// The stage layout is the one the group's `init` left behind: stage 0
+            /// resets the system, stages 1 to 3 are off. Use
+            /// [`set_stage_action`](Self::set_stage_action) to change that and
+            /// [`set_timeout`](Self::set_timeout) to set how long each stage
+            /// runs; both work before or after this call. Enabling also turns off
+            /// the flash-boot protection, which would otherwise keep counting
+            /// while disabled.
+            pub fn enable(&self) {
+                self.unlocked(|timg| {
+                    timg.wdtconfig0.clr_wdt_flashboot_mod_en();
+                    timg.wdtconfig0.set_wdt_en();
+                    timg.wdtconfig0.trigger_wdt_conf_update_en();
+                });
+            }
+
+            /// Stop the watchdog.
+            pub fn disable(&self) {
+                self.unlocked(|timg| {
+                    timg.wdtconfig0.clr_wdt_en();
+                    timg.wdtconfig0.clr_wdt_flashboot_mod_en();
+                    timg.wdtconfig0.trigger_wdt_conf_update_en();
+                });
+            }
+
+            /// Restart the countdown from the beginning of stage 0.
+            pub fn feed(&self) {
+                self.unlocked(|timg| timg.wdtfeed.write_wdt_feed(1));
+            }
+
+            /// Set the timeout of one stage.
+            ///
+            /// The watchdog counts at 40 MHz; the prescaler is widened
+            /// automatically so timeouts longer than the 32-bit tick register
+            /// allows still fit.
+            pub fn set_timeout(&self, stage: MwdtStage, timeout: Duration) {
+                let ticks =
+                    timeout.as_ticks() as u128 * WDT_CLOCK_HZ as u128 / time::TICK_HZ as u128;
+                assert!(ticks > 0, "a watchdog timeout must not be zero");
+
+                let prescaler = ticks.div_ceil(u32::MAX as u128).clamp(1, u16::MAX as u128) as u32;
+                let hold = ticks.div_ceil(prescaler as u128);
+                assert!(
+                    hold <= u32::MAX as u128,
+                    "watchdog timeout too long for the 16-bit prescaler"
+                );
+                let hold = hold as u32;
+
+                self.unlocked(|timg| {
+                    timg.wdtconfig1.write_wdt_clk_prescale(prescaler);
+                    timg.wdtconfig1.trigger_wdt_divcnt_rst();
+                    match stage.number() {
+                        0 => timg.wdtconfig2.write_wdt_stg0_hold(hold),
+                        1 => timg.wdtconfig3.write_wdt_stg1_hold(hold),
+                        2 => timg.wdtconfig4.write_wdt_stg2_hold(hold),
+                        _ => timg.wdtconfig5.write_wdt_stg3_hold(hold),
+                    }
+                    timg.wdtconfig0.trigger_wdt_conf_update_en();
+                });
+            }
+
+            /// Choose what one stage does when it times out.
+            pub fn set_stage_action(&self, stage: MwdtStage, action: MwdtStageAction) {
+                self.unlocked(|timg| {
+                    let action = action.select();
+                    match stage.number() {
+                        0 => timg.wdtconfig0.write_wdt_stg0(action),
+                        1 => timg.wdtconfig0.write_wdt_stg1(action),
+                        2 => timg.wdtconfig0.write_wdt_stg2(action),
+                        _ => timg.wdtconfig0.write_wdt_stg3(action),
+                    }
+                    timg.wdtconfig0.trigger_wdt_conf_update_en();
+                });
+            }
+        }
+    };
 }
 
-impl<const G: u8> Watchdog<G> {
-    const fn new() -> Self {
-        Self { _private: () }
-    }
-
-    /// The register block of this watchdog's group.
-    #[inline(always)]
-    fn block(&self) -> &'static timg0::RegisterBlock {
-        block::<G>()
-    }
-
-    /// Create a copy of this watchdog without owning it.
+impl_watchdog! {
+    /// `TIMG0`'s main system watchdog.
     ///
-    /// Useful for feeding the watchdog from a place that does not own the
-    /// group, such as a task tick. Nothing is written to the hardware.
+    /// The MWDT counts at `XTAL_CLK` (40 MHz) divided by a prescaler, through up
+    /// to four stages. [`enable`](Self::enable) starts counting; from then on the
+    /// program has to [`feed`](Self::feed) it before stage 0 runs out.
     ///
-    /// # Safety
+    /// [`crate::startup`] disables the watchdogs the bootloader leaves running,
+    /// so a program that never touches this type cannot be reset by them.
+    Watchdog0, TIMG0
+}
+
+impl_watchdog! {
+    /// `TIMG1`'s main system watchdog.
     ///
-    /// The caller must ensure that a [`TimerGroup0`]/[`TimerGroup1`] has already
-    /// been created for this group, and that the copy is not used to
-    /// reconfigure the watchdog behind the owner's back.
-    #[inline]
-    pub unsafe fn steal() -> Steal<Self> {
-        const { assert!(G < 2, "no such timer group") };
-        Steal(Self::new())
-    }
+    /// See [`Watchdog0`] for the stage model and the boot-time state.
+    Watchdog1, TIMG1
+}
 
-    /// Whether the watchdog is counting.
-    pub fn is_enabled(&self) -> bool {
-        self.block().wdtconfig0.wdt_en()
-    }
+// ============================================================================
+// Timer groups
+// ============================================================================
 
-    /// Unlock the configuration registers, run `f`, and lock them again.
-    ///
-    /// The unlock key is the register's own reset value: writing anything else
-    /// — zero, in practice — turns write protection back on.
-    fn unlocked<R>(&self, f: impl FnOnce(&timg0::RegisterBlock) -> R) -> R {
-        let block = self.block();
-        block.wdtwprotect.write_wdt_wkey(WDT_UNLOCK_KEY);
-        let result = f(block);
-        block.wdtwprotect.write_wdt_wkey(0);
-        result
-    }
+/// Generates one timer group: the struct that owns the peripheral and the
+/// counters, and the code that brings them into a known state.
+///
+/// The group is what owns the CPU lines: `enable_timer0_interrupt` and friends
+/// claim a line for a counter and hold it until the group drops. The counters
+/// themselves are pure register access.
+macro_rules! impl_timer_group {
+    (
+        $(#[$attr:meta])*
+        $TimerGroup:ident, $TIMG:ident, $G:literal, $Timer0:ident, $Timer1:ident, $Watchdog:ident
+    ) => {
+        $(#[$attr])*
+        pub struct $TimerGroup {
+            /// The group's peripheral, `None` once `release` took it back.
+            timg: Option<$TIMG>,
+            /// General-purpose timer 0.
+            pub timer0: $Timer0,
+            /// General-purpose timer 1.
+            pub timer1: $Timer1,
+            /// The group's main system watchdog.
+            pub wdt: $Watchdog,
+            /// The CPU line the first counter has claimed, if any.
+            irq0: RefCell<Option<InterruptHandler>>,
+            /// The CPU line the second counter has claimed, if any.
+            irq1: RefCell<Option<InterruptHandler>>,
+        }
 
-    /// Start the watchdog.
-    ///
-    /// The stage layout is the one [`TimerGroup0::new`] left behind: stage 0
-    /// resets the system, stages 1 to 3 are off. Use
-    /// [`set_stage_action`](Self::set_stage_action) to change that and
-    /// [`set_timeout`](Self::set_timeout) to set how long each stage runs; both
-    /// work before or after this call. Enabling also turns off the flash-boot
-    /// protection, which would otherwise keep counting while disabled.
-    pub fn enable(&self) {
-        self.unlocked(|block| {
-            block.wdtconfig0.clr_wdt_flashboot_mod_en();
-            block.wdtconfig0.set_wdt_en();
-            block.wdtconfig0.trigger_wdt_conf_update_en();
-        });
-    }
+        impl $TimerGroup {
+            /// Take the group and bring it into a known state.
+            ///
+            /// Opens the group's clock gates, selects the crystal for both
+            /// counters and the watchdog, and leaves the counters stopped with
+            /// their alarms disarmed. The bootloader's watchdogs are already off
+            /// by then (see [`crate::startup`]); this does not re-enable them.
+            pub fn init(timg: $TIMG, clkrst: &hp_sys_clkrst::RegisterBlock) -> Self {
+                let group = Self {
+                    timg: Some(timg),
+                    timer0: $Timer0::new(),
+                    timer1: $Timer1::new(),
+                    wdt: $Watchdog::new(),
+                    irq0: RefCell::new(None),
+                    irq1: RefCell::new(None),
+                };
 
-    /// Stop the watchdog.
-    pub fn disable(&self) {
-        self.unlocked(|block| {
-            block.wdtconfig0.clr_wdt_en();
-            block.wdtconfig0.clr_wdt_flashboot_mod_en();
-            block.wdtconfig0.trigger_wdt_conf_update_en();
-        });
-    }
+                // The APB gate lets the CPU reach the group at all; the watchdog
+                // has a gate and a source selector of its own.
+                paste! {
+                    clkrst.soc_clk_ctrl2.[<set_reg_timergrp $G _apb_clk_en>]();
+                    let ctrl = &clkrst.[<peri_clk_ctrl2 $G>];
+                    ctrl.[<set_reg_timergrp $G _wdt_clk_en>]();
+                    ctrl.[<write_reg_timergrp $G _wdt_src_sel>](ClockSource::Xtal.select());
+                }
 
-    /// Restart the countdown from the beginning of stage 0.
-    pub fn feed(&self) {
-        self.unlocked(|block| block.wdtfeed.write_wdt_feed(1));
-    }
+                group.timer0.set_clock_source(ClockSource::Xtal);
+                group.timer0.reset();
+                group.timer1.set_clock_source(ClockSource::Xtal);
+                group.timer1.reset();
+                group.wdt.init();
 
-    /// Set the timeout of one stage.
-    ///
-    /// The watchdog counts at 40 MHz; the prescaler is widened automatically so
-    /// timeouts longer than the 32-bit tick register allows still fit.
-    pub fn set_timeout(&self, stage: MwdtStage, timeout: Duration) {
-        let ticks = timeout.as_ticks() as u128 * WDT_CLOCK_HZ as u128 / time::TICK_HZ as u128;
-        assert!(ticks > 0, "a watchdog timeout must not be zero");
-
-        let prescaler = ticks.div_ceil(u32::MAX as u128).clamp(1, u16::MAX as u128) as u32;
-        let hold = ticks.div_ceil(prescaler as u128);
-        assert!(
-            hold <= u32::MAX as u128,
-            "watchdog timeout too long for the 16-bit prescaler"
-        );
-        let hold = hold as u32;
-
-        self.unlocked(|block| {
-            block.wdtconfig1.write_wdt_clk_prescale(prescaler);
-            block.wdtconfig1.trigger_wdt_divcnt_rst();
-            match stage.number() {
-                0 => block.wdtconfig2.write_wdt_stg0_hold(hold),
-                1 => block.wdtconfig3.write_wdt_stg1_hold(hold),
-                2 => block.wdtconfig4.write_wdt_stg2_hold(hold),
-                _ => block.wdtconfig5.write_wdt_stg3_hold(hold),
+                group
             }
-            block.wdtconfig0.trigger_wdt_conf_update_en();
-        });
-    }
 
-    /// Choose what one stage does when it times out.
-    pub fn set_stage_action(&self, stage: MwdtStage, action: MwdtStageAction) {
-        self.unlocked(|block| {
-            let action = action.select();
-            match stage.number() {
-                0 => block.wdtconfig0.write_wdt_stg0(action),
-                1 => block.wdtconfig0.write_wdt_stg1(action),
-                2 => block.wdtconfig0.write_wdt_stg2(action),
-                _ => block.wdtconfig0.write_wdt_stg3(action),
+            /// Give the peripheral back.
+            ///
+            /// The CPU lines are released first, exactly as on drop. The parts
+            /// stay with the group; only the peripheral leaves.
+            pub fn release(mut self) -> $TIMG {
+                self.disable_timer0_interrupt();
+                self.disable_timer1_interrupt();
+                self.timg.take().expect("the group releases once")
             }
-            block.wdtconfig0.trigger_wdt_conf_update_en();
-        });
-    }
+
+            /// Route `timer0`'s alarm to `line` and call `handler` in interrupt
+            /// context.
+            ///
+            /// Claims the line the way [`interrupt::claim`] does, so this panics
+            /// if the line is already taken. The alarm still has to be armed with
+            /// `timer0.set_alarm`, and global interrupts have to be enabled with
+            /// [`interrupt::enable`].
+            pub fn enable_timer0_interrupt(&self, line: CpuInterrupt, handler: fn()) {
+                self.claim(
+                    &self.irq0,
+                    $Timer0::INDEX,
+                    $Timer0::SOURCE,
+                    $Timer0::SHIM,
+                    line,
+                    handler,
+                );
+                self.timer0.clear_alarm();
+                self.timer0.enable_alarm_interrupt();
+            }
+
+            /// Mask `timer0`'s alarm interrupt and give its CPU line back.
+            pub fn disable_timer0_interrupt(&self) {
+                self.timer0.disable_alarm_interrupt();
+                self.release_line(&self.irq0, $Timer0::INDEX);
+            }
+
+            /// Whether `timer0`'s alarm interrupt is unmasked.
+            pub fn timer0_interrupt_enabled(&self) -> bool {
+                self.timer0.alarm_interrupt_enabled()
+            }
+
+            /// Route `timer1`'s alarm to `line` and call `handler` in interrupt
+            /// context.
+            ///
+            /// See [`enable_timer0_interrupt`](Self::enable_timer0_interrupt).
+            pub fn enable_timer1_interrupt(&self, line: CpuInterrupt, handler: fn()) {
+                self.claim(
+                    &self.irq1,
+                    $Timer1::INDEX,
+                    $Timer1::SOURCE,
+                    $Timer1::SHIM,
+                    line,
+                    handler,
+                );
+                self.timer1.clear_alarm();
+                self.timer1.enable_alarm_interrupt();
+            }
+
+            /// Mask `timer1`'s alarm interrupt and give its CPU line back.
+            pub fn disable_timer1_interrupt(&self) {
+                self.timer1.disable_alarm_interrupt();
+                self.release_line(&self.irq1, $Timer1::INDEX);
+            }
+
+            /// Whether `timer1`'s alarm interrupt is unmasked.
+            pub fn timer1_interrupt_enabled(&self) -> bool {
+                self.timer1.alarm_interrupt_enabled()
+            }
+
+            /// Take `line` for the counter that owns `slot`.
+            fn claim(
+                &self,
+                slot: &RefCell<Option<InterruptHandler>>,
+                index: usize,
+                source: Interrupt,
+                shim: fn(),
+                line: CpuInterrupt,
+                handler: fn(),
+            ) {
+                assert!(
+                    slot.borrow().is_none(),
+                    "this timer already has an interrupt handler"
+                );
+
+                HANDLERS[index].store(handler as usize, Ordering::Release);
+
+                // SAFETY: the shim only touches its counter's status bits before
+                // calling the user's function, and `claim` makes sure no other
+                // driver uses the line.
+                let claimed = unsafe { interrupt::claim(source, line, Level::LOW, shim) };
+                claimed.enable();
+                *slot.borrow_mut() = Some(claimed);
+            }
+
+            /// Give the line in `slot` back.
+            fn release_line(&self, slot: &RefCell<Option<InterruptHandler>>, index: usize) {
+                if let Some(handler) = slot.borrow_mut().take() {
+                    // No shim may fire once the line is gone.
+                    HANDLERS[index].store(0, Ordering::Release);
+                    // Dropping the handler unregisters the shim and frees the
+                    // line.
+                    drop(handler);
+                }
+            }
+        }
+
+        impl Drop for $TimerGroup {
+            fn drop(&mut self) {
+                self.disable_timer0_interrupt();
+                self.disable_timer1_interrupt();
+            }
+        }
+    };
+}
+
+impl_timer_group! {
+    /// `TIMG0`: two general-purpose timers and the main system watchdog.
+    ///
+    /// The group owns the peripheral and its parts the way the hardware does:
+    /// [`timer0`](Self::timer0) and [`timer1`](Self::timer1) are the two
+    /// counters and [`wdt`](Self::wdt) is the watchdog, each with its own type
+    /// so the registers, matrix source and interrupt shim are resolved at
+    /// compile time. It also owns the CPU lines the counters use.
+    TimerGroup0, TIMG0, 0, Timer00, Timer01, Watchdog0
+}
+
+impl_timer_group! {
+    /// `TIMG1`: two general-purpose timers and the main system watchdog.
+    ///
+    /// See [`TimerGroup0`]; the parts are [`Timer10`], [`Timer11`] and
+    /// [`Watchdog1`].
+    TimerGroup1, TIMG1, 1, Timer10, Timer11, Watchdog1
 }

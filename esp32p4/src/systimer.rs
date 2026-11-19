@@ -1,10 +1,9 @@
 //! Alarms on the system timer's comparators.
 //!
 //! `SYSTIMER` unit 0 is the monotonic clock behind [`crate::time::Instant`]: it
-//! is 52 bits wide, ticks at a fixed 16 MHz and never stops. Its comparators
-//! turn that clock into wake-ups. Comparator 0 belongs to
-//! [`Delay`](crate::delay::Delay), which borrows it to sleep; the other two are
-//! handed out as [`Alarm1`] and [`Alarm2`].
+//! is 52 bits wide, ticks at a fixed 16 MHz and never stops. [`Systimer`] owns
+//! the peripheral and hands out its comparators: [`Alarm1`] sits on COMP1,
+//! [`Alarm2`] on COMP2, and [`Delay`] uses COMP0.
 //!
 //! An alarm has two modes:
 //!
@@ -22,468 +21,425 @@
 //! | [`Alarm1`] | COMP1 | `Interrupt::SYSTIMER_TARGET1` |
 //! | [`Alarm2`] | COMP2 | `Interrupt::SYSTIMER_TARGET2` |
 //!
-//! Every method takes `&self`, exactly like the general-purpose timers in
-//! [`crate::timer`]: the owning instance carries the comparator claim and the
-//! claimed CPU line, and `unsafe { Alarm1::steal() }` gives an interrupt handler
-//! the same register access without either.
+//! Every method of an alarm takes `&self`, exactly like the general-purpose
+//! counters in [`crate::timer`]: each alarm holds a handle to the timer it
+//! belongs to, and `unsafe { Alarm1::steal() }` gives an interrupt handler the
+//! same register access. The CPU lines belong to [`Systimer`], which claims them
+//! for an alarm and gives them back when the alarm or the whole timer is
+//! dropped.
 //!
 //! # Example
 //!
 //! ```ignore
 //! use esp32p4::interrupt::{self, CpuInterrupt};
-//! use esp32p4::systimer::Alarm1;
+//! use esp32p4::systimer::Systimer;
 //! use esp32p4::time::{Duration, Instant};
 //!
 //! fn tick() {
 //!     // Runs in interrupt context: keep it short.
 //! }
 //!
-//! let alarm = Alarm1::new();
-//! alarm.enable_interrupt(CpuInterrupt::new(23), tick);
-//! alarm.set_period(Duration::from_millis(10));  // every 10 ms
+//! let systimer = Systimer::init(dp.SYSTIMER);
+//!
+//! // The timer owns the CPU line, like a timer group owns its counters'.
+//! systimer.enable_alarm1_interrupt(CpuInterrupt::new(23), tick);
+//! systimer.alarm1.set_period(Duration::from_millis(10));  // every 10 ms
 //! interrupt::enable();
 //!
-//! let one_shot = Alarm2::new();
-//! one_shot.set_target(Instant::now() + Duration::from_secs(2));
+//! systimer.alarm2.set_target(Instant::now() + Duration::from_secs(2));
 //! ```
 
 use core::cell::RefCell;
-use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 use esp32p4_pac::SYSTIMER;
+use pastey::paste;
 
 use crate::Steal;
+use crate::delay::Delay;
 use crate::interrupt::{self, CpuInterrupt, Interrupt, InterruptHandler, Level};
 use crate::time::{self, Duration, Instant};
 
 /// Widest alarm period: `TARGETx_PERIOD` is 26 bits.
 const MAX_PERIOD_TICKS: u64 = (1 << 26) - 1;
 
-/// Number of usable comparators.
+/// Number of comparators the HAL hands out as alarms.
 const ALARM_COUNT: usize = 2;
 
-/// Bit per comparator, tracking which ones an alarm owns.
-static CLAIMED: AtomicU32 = AtomicU32::new(0);
-
-/// User callbacks, one per comparator.
+/// User callbacks, one per alarm, called by the generated interrupt shims.
 static HANDLERS: [AtomicUsize; ALARM_COUNT] = [const { AtomicUsize::new(0) }; ALARM_COUNT];
 
-fn systimer() -> &'static esp32p4_pac::systimer::RegisterBlock {
-    // SAFETY: the system timer's register block lives for the whole program.
-    unsafe { &*SYSTIMER::PTR }
-}
-
-/// Alarm dispatch shared by the two shims.
-///
-/// Both modes are level interrupts, so acknowledging the comparator is the
-/// whole job; a periodic alarm re-arms itself in hardware.
-fn alarm(index: usize) {
-    let comp = Comp {
-        number: (index + 1) as u8,
-    };
-    comp.clear();
-
+/// Calls the user's handler of alarm `index`.
+fn dispatch(index: usize) {
     let handler = HANDLERS[index].load(Ordering::Acquire);
     if handler != 0 {
-        // SAFETY: only `enable_interrupt` stores here, always a `fn()`.
+        // SAFETY: `HANDLERS` only ever holds values stored by the timer, which
+        // stores `fn()` pointers.
         let handler: fn() = unsafe { core::mem::transmute::<usize, fn()>(handler) };
         handler();
     }
 }
 
-fn alarm1() {
-    alarm(0)
-}
+// ============================================================================
+// Alarms
+// ============================================================================
 
-fn alarm2() {
-    alarm(1)
-}
-
-/// One comparator's registers.
+/// Generates one alarm per comparator, the way `timer` generates one type per
+/// counter.
 ///
-/// The PAC exposes COMP1 and COMP2 as separate register types, so the two arms
-/// of each method pick the matching one; the comparator number is a literal in
-/// every caller and the branches fold away.
-#[derive(Clone, Copy)]
-struct Comp {
-    number: u8,
-}
-
-impl Comp {
-    /// Arm a one-shot alarm at an absolute counter value, in 16 MHz ticks.
-    fn set_target(&self, ticks: u64) {
-        let systimer = systimer();
-        match self.number {
-            1 => {
-                systimer.target1_lo.write_timer_target1_lo(ticks as u32);
-                systimer
-                    .target1_hi
-                    .write_timer_target1_hi((ticks >> 32) as u32);
-                systimer.target1_conf.clr_target1_timer_unit_sel();
-                systimer.target1_conf.clr_target1_period_mode();
-                systimer.comp1_load.trigger_timer_comp1_load();
-            }
-            _ => {
-                systimer.target2_lo.write_timer_target2_lo(ticks as u32);
-                systimer
-                    .target2_hi
-                    .write_timer_target2_hi((ticks >> 32) as u32);
-                systimer.target2_conf.clr_target2_timer_unit_sel();
-                systimer.target2_conf.clr_target2_period_mode();
-                systimer.comp2_load.trigger_timer_comp2_load();
-            }
-        }
-        self.set_work_enabled(true);
-    }
-
-    /// Arm a periodic alarm that fires every `ticks`.
-    fn set_period(&self, ticks: u64) {
-        assert!(
-            (1..=MAX_PERIOD_TICKS).contains(&ticks),
-            "the period register holds 1..=2^26-1 system timer ticks"
-        );
-
-        let systimer = systimer();
-        match self.number {
-            1 => {
-                systimer.target1_conf.write_target1_period(ticks as u32);
-                systimer.target1_conf.clr_target1_timer_unit_sel();
-                systimer.comp1_load.trigger_timer_comp1_load();
-                // The TRM asks for period mode to be cleared and set again
-                // after the period has been loaded.
-                systimer.target1_conf.clr_target1_period_mode();
-                systimer.target1_conf.set_target1_period_mode();
-            }
-            _ => {
-                systimer.target2_conf.write_target2_period(ticks as u32);
-                systimer.target2_conf.clr_target2_timer_unit_sel();
-                systimer.comp2_load.trigger_timer_comp2_load();
-                systimer.target2_conf.clr_target2_period_mode();
-                systimer.target2_conf.set_target2_period_mode();
-            }
-        }
-        self.set_work_enabled(true);
-    }
-
-    /// The configured period, zero in target mode.
-    fn period(&self) -> Duration {
-        let systimer = systimer();
-        let (period_mode, ticks) = match self.number {
-            1 => (
-                systimer.target1_conf.target1_period_mode(),
-                systimer.target1_conf.target1_period(),
-            ),
-            _ => (
-                systimer.target2_conf.target2_period_mode(),
-                systimer.target2_conf.target2_period(),
-            ),
-        };
-        if period_mode {
-            Duration::from_ticks(ticks as u64)
-        } else {
-            Duration::ZERO
-        }
-    }
-
-    /// The alarm value the comparator is actually using.
-    fn target(&self) -> Instant {
-        let systimer = systimer();
-        let (hi, lo) = match self.number {
-            1 => (
-                systimer.real_target1_hi.target1_hi_ro(),
-                systimer.real_target1_lo.target1_lo_ro(),
-            ),
-            _ => (
-                systimer.real_target2_hi.target2_hi_ro(),
-                systimer.real_target2_lo.target2_lo_ro(),
-            ),
-        };
-        Instant::from_ticks(((hi as u64) << 32) | lo as u64)
-    }
-
-    /// Whether the alarm fires repeatedly or once.
-    fn is_periodic(&self) -> bool {
-        let systimer = systimer();
-        match self.number {
-            1 => systimer.target1_conf.target1_period_mode(),
-            _ => systimer.target2_conf.target2_period_mode(),
-        }
-    }
-
-    /// Stop comparing and drop any pending request.
-    fn disarm(&self) {
-        self.set_work_enabled(false);
-        self.clear();
-    }
-
-    /// Whether the alarm fired since the last clear.
-    fn pending(&self) -> bool {
-        let systimer = systimer();
-        match self.number {
-            1 => systimer.int_raw.target1_int_raw(),
-            _ => systimer.int_raw.target2_int_raw(),
-        }
-    }
-
-    /// Drop a pending alarm request.
-    fn clear(&self) {
-        let systimer = systimer();
-        match self.number {
-            1 => systimer.int_clr.trigger_target1_int_clr(),
-            _ => systimer.int_clr.trigger_target2_int_clr(),
-        }
-    }
-
-    /// Unmask or mask the interrupt request.
-    fn set_interrupt_enabled(&self, enable: bool) {
-        let systimer = systimer();
-        match (self.number, enable) {
-            (1, true) => systimer.int_ena.set_target1_int_ena(),
-            (1, false) => systimer.int_ena.clr_target1_int_ena(),
-            (_, true) => systimer.int_ena.set_target2_int_ena(),
-            (_, false) => systimer.int_ena.clr_target2_int_ena(),
-        }
-    }
-
-    /// Whether the interrupt request is unmasked.
-    fn interrupt_enabled(&self) -> bool {
-        let systimer = systimer();
-        match self.number {
-            1 => systimer.int_ena.target1_int_ena(),
-            _ => systimer.int_ena.target2_int_ena(),
-        }
-    }
-
-    /// Start or stop the comparator.
-    fn set_work_enabled(&self, enable: bool) {
-        let systimer = systimer();
-        match (self.number, enable) {
-            (1, true) => systimer.conf.set_target1_work_en(),
-            (1, false) => systimer.conf.clr_target1_work_en(),
-            (_, true) => systimer.conf.set_target2_work_en(),
-            (_, false) => systimer.conf.clr_target2_work_en(),
-        }
-    }
-}
-
-/// Claim on a comparator, released when it is dropped.
-struct Claim(u8);
-
-impl Drop for Claim {
-    fn drop(&mut self) {
-        CLAIMED.fetch_and(!(1u32 << self.0), Ordering::AcqRel);
-    }
-}
-
-/// Interrupt bookkeeping for one comparator.
-struct Irq {
-    /// Held for its `Drop`, which unregisters the shim and releases the line.
-    _handler: InterruptHandler,
-    comp: Comp,
-    index: usize,
-}
-
-impl Drop for Irq {
-    fn drop(&mut self) {
-        self.comp.set_interrupt_enabled(false);
-        self.comp.clear();
-        HANDLERS[self.index].store(0, Ordering::Release);
-    }
-}
-
-/// Generates one alarm type per comparator, the way `timer` generates one type
-/// per general-purpose counter.
-macro_rules! alarms {
-    ($(
+/// The PAC names each comparator's registers after its instance (`target1_lo`,
+/// `target2_lo`, …), so the names are pasted per invocation instead of being
+/// matched at run time.
+macro_rules! impl_alarm {
+    (
         $(#[$attr:meta])*
-        $Alarm:ident => $number:literal, $source:ident, $index:literal, $shim:ident;
-    )+) => {
-        $(
-            $(#[$attr])*
-            pub struct $Alarm {
-                /// `Some` only for the instance that created the alarm: it is
-                /// held for its `Drop`, which frees the comparator.
-                _claim: Option<Claim>,
-                irq: RefCell<Option<Irq>>,
+        $Alarm:ident, $N:literal, $source:ident, $shim:ident, $index:literal
+    ) => {
+        $(#[$attr])*
+        pub struct $Alarm {
+            /// The system timer this comparator belongs to. The owner holds the
+            /// same peripheral; the handle is what makes the registers reachable
+            /// from an alarm.
+            systimer: SYSTIMER,
+        }
+
+        impl $Alarm {
+            const fn new() -> Self {
+                // SAFETY: the `Systimer` that created this alarm owns the
+                // peripheral, so the HAL already has exclusive access to its
+                // registers. This is a second handle to them, and the alarm only
+                // touches its own target registers.
+                Self {
+                    systimer: unsafe { SYSTIMER::steal() },
+                }
             }
 
-            impl $Alarm {
-                /// The comparator this alarm drives.
-                const COMP: Comp = Comp { number: $number };
-                /// The interrupt matrix source feeding this comparator.
-                const SOURCE: Interrupt = Interrupt::$source;
-                /// Index of this alarm in the HAL's tables.
-                const INDEX: usize = $index;
+            /// Create a copy of this alarm without owning it.
+            ///
+            /// This is analogous to [`Pin::steal`](crate::gpio::Pin::steal): it
+            /// lets an interrupt handler or another module reach the comparator
+            /// registers while the owner lives elsewhere. Nothing is written to
+            /// the hardware, so a stolen copy never disturbs a running alarm,
+            /// and dropping it neither disarms the comparator nor touches an
+            /// interrupt — the CPU lines belong to [`Systimer`].
+            ///
+            /// # Safety
+            ///
+            /// The caller must ensure that a [`Systimer`] exists and stays alive,
+            /// and that the copy is not used to reconfigure the alarm behind the
+            /// owner's back.
+            #[inline]
+            pub unsafe fn steal() -> Steal<Self> {
+                Steal(Self::new())
+            }
 
-                /// Take the comparator.
-                ///
-                /// Panics if it is already owned. Starts the counter if nothing
-                /// else has, so the alarm has a clock to compare against.
-                pub fn new() -> Self {
-                    let bit = 1 << $number;
-                    let mut claimed = CLAIMED.load(Ordering::Relaxed);
-                    loop {
-                        assert!(
-                            claimed & bit == 0,
-                            "this system timer comparator is already in use"
-                        );
-                        match CLAIMED.compare_exchange_weak(
-                            claimed,
-                            claimed | bit,
-                            Ordering::AcqRel,
-                            Ordering::Relaxed,
-                        ) {
-                            Ok(_) => break,
-                            Err(actual) => claimed = actual,
-                        }
-                    }
+            /// Arm a one-shot alarm at an absolute deadline.
+            ///
+            /// A deadline that has already passed fires immediately.
+            pub fn set_target(&self, deadline: Instant) {
+                self.set_target_ticks(deadline.as_ticks());
+            }
 
-                    time::start();
-                    Self::COMP.disarm();
-
-                    Self {
-                        _claim: Some(Claim($number)),
-                        irq: RefCell::new(None),
-                    }
-                }
-
-                /// Create a copy of this alarm without owning the comparator.
-                ///
-                /// This is analogous to [`Pin::steal`](crate::gpio::Pin::steal):
-                /// it lets an interrupt handler or another module reach the
-                /// comparator registers while the owner lives elsewhere.
-                /// Nothing is written to the hardware, so a stolen copy never
-                /// disturbs a running alarm, and dropping it neither frees the
-                /// comparator nor touches the interrupt.
-                ///
-                /// # Safety
-                ///
-                /// The caller must ensure that an [`Alarm1`]/[`Alarm2`] for this
-                /// comparator exists and stays alive, and that the copy is not
-                /// used to reconfigure the alarm behind the owner's back or to
-                /// claim a second CPU line with
-                /// [`enable_interrupt`](Self::enable_interrupt).
-                #[inline]
-                pub unsafe fn steal() -> Steal<Self> {
-                    Steal(Self {
-                        _claim: None,
-                        irq: RefCell::new(None),
-                    })
-                }
-
-                /// Arm a one-shot alarm at an absolute deadline.
-                ///
-                /// A deadline that has already passed fires immediately.
-                pub fn set_target(&self, deadline: Instant) {
-                    Self::COMP.set_target(deadline.as_ticks());
-                }
-
-                /// Arm a one-shot alarm at an absolute counter value, in 16 MHz
-                /// ticks.
-                pub fn set_target_ticks(&self, ticks: u64) {
-                    Self::COMP.set_target(ticks);
-                }
-
-                /// Arm a periodic alarm that fires every `period`.
-                ///
-                /// The period is limited to about 67 seconds by the 26-bit
-                /// period register; longer intervals need a target alarm
-                /// re-armed from the handler.
-                pub fn set_period(&self, period: Duration) {
-                    Self::COMP.set_period(period.as_ticks());
-                }
-
-                /// The configured period, zero while in target mode.
-                pub fn period(&self) -> Duration {
-                    Self::COMP.period()
-                }
-
-                /// The alarm value the comparator is actually using.
-                ///
-                /// In target mode this is the deadline; in period mode it is the
-                /// threshold of the next alarm, which the hardware keeps moving
-                /// forward.
-                pub fn target(&self) -> Instant {
-                    Self::COMP.target()
-                }
-
-                /// Whether the alarm fires repeatedly or once.
-                pub fn is_periodic(&self) -> bool {
-                    Self::COMP.is_periodic()
-                }
-
-                /// Stop comparing. A request that is already pending is dropped.
-                pub fn disarm(&self) {
-                    Self::COMP.disarm();
-                }
-
-                /// Whether the alarm fired since the last clear.
-                pub fn pending(&self) -> bool {
-                    Self::COMP.pending()
-                }
-
-                /// Drop a pending alarm request.
-                pub fn clear(&self) {
-                    Self::COMP.clear();
-                }
-
-                /// Whether the alarm interrupt is unmasked.
-                pub fn interrupt_enabled(&self) -> bool {
-                    Self::COMP.interrupt_enabled()
-                }
-
-                /// Route this alarm to `line` and call `handler` in interrupt
-                /// context.
-                ///
-                /// Claims the line the way [`interrupt::claim`] does, so the
-                /// alarm panics if the line is already taken. The alarm still
-                /// has to be armed with [`set_target`](Self::set_target),
-                /// [`set_target_ticks`](Self::set_target_ticks) or
-                /// [`set_period`](Self::set_period), and global interrupts have
-                /// to be enabled with [`interrupt::enable`].
-                pub fn enable_interrupt(&self, line: CpuInterrupt, handler: fn()) {
-                    assert!(
-                        self.irq.borrow().is_none(),
-                        "this alarm already has an interrupt handler"
+            /// Arm a one-shot alarm at an absolute counter value, in 16 MHz
+            /// ticks.
+            pub fn set_target_ticks(&self, ticks: u64) {
+                paste! {
+                    self.systimer.[<target $N _lo>].[<write_timer_target $N _lo>](ticks as u32);
+                    self.systimer.[<target $N _hi>].[<write_timer_target $N _hi>](
+                        (ticks >> 32) as u32
                     );
-
-                    HANDLERS[Self::INDEX].store(handler as usize, Ordering::Release);
-
-                    // SAFETY: the shim only acknowledges the comparator before
-                    // calling the user's function, and `claim` reserves the
-                    // line.
-                    let claimed =
-                        unsafe { interrupt::claim(Self::SOURCE, line, Level::LOW, $shim) };
-                    claimed.enable();
-                    Self::COMP.clear();
-                    Self::COMP.set_interrupt_enabled(true);
-                    *self.irq.borrow_mut() = Some(Irq {
-                        _handler: claimed,
-                        comp: Self::COMP,
-                        index: Self::INDEX,
-                    });
+                    let conf = &self.systimer.[<target $N _conf>];
+                    conf.[<clr_target $N _timer_unit_sel>]();
+                    conf.[<clr_target $N _period_mode>]();
+                    self.systimer.[<comp $N _load>].[<trigger_timer_comp $N _load>]();
                 }
+                self.start();
+            }
 
-                /// Mask the alarm interrupt and give its CPU line back.
-                pub fn disable_interrupt(&self) {
-                    // Dropping the bookkeeping masks the comparator, drops the
-                    // request and releases the line.
-                    self.irq.borrow_mut().take();
+            /// Arm a periodic alarm that fires every `period`.
+            ///
+            /// The period is limited to about 67 seconds by the 26-bit period
+            /// register; longer intervals need a target alarm re-armed from the
+            /// handler.
+            pub fn set_period(&self, period: Duration) {
+                let ticks = period.as_ticks();
+                assert!(
+                    (1..=MAX_PERIOD_TICKS).contains(&ticks),
+                    "the period register holds 1..=2^26-1 system timer ticks"
+                );
+
+                paste! {
+                    let conf = &self.systimer.[<target $N _conf>];
+                    conf.[<write_target $N _period>](ticks as u32);
+                    conf.[<clr_target $N _timer_unit_sel>]();
+                    self.systimer.[<comp $N _load>].[<trigger_timer_comp $N _load>]();
+                    // The TRM asks for period mode to be cleared and set again
+                    // after the period has been loaded.
+                    conf.[<clr_target $N _period_mode>]();
+                    conf.[<set_target $N _period_mode>]();
+                }
+                self.start();
+            }
+
+            /// The configured period, zero while in target mode.
+            pub fn period(&self) -> Duration {
+                paste! {
+                    let conf = &self.systimer.[<target $N _conf>];
+                    if conf.[<target $N _period_mode>]() {
+                        Duration::from_ticks(conf.[<target $N _period>]() as u64)
+                    } else {
+                        Duration::ZERO
+                    }
                 }
             }
 
-            impl Default for $Alarm {
-                fn default() -> Self {
-                    Self::new()
+            /// The alarm value the comparator is actually using.
+            ///
+            /// In target mode this is the deadline; in period mode it is the
+            /// threshold of the next alarm, which the hardware keeps moving
+            /// forward.
+            pub fn target(&self) -> Instant {
+                paste! {
+                    let hi = self.systimer.[<real_target $N _hi>].[<target $N _hi_ro>]();
+                    let lo = self.systimer.[<real_target $N _lo>].[<target $N _lo_ro>]();
+                    Instant::from_ticks(((hi as u64) << 32) | lo as u64)
                 }
             }
-        )+
+
+            /// Whether the alarm fires repeatedly or once.
+            pub fn is_periodic(&self) -> bool {
+                paste! { self.systimer.[<target $N _conf>].[<target $N _period_mode>]() }
+            }
+
+            /// Stop comparing. A request that is already pending is dropped.
+            pub fn disarm(&self) {
+                self.stop();
+                self.clear();
+            }
+
+            /// Whether the alarm fired since the last clear.
+            pub fn pending(&self) -> bool {
+                paste! { self.systimer.int_raw.[<target $N _int_raw>]() }
+            }
+
+            /// Drop a pending alarm request.
+            pub fn clear(&self) {
+                paste! { self.systimer.int_clr.[<trigger_target $N _int_clr>]() }
+            }
+
+            /// Whether the alarm interrupt is unmasked.
+            pub fn interrupt_enabled(&self) -> bool {
+                paste! { self.systimer.int_ena.[<target $N _int_ena>]() }
+            }
+
+            /// Unmask the alarm interrupt.
+            fn unmask_interrupt(&self) {
+                paste! { self.systimer.int_ena.[<set_target $N _int_ena>](); }
+            }
+
+            /// Mask the alarm interrupt and drop a pending request.
+            fn mask_interrupt(&self) {
+                paste! {
+                    self.systimer.int_ena.[<clr_target $N _int_ena>]();
+                    self.systimer.int_clr.[<trigger_target $N _int_clr>]();
+                }
+            }
+
+            /// Start the comparator.
+            fn start(&self) {
+                paste! { self.systimer.conf.[<set_target $N _work_en>](); }
+            }
+
+            /// Stop the comparator.
+            fn stop(&self) {
+                paste! { self.systimer.conf.[<clr_target $N _work_en>](); }
+            }
+
+            /// The interrupt matrix source feeding this comparator.
+            const SOURCE: Interrupt = Interrupt::$source;
+            /// The shim the timer installs on the comparator's CPU line.
+            const SHIM: fn() = $shim;
+            /// Slot of this comparator in the HAL's tables.
+            const INDEX: usize = $index;
+        }
+
+        /// Interrupt shim of this comparator: acknowledges the alarm, then calls
+        /// the user's handler.
+        fn $shim() {
+            $Alarm::new().clear();
+            dispatch($index);
+        }
     };
 }
 
-alarms! {
+impl_alarm! {
     /// The first spare comparator, `SYSTIMER` COMP1.
-    Alarm1 => 1, SYSTIMER_TARGET1, 0, alarm1;
+    Alarm1, 1, SYSTIMER_TARGET1, alarm1, 0
+}
+
+impl_alarm! {
     /// The second spare comparator, `SYSTIMER` COMP2.
-    Alarm2 => 2, SYSTIMER_TARGET2, 1, alarm2;
+    Alarm2, 2, SYSTIMER_TARGET2, alarm2, 1
+}
+
+// ============================================================================
+// The system timer
+// ============================================================================
+
+/// `SYSTIMER`: the free-running counter and the comparators built on it.
+///
+/// The type owns the peripheral and the CPU lines its alarms use. Comparator 0
+/// belongs to [`Delay`], which gets its own handle to the same registers from
+/// [`delay`](Self::delay).
+pub struct Systimer {
+    /// `None` once [`release`](Self::release) took the peripheral back.
+    systimer: Option<SYSTIMER>,
+    /// Comparator 1, the source of `SYSTIMER_TARGET1`.
+    pub alarm1: Alarm1,
+    /// Comparator 2, the source of `SYSTIMER_TARGET2`.
+    pub alarm2: Alarm2,
+    /// The CPU line the first alarm has claimed, if any.
+    irq1: RefCell<Option<InterruptHandler>>,
+    /// The CPU line the second alarm has claimed, if any.
+    irq2: RefCell<Option<InterruptHandler>>,
+}
+
+impl Systimer {
+    /// Take the system timer and its alarms.
+    ///
+    /// Starts the counter if nothing else has, so the alarms have a clock to
+    /// compare against, and leaves both comparators stopped and disarmed.
+    pub fn init(systimer: SYSTIMER) -> Self {
+        time::start();
+
+        let this = Self {
+            systimer: Some(systimer),
+            alarm1: Alarm1::new(),
+            alarm2: Alarm2::new(),
+            irq1: RefCell::new(None),
+            irq2: RefCell::new(None),
+        };
+        this.alarm1.disarm();
+        this.alarm2.disarm();
+        this
+    }
+
+    /// Give the peripheral back.
+    ///
+    /// The CPU lines are released first, exactly as on drop.
+    pub fn release(mut self) -> SYSTIMER {
+        self.disable_alarm1_interrupt();
+        self.disable_alarm2_interrupt();
+        self.systimer.take().expect("the timer releases once")
+    }
+
+    /// A blocking delay driver on comparator 0.
+    ///
+    /// Comparator 0 is shared by every [`Delay`], so it is a driver of its own
+    /// rather than a part of this type; it reaches the same counter through its
+    /// own handle.
+    pub fn delay(&self) -> Delay {
+        // SAFETY: this type owns the peripheral; the delay only touches
+        // comparator 0 and the counter.
+        Delay::init(unsafe { SYSTIMER::steal() })
+    }
+
+    /// Route `alarm1` to `line` and call `handler` in interrupt context.
+    ///
+    /// Claims the line the way [`interrupt::claim`] does, so this panics if the
+    /// line is already taken. The alarm still has to be armed with
+    /// [`Alarm1::set_target`], [`Alarm1::set_target_ticks`] or
+    /// [`Alarm1::set_period`], and global interrupts have to be enabled with
+    /// [`interrupt::enable`].
+    pub fn enable_alarm1_interrupt(&self, line: CpuInterrupt, handler: fn()) {
+        self.claim(
+            &self.irq1,
+            Alarm1::INDEX,
+            Alarm1::SOURCE,
+            Alarm1::SHIM,
+            line,
+            handler,
+        );
+        self.alarm1.clear();
+        self.alarm1.unmask_interrupt();
+    }
+
+    /// Mask `alarm1`'s interrupt and give its CPU line back.
+    pub fn disable_alarm1_interrupt(&self) {
+        self.alarm1.mask_interrupt();
+        self.release_line(&self.irq1, Alarm1::INDEX);
+    }
+
+    /// Whether `alarm1`'s interrupt is unmasked.
+    pub fn alarm1_interrupt_enabled(&self) -> bool {
+        self.alarm1.interrupt_enabled()
+    }
+
+    /// Route `alarm2` to `line` and call `handler` in interrupt context.
+    ///
+    /// See [`enable_alarm1_interrupt`](Self::enable_alarm1_interrupt).
+    pub fn enable_alarm2_interrupt(&self, line: CpuInterrupt, handler: fn()) {
+        self.claim(
+            &self.irq2,
+            Alarm2::INDEX,
+            Alarm2::SOURCE,
+            Alarm2::SHIM,
+            line,
+            handler,
+        );
+        self.alarm2.clear();
+        self.alarm2.unmask_interrupt();
+    }
+
+    /// Mask `alarm2`'s interrupt and give its CPU line back.
+    pub fn disable_alarm2_interrupt(&self) {
+        self.alarm2.mask_interrupt();
+        self.release_line(&self.irq2, Alarm2::INDEX);
+    }
+
+    /// Whether `alarm2`'s interrupt is unmasked.
+    pub fn alarm2_interrupt_enabled(&self) -> bool {
+        self.alarm2.interrupt_enabled()
+    }
+
+    /// Take `line` for the alarm that owns `slot`.
+    fn claim(
+        &self,
+        slot: &RefCell<Option<InterruptHandler>>,
+        index: usize,
+        source: Interrupt,
+        shim: fn(),
+        line: CpuInterrupt,
+        handler: fn(),
+    ) {
+        assert!(
+            slot.borrow().is_none(),
+            "this alarm already has an interrupt handler"
+        );
+
+        HANDLERS[index].store(handler as usize, Ordering::Release);
+
+        // SAFETY: the shim only acknowledges its comparator before calling the
+        // user's function, and `claim` makes sure no other driver uses the line.
+        let claimed = unsafe { interrupt::claim(source, line, Level::LOW, shim) };
+        claimed.enable();
+        *slot.borrow_mut() = Some(claimed);
+    }
+
+    /// Give the line in `slot` back.
+    fn release_line(&self, slot: &RefCell<Option<InterruptHandler>>, index: usize) {
+        if let Some(handler) = slot.borrow_mut().take() {
+            // No shim may fire once the line is gone.
+            HANDLERS[index].store(0, Ordering::Release);
+            // Dropping the handler unregisters the shim and frees the line.
+            drop(handler);
+        }
+    }
+}
+
+impl Drop for Systimer {
+    fn drop(&mut self) {
+        self.disable_alarm1_interrupt();
+        self.disable_alarm2_interrupt();
+    }
 }
