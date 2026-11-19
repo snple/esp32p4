@@ -43,7 +43,9 @@
 //! bits and five low bits hardwired to 1 (level 0 reads as `0x1f`, level 7 as
 //! `0xff`). The hardware compares that byte against
 //! `max(mintthresh.TH, mintstatus.MIL)` and takes the interrupt only when the
-//! byte is greater; the reset threshold of 0 accepts every level.
+//! byte is greater; the threshold keeps its reset value of 0, which accepts
+//! every level — the two CLIC CSRs are not implemented on this chip (see
+//! `esp32p4_rt::interrupt`), so nothing raises it.
 //!
 //! Levels only decide **which of the pending interrupts is taken first**. The
 //! trap entry runs with `MIE = 0`, so a handler is never preempted by another

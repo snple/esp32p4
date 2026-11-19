@@ -147,8 +147,23 @@ _start:
     loop
 ```
 
-P4 的 CLIC 支持 direct mode，`mtvec.MODE=0` 是合法的。当前不使用中断，
-所以一个 trap 入口足够。
+### `mtvec` 必须 64 字节对齐
+
+P4 的 HP 核只运行在 CLIC 模式下：`mtvec` 的低位读回总是 `0b11`（MODE=3），
+trap 向量基地址取 `mtvec & !0x3f`。因此 `_start_trap` 必须 **64 字节对齐**，
+否则基地址落在函数体中间：任何异常都会跳到错误的指令上，异常处理循环里
+再出错，表现为**整个核挂死**（`TRAP_CAUSE` 永远写不进去），约 9 s 后被 RTC
+看门狗复位——看起来就像“程序没运行、设备每 10 s 重连一次”。
+
+### `mintthresh` / `mintstatus` 不可用
+
+`csrr`/`csrw` 访问 CLIC 的 `mintthresh`（CSR `0x347`）和 `mintstatus`
+（CSR `0xFB1`）在 P4（v1.3 实测）上会触发 **illegal instruction** 异常，
+尽管 TRM 把它们列为已实现。运行时不碰这两个 CSR：阈值保持复位值 0
+（接受所有级别），处理中状态由软件记录。
+
+> 这两条都是“启动即挂死”的坑：`interrupt::init()` 曾写过 `mintthresh`，
+> 而 trap 入口只有 4 字节对齐，于是任何示例都到不了 `main`。
 
 ## 6. bootloader 交接到应用时的状态
 

@@ -64,7 +64,11 @@ _start:
 .size _start, . - _start
 
 .section .trap, "ax"
-.align 4
+/* The HP core runs in CLIC mode only: `mtvec` reads back with MODE = 3 and the
+   trap vector base is `mtvec & !0x3f`. The entry therefore has to be 64-byte
+   aligned, or every exception jumps into the middle of this function and the
+   core hangs inside a fault loop that never records `TRAP_CAUSE`. */
+.balign 64
 .global _start_trap
 .type _start_trap, @function
 _start_trap:

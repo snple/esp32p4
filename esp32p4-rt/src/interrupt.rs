@@ -7,7 +7,7 @@
 //! ```text
 //!   0x2080_0000  mcliccfg     [3:1] MNLBITS: how many CTL bits encode the level
 //!   0x2080_0004  clicinfo     NUM_INTERRUPTS = 48, CLICINTCTLBITS = 4
-//!   0x2080_0008  mthreshold   machine-mode threshold (CSR `mintthresh` mirrors it)
+//!   0x2080_0008  mthreshold   machine-mode threshold (`mintthresh` mirror)
 //!
 //!   0x2080_1000 + 4*i + 0   clicintip[i]    pending
 //!   0x2080_1000 + 4*i + 1   clicintie[i]    enable
@@ -31,14 +31,24 @@
 //! hardwired to 1. Level 0 therefore reads as `0x1f`, level 7 as `0xff`.
 //!
 //! The hardware compares that byte with `max(mintthresh.TH, mintstatus.MIL)`
-//! and takes the interrupt only when the byte is *greater*. With the reset
-//! threshold of 0 every level is accepted. Levels only order interrupts that are
-//! pending at the same time: preemption would additionally require re-enabling
-//! `MIE` inside the handler, which the runtime deliberately does not do.
+//! and takes the interrupt only when the byte is *greater*. Levels only order
+//! interrupts that are pending at the same time: preemption would additionally
+//! require re-enabling `MIE` inside the handler, which the runtime deliberately
+//! does not do.
+//!
+//! # `mintthresh` and `mintstatus` are unusable
+//!
+//! Both CLIC CSRs (`0x347` and `0xFB1`) raise an illegal-instruction exception
+//! on the ESP32-P4 (measured on chip revision v1.3), so the runtime never
+//! touches them: the threshold keeps its reset value of 0 — which accepts every
+//! level, exactly what a non-nesting dispatcher wants — and the "inside a
+//! handler" state that `mintstatus.MIL` would report is tracked in software
+//! instead (see [`in_interrupt`]). The threshold also has a memory-mapped mirror
+//! at `CLIC + 0x8`, which is the way to raise it if that ever becomes necessary.
 
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 
-use crate::register::{mintthresh, mstatus};
+use crate::register::mstatus;
 
 /// Base of the CLIC's own configuration registers.
 const CLIC_CONFIG: usize = 0x2080_0000;
@@ -85,6 +95,12 @@ const _: () = assert!(CLIC_INTS + (20 + FIRST_EXT_INTR_ID as usize) * 4 + 3 == 0
 static HANDLERS: [AtomicUsize; CPU_INTERRUPT_COUNT as usize] =
     [const { AtomicUsize::new(0) }; CPU_INTERRUPT_COUNT as usize];
 
+/// Set while a registered handler runs, i.e. what `mintstatus.MIL != 0` reports
+/// on a controller that implements it.
+static IN_HANDLER: AtomicBool = AtomicBool::new(false);
+/// Level of the handler that is running, or 0 outside a handler.
+static HANDLER_LEVEL: AtomicU8 = AtomicU8::new(0);
+
 /// Byte address of `clicintXX[i]` for `field` 0..=3.
 #[inline]
 fn int_byte(cpu_int: u32, field: usize) -> *mut u8 {
@@ -106,6 +122,10 @@ pub fn interrupt_count() -> u32 {
 /// on `mcause` — no vector table in RAM.
 ///
 /// Called once from `_start`.
+///
+/// This deliberately leaves the interrupt threshold alone: `mintthresh` (CSR
+/// `0x347`) is not implemented on this silicon, and its reset value of 0 already
+/// accepts every level (see the module documentation).
 pub fn init() {
     // SAFETY: fixed MMIO addresses, and no interrupt is enabled yet.
     unsafe {
@@ -113,8 +133,6 @@ pub fn init() {
         let value = core::ptr::read_volatile(cfg);
         core::ptr::write_volatile(cfg, (value & !(0b111 << 1)) | (MNLBITS << 1));
     }
-    // SAFETY: the reset value is 0, but a previous program may have raised it.
-    unsafe { mintthresh::write(0) };
 }
 
 /// Disable machine interrupts and return the previous `MIE` state.
@@ -277,12 +295,18 @@ pub(crate) fn dispatch(cpu_int: u32) {
         return;
     }
 
+    let previous_in_handler = IN_HANDLER.swap(true, Ordering::Relaxed);
+    let previous_level = HANDLER_LEVEL.swap(level(cpu_int), Ordering::Relaxed);
+
     let handler = HANDLERS[cpu_int as usize].load(Ordering::Acquire);
     if handler != 0 {
         // SAFETY: `set_handler` only ever stores a `fn()`.
         let handler: fn() = unsafe { core::mem::transmute(handler) };
         handler();
     }
+
+    HANDLER_LEVEL.store(previous_level, Ordering::Relaxed);
+    IN_HANDLER.store(previous_in_handler, Ordering::Relaxed);
 }
 
 /// Decode `mcause` into `(is_interrupt, code)`.
@@ -292,15 +316,18 @@ pub(crate) fn decode_cause(cause: usize) -> (bool, usize) {
 }
 
 /// Whether the core is currently executing an interrupt handler.
+///
+/// Tracked by [`dispatch`] rather than read from `mintstatus`, which is not
+/// implemented on this chip (see the module documentation).
 #[inline]
 pub fn in_interrupt() -> bool {
-    crate::register::mintstatus::in_interrupt()
+    IN_HANDLER.load(Ordering::Relaxed)
 }
 
 /// The CLIC level of the handler being executed, or 0 outside a handler.
 #[inline]
 pub fn current_level() -> u8 {
-    crate::register::mintstatus::level()
+    HANDLER_LEVEL.load(Ordering::Relaxed)
 }
 
 /// Stop the core until an interrupt is pending.
