@@ -413,8 +413,12 @@ impl<'a> Net<'a> {
 
 /// Frame buffers for one TCP socket.
 ///
-/// TCP needs a receive and a transmit window. 2 KiB each is enough for a
-/// 1460-byte MSS with a little headroom for retransmissions.
+/// TCP needs a receive and a transmit window. 8 KiB each is several segments
+/// worth: the receive buffer doubles as smoltcp's reassembly buffer, and one
+/// that is barely one window deep fills up completely with out-of-order
+/// segments as soon as the first segment of a flight is lost. The advertised
+/// window then pins at zero — the hole can never be filled — and the connection
+/// stalls until the peer gives up and reconnects.
 #[repr(C, align(8))]
 pub struct TcpBuffers {
     /// Window for data arriving from the peer.
@@ -425,7 +429,7 @@ pub struct TcpBuffers {
 
 impl TcpBuffers {
     /// Buffer size used by [`TcpBuffers::new`].
-    pub const DEFAULT_SIZE: usize = 2048;
+    pub const DEFAULT_SIZE: usize = 8192;
 
     /// A zeroed pair of buffers, usable in `static` initialisers.
     pub const fn new() -> Self {
