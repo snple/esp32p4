@@ -282,6 +282,52 @@ pub enum OutputEnable {
     Peripheral,
 }
 
+/// The pin operations a peripheral driver needs.
+///
+/// Implemented for every [`Pin`], so a driver can be generic over the pin
+/// instead of over the pin number:
+///
+/// ```ignore
+/// let mut uart = Uart0::init(dp.UART0, UartConfig::default(), &dp.HP_SYS_CLKRST);
+/// uart.set_pins(pins.pin::<20>(), pins.pin::<21>());
+/// ```
+///
+/// Unlike the fixed-function pins of other MCUs, the ESP32-P4 GPIO matrix
+/// accepts *any* pin for *any* peripheral signal, so the trait does not
+/// restrict which pin a driver may use — it only gives the driver a way to
+/// reach the routing registers.
+pub trait PinOps {
+    /// The GPIO number.
+    fn number(&self) -> u32;
+
+    /// Route a peripheral output signal to this pin (push-pull, output enable
+    /// from `GPIO_ENABLE`).
+    fn route_output_signal(&mut self, signal: OutputSignal);
+
+    /// Route a peripheral output signal to this pin, with the output enable
+    /// coming from the peripheral (open-drain buses such as I2C).
+    fn route_output_signal_open_drain(&mut self, signal: OutputSignal);
+
+    /// Connect a peripheral input signal to this pin, enabling its input
+    /// buffer.
+    fn route_input_signal(&mut self, signal: InputSignal);
+
+    /// Return the pad to its own `GPIO_OUT` register.
+    fn release_output_signal(&mut self);
+
+    /// Detach a peripheral input signal from this pin.
+    fn release_input_signal(&mut self, signal: InputSignal);
+
+    /// Attach or detach the pad's pull-up.
+    fn set_pull_up_enabled(&mut self, enabled: bool);
+
+    /// Enable or disable the input buffer.
+    fn set_input_buffer_enabled(&mut self, enabled: bool);
+
+    /// Switch the pad's output driver to open-drain.
+    fn set_open_drain_enabled(&mut self, enabled: bool);
+}
+
 /// Latched interrupt status of all 54 pins.
 #[derive(Clone, Copy, Debug)]
 pub struct InterruptStatus {
@@ -829,6 +875,57 @@ macro_rules! impl_pin {
                     self.into_input();
                     self.set_pull_down();
                     self
+                }
+            }
+
+            impl crate::gpio::PinOps for Pin<$n> {
+                #[inline]
+                fn number(&self) -> u32 {
+                    $n
+                }
+
+                #[inline]
+                fn route_output_signal(&mut self, signal: OutputSignal) {
+                    Pin::<$n>::set_output_signal(self, signal);
+                }
+
+                #[inline]
+                fn route_output_signal_open_drain(&mut self, signal: OutputSignal) {
+                    Pin::<$n>::set_output_signal_with_oe(self, signal, OutputEnable::Peripheral);
+                }
+
+                #[inline]
+                fn route_input_signal(&mut self, signal: InputSignal) {
+                    Pin::<$n>::set_input_signal(self, signal);
+                }
+
+                #[inline]
+                fn release_output_signal(&mut self) {
+                    Pin::<$n>::clear_output_signal(self);
+                }
+
+                #[inline]
+                fn release_input_signal(&mut self, signal: InputSignal) {
+                    Pin::<$n>::clear_input_signal(self, signal);
+                }
+
+                #[inline]
+                fn set_pull_up_enabled(&mut self, enabled: bool) {
+                    Pin::<$n>::set_pull(self, if enabled { Pull::Up } else { Pull::None });
+                }
+
+                #[inline]
+                fn set_input_buffer_enabled(&mut self, enabled: bool) {
+                    if enabled {
+                        Pin::<$n>::enable_input(self);
+                    } else {
+                        Pin::<$n>::disable_input(self);
+                    }
+                }
+
+                #[inline]
+                fn set_open_drain_enabled(&mut self, enabled: bool) {
+                    Pin::<$n>::set_open_drain(self, enabled);
                 }
             }
 

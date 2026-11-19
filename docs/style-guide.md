@@ -146,12 +146,14 @@ HAL **不内置** `I2cBus` / `SpiBus` / `UartBus` 等抽象 trait：需要抽象
 ## 6. 错误处理约定
 
 - **每个模块定义自己的 `Error` 枚举**，只列本模块真正返回的错误。
-- **阻塞方法在超时时 `panic`**：使用 `crate::spin::spin_wait` 风格的有界自旋。
+- **阻塞方法在超时时 `panic`**：用 [`spin`](../esp32p4/src/spin.rs) 的有界自旋。
 - **`try_*` 方法返回 `Result<_, Error>`**。
-- `spin` 模块建议提供三个助手：
+- `spin` 模块提供三个助手：
   - `spin_wait(what, cond)` — 有界自旋，超时 panic（hang-guard）。
   - `try_spin_wait(cond) -> bool` — 有界自旋，不 panic。
   - `spin_wait_max(max, what, cond)` — 自定义上界。
+- 上界按**迭代次数**计，只用来兜住「永远等不到」；需要真实时限（例如 I2C 从机拉伸
+  时钟）时用 `delay::micros()` 做截止时间，参见 `i2c`。
 
 当前 HAL 的 GPIO/Delay 都是无错误路径的简单操作，因此还没有 `Error` 枚举；
 新增可能失败的模块时按上面的模式补。

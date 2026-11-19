@@ -20,6 +20,9 @@
 | `timer` | [timer/mod.rs](../esp32p4/src/timer/mod.rs) | TIMG0/1 四路计数器与两个 MWDT，中断归 group |
 | `systimer` | [systimer.rs](../esp32p4/src/systimer.rs) | COMP1/COMP2 闹钟，COMP0 归 `Delay` |
 | `gpio` | [gpio/](../esp32p4/src/gpio) | 引脚电气配置、GPIO 读写、四路中断与完整的 HP GPIO 交换矩阵信号路由 |
+| `uart` | [uart.rs](../esp32p4/src/uart.rs) | UART0–4：轮询收发、帧格式、流控、按源中断、GPIO 矩阵引脚路由 |
+| `i2c` | [i2c.rs](../esp32p4/src/i2c.rs) | I2C0/1 主机：任意 SCL、7 位地址、写/读/写读、总线恢复、按源中断 |
+| `spin` | [spin.rs](../esp32p4/src/spin.rs) | 有界自旋助手（`spin_wait` / `try_spin_wait`），驱动轮询的统一上界 |
 | `interrupt` | [interrupt.rs](../esp32p4/src/interrupt.rs) | CLIC 线与矩阵、`claim`/`InterruptHandler` |
 | `emac` / `net` | [emac/](../esp32p4/src/emac) / [net.rs](../esp32p4/src/net.rs) | RMII + MDIO + DMA，smoltcp 同步栈 |
 | `psram` | [psram/](../esp32p4/src/psram) | MPLL、MSPI、MMU 映射、分配器 |
@@ -45,10 +48,11 @@
 
 按依赖关系排序，同一档内的可以并行。
 
-1. **UART0–4 + LP UART**：先轮询，再中断（回调放进 owner），高速路径可选 DMA。
-   依赖第 0 层的引脚路由。做完之后 HAL 才有不依赖 `defmt` 的日志/控制台。
-2. **I2C0/1 + LP I2C**：主机模式（7/10 bit 地址、时钟拉伸、超时），轮询与中断。
-   依赖第 0 层。
+1. ~~**UART0–4 + LP UART**：先轮询，再中断（回调放进 owner），高速路径可选 DMA。~~
+   已完成 `UART0–4`；LP UART 依赖 LP GPIO 矩阵/焊盘模型，见第 2 层。
+2. ~~**I2C0/1 + LP I2C**：主机模式（7/10 bit 地址、时钟拉伸、超时），轮询与中断。~~
+   已完成 `I2C0/1` 主机（7 位地址、时钟拉伸由硬件处理 + 软件截止时间）；10 位地址、
+   从机模式与 LP I2C 待补。
 3. **GDMA（`DMA`，即 GDMA；另有 `AHB_DMA`/`AXI_DMA`）**：描述符环、外设握手、
    字节序/位宽配置。UART/SPI/I2S/ADC 的“能用”与“好用”之间就差这一块；
    `emac` 有自己的 DMA，不必依赖它。
@@ -60,6 +64,9 @@
 
 ## 4. 第 2 层：系统与电源
 
+- **LP 引脚与 LP 外设**：`LP_IO_MUX` 的焊盘配置 + `LP_GPIO` 交换矩阵（LP UART / LP I2C /
+  LP SPI / LP I2S 的引脚都在这里），是 LP UART、LP I2C 的前置；LP 外设本身与 HP 版共用
+  寄存器布局，补上引脚后可直接复用现有驱动。
 - **PMU / 低功耗**：light sleep、deep sleep、HP 核心电源域、唤醒源（GPIO / LP timer /
   LP UART）。电池设备必需，也是 P4 上仅次于时钟树的复杂模块。
 - **LP 核（ULP RISC-V）**：固件加载、启动、与 HP 核共享内存。
@@ -78,9 +85,9 @@ I3C、UHCI、SOC_ETM（事件矩阵）、APM/访问权限、eFuse 编程、运�
 |------|------|------|
 | 0 | ~~eFuse / 芯片版本、MMU/cache 公共 API~~ | 已完成：`clock`/`psram` 不再需要手工参数 |
 | 1 | ~~GPIO 信号矩阵 + GPIO 中断~~ | 已完成：引脚可以路由到任一外设信号，`gpio_interrupt` 示例可编译 |
-| 2 | UART（含 LP UART） | 轮询与中断收发示例，README 与模块文档更新 |
+| 2 | ~~UART（UART0–4）~~ | 已完成：`uart` 回环示例通过，README 与模块文档更新 |
 | 3 | ~~eFuse / 芯片版本~~ | 已完成：`clock` 与 `psram` 按版本判断，不再需要手工 `Sources` |
-| 4 | I2C（HP + LP） | 扫描/读写示例 |
+| 4 | ~~I2C（I2C0/1）~~ | 已完成：`i2c_scan` 示例通过；LP I2C 待 LP 引脚模型 |
 | 5 | GDMA | 描述符环 + UART/SPI 的 DMA 路径 |
 | 6 | SPI/SD、ADC/TSENS、PWM 家族 | 各自示例 |
 | 7 | 低功耗（PMU / LP 核 / WDT / brownout） | 睡眠-唤醒示例 |

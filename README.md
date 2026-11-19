@@ -13,9 +13,9 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | [`esp32p4-pac`](esp32p4-pac/) | **PAC**：由 `esp32p4.svd` 生成，提供寄存器块、字段常量和访问器。勿手改 |
 | [`esp32p4-rt`](esp32p4-rt/) | **运行时**：`_start`、trap 入口、`link.x`、CSR/汇编封装 |
 | [`esp32p4-macro`](esp32p4-macro/) | **过程宏**：`#[main]` |
-| [`esp32p4`](esp32p4/) | **HAL**：时钟树、GPIO / IO MUX、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
+| [`esp32p4`](esp32p4/) | **HAL**：时钟树、GPIO / IO MUX、UART、I2C 主机、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
 | [`esp32p4-usb`](esp32p4-usb/) | **USB 设备栈**：DWC OTG 全速/高速控制器（slave 模式、轮询）、标准请求与描述符、CDC-ACM 虚拟串口、自定义类 |
-| [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC |
+| [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、UART 回环、I2C 扫描、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC |
 | [`xtask`](xtask/) | 构建辅助：`cargo xtask gen-pac` |
 
 依赖方向是单向的：`macro` / `rt` → `pac` → `esp32p4` / `esp32p4-usb` → `examples`。
@@ -41,6 +41,8 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `watchdog` | `TIMG0` 的 MWDT：1 s 超时复位系统，主循环每 100 ms `feed()` 一次 |
 | `emac` | 初始化 RMII 以太网、自动协商、打印链路状态并收发 ARP 帧 |
 | `net_tcp_echo` | DHCP + TCP echo 服务器（需 `--features net`，无堆、无 async） |
+| `uart` | `UART1` 内部回环自检：三组数据原样收发，并打印波特率与帧格式 |
+| `i2c_scan` | `I2C0` 扫描 7 位地址空间，逐个探测并打印应答的从机 |
 
 ## 快速开始
 
@@ -481,6 +483,55 @@ let handler = unsafe {
 handler.enable();
 ```
 
+## UART
+
+[`uart`](esp32p4/src/uart.rs) 覆盖 `UART0..UART4`（LP UART 的寄存器布局相同，但走 LP GPIO
+矩阵，等 LP 引脚模型补上再接）：
+
+- 轮询收发：`write`/`write_byte`/`flush`、`read`/`read_byte`/`read_byte_blocking`、
+  带截止时间的 `read_timeout`；
+- 5–8 数据位、1/1.5/2 停止位、奇/偶校验，信号反相、内部回环与 break；
+- 时钟源可选 XTAL(40 MHz) / RC_FAST(17.5 MHz) / PLL_F80M(80 MHz)，默认 PLL_F80M；
+  波特率用「整数预分频 + 16 分频小数」计算，`set_baudrate` 返回实际值；
+- CTS/RTS 硬件流控（RTS 阈值可配）；
+- 每个中断源单独 `enable_interrupt`/`interrupt_pending`/`clear_interrupt`；
+- 引脚走 GPIO 矩阵（`set_pins(tx, rx)`），任何 GPIO 都能当 TX/RX/CTS/RTS。
+
+```rust
+let uart = Uart1::init(dp.UART1, &UartConfig::default().baudrate(115_200), &dp.HP_SYS_CLKRST);
+uart.set_pins(pins.pin::<20>(), pins.pin::<21>());
+uart.write(b"hello\r\n");
+uart.flush();
+```
+
+示例 [`uart`](esp32p4-examples/src/uart.rs) 用内部回环自检，三组数据（含 64 字节递增序列）
+原样收回；实测 115200 配置下硬件给出 115201，属正常的分频舍入。
+
+## I2C
+
+[`i2c`](esp32p4/src/i2c.rs) 是 `I2C0`/`I2C1` 的主机模式驱动：
+
+- 100 kHz / 400 kHz 及介于其间的任意 SCL 频率，时钟源 XTAL 或 RC_FAST；
+  时序按 ESP-IDF `i2c_ll_master_cal_bus_clk` 的公式算（预分频 + 低/高/等待高/保持/建立）；
+- `write`、`read`、`write_read`（重复起始）与 `probe`；每个等待都有以
+  `delay::micros()` 为准的截止时间，从机拉伸时钟不会误判超时；
+- NACK / 仲裁丢失 / 总线忙 / 超时都有独立错误值；`clear_bus` 发 9 个 SCL 脉冲救总线，
+  `reset_fsm` 复位控制器状态机；
+- 一条事务最多 8 个命令寄存器、一 FIFO（32 字节，含地址字节）；写 31 字节、读 32 字节、
+  写读组合写 30 字节，超出返回 `TooManyCommands`/`TooMuchData`；
+- SCL/SDA 配成开漏、输出使能交给外设，需要外部上拉。
+
+```rust
+let i2c = I2c0::init(dp.I2C0, &I2cConfig::default(), &dp.HP_SYS_CLKRST);
+i2c.set_pins(pins.pin::<8>(), pins.pin::<9>());
+
+let mut value = [0u8; 1];
+i2c.write_read(0x48, &[0x0f], &mut value).unwrap();
+```
+
+示例 [`i2c_scan`](esp32p4-examples/src/i2c_scan.rs) 扫描 7 位地址空间；空总线上每个探测
+立刻返回 `NoAcknowledge`（实测 112 个地址约 5 ms）。
+
 ## eFuse 与芯片版本
 
 [`efuse`](esp32p4/src/efuse.rs) 只读 BLOCK0/1 的寄存器快照（bootloader 已在复位时加载）：
@@ -782,6 +833,10 @@ espflash save-image --chip esp32p4 \
 - USB Serial/JTAG（CDC-ACM）收发：`UsbSerialJtag`，以及可选的 `defmt` 全局 logger
 - 以太网 MAC（RMII + MDIO + DMA 描述符环），含 L1/L2 cache 维护
 - 同步 TCP/IP（smoltcp）：DHCP 客户端、TCP/UDP/ICMP、可选 IPv6，无 async、堆可选
+- UART0–UART4：轮询收发、5–8 数据位/奇偶/停止位、信号反相与回环、CTS/RTS 流控、
+  可选中钟源、按源中断；引脚经 GPIO 矩阵任意路由
+- I2C0/I2C1 主机：100/400 kHz 及任意 SCL、7 位地址、写/读/写读、总线恢复、
+  NACK/仲裁/超时错误与按源中断
 - CLIC 中断框架（direct 模式、按 CPU 线分发、trap 保存 FPU 上下文）与 EMAC/SYSTIMER
   中断驱动
 - `defmt` 日志支持（`Format` 实现 + 关键路径日志 + 基于 `mstatus.MIE` 的
@@ -794,7 +849,7 @@ espflash save-image --chip esp32p4 \
 
 - 中断嵌套与优先级分级、其它外设中断
 - PLL 的模拟配置（CPLL/SPLL/APLL 的分频与校准；时钟树本身见 `clock::ClockTree`）
-- UART、SPI、I2C、DMA、RMT、WS2812 等驱动
+- LP UART 与 LP I2C（需先补 LP GPIO 矩阵/焊盘模型）、SPI、DMA、RMT、WS2812 等驱动
 - EMAC 中断驱动、TX/RX 校验和卸载、PTP 时间戳、MII/RGMII 接口
 - 阻塞式 socket API（当前是 smoltcp 的事件/轮询风格）、DHCP 服务端
 - USB OTG FS/HS 主机与设备栈

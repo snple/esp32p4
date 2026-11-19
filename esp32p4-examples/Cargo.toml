@@ -111,3 +111,13 @@ path = "src/usb_cdc.rs"
 [[bin]]
 name = "usb_cdc_hs"
 path = "src/usb_cdc_hs.rs"
+
+[[bin]]
+name = "uart"
+path = "src/uart.rs"
+required-features = ["defmt"]
+
+[[bin]]
+name = "i2c_scan"
+path = "src/i2c_scan.rs"
+required-features = ["defmt"]
