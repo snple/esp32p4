@@ -1341,6 +1341,30 @@ peripheral!(TIMG1, timg1::RegisterBlock, 0x500c3000);
 /// Timer Group 1
 pub mod timg1;
 
+/// PSRAM MSPI controller 0 (AXI cache / MMU path)
+pub struct PSRAM_MSPI0 {
+    _marker: PhantomData<*const ()>,
+}
+
+unsafe impl Send for PSRAM_MSPI0 {}
+
+peripheral!(PSRAM_MSPI0, psram_mspi0::RegisterBlock, 0x5008e000);
+
+/// PSRAM MSPI controller 0 (AXI cache / MMU path)
+pub mod psram_mspi0;
+
+/// PSRAM MSPI controller 1 (direct-mode transactions)
+pub struct PSRAM_MSPI1 {
+    _marker: PhantomData<*const ()>,
+}
+
+unsafe impl Send for PSRAM_MSPI1 {}
+
+peripheral!(PSRAM_MSPI1, psram_mspi1::RegisterBlock, 0x5008f000);
+
+/// PSRAM MSPI controller 1 (direct-mode transactions)
+pub mod psram_mspi1;
+
 // ============================================================================
 // Peripherals - All device peripherals
 // ============================================================================
@@ -1533,6 +1557,10 @@ pub struct Peripherals {
     pub TIMG0: TIMG0,
     /// Timer Group 1
     pub TIMG1: TIMG1,
+    /// PSRAM MSPI controller 0 (AXI cache / MMU path)
+    pub PSRAM_MSPI0: PSRAM_MSPI0,
+    /// PSRAM MSPI controller 1 (direct-mode transactions)
+    pub PSRAM_MSPI1: PSRAM_MSPI1,
 }
 
 impl Peripherals {
@@ -1645,6 +1673,8 @@ impl Peripherals {
                 EMAC: EMAC::steal(),
                 TIMG0: TIMG0::steal(),
                 TIMG1: TIMG1::steal(),
+                PSRAM_MSPI0: PSRAM_MSPI0::steal(),
+                PSRAM_MSPI1: PSRAM_MSPI1::steal(),
             }
         }
     }

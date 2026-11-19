@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<device schemaVersion="1.1">
+  <vendor>ESPRESSIF SYSTEMS (SHANGHAI) CO., LTD.</vendor>
+  <vendorID>ESPRESSIF</vendorID>
+  <name>ESP32-P4</name>
+  <version>2</version>
+  <description>ESP32-P4 PSRAM MSPI controllers (missing from the vendor SVD)</description>
+  <peripherals>
+    <!--
+      The vendor SVD only describes the flash MSPI instances at 0x5008_C000 and
+      0x5008_D000. The PSRAM controllers at 0x5008_E000 (AXI cache path, whose
+      registers carry the "S" prefix in ESP-IDF) and 0x5008_F000 (direct-mode
+      controller for PSRAM mode registers) are the same IP, so their register
+      layout is taken from the flash instances.
+    -->
+    <peripheral derivedFrom="SPI0">
+      <name>PSRAM_MSPI0</name>
+      <description>PSRAM MSPI controller 0 (AXI cache / MMU path)</description>
+      <groupName>PSRAM_MSPI0</groupName>
+      <baseAddress>0x5008E000</baseAddress>
+      <addressBlock>
+        <offset>0x0</offset>
+        <size>0x14C</size>
+        <usage>registers</usage>
+      </addressBlock>
+    </peripheral>
+    <peripheral derivedFrom="SPI1">
+      <name>PSRAM_MSPI1</name>
+      <description>PSRAM MSPI controller 1 (direct-mode transactions)</description>
+      <groupName>PSRAM_MSPI1</groupName>
+      <baseAddress>0x5008F000</baseAddress>
+      <addressBlock>
+        <offset>0x0</offset>
+        <size>0x0D8</size>
+        <usage>registers</usage>
+      </addressBlock>
+    </peripheral>
+  </peripherals>
+</device>

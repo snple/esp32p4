@@ -95,10 +95,11 @@ fn gen_pac(
     let mut device = svd_parser::parse_svd(&svd_path).context("Failed to parse SVD file")?;
 
     // Some peripherals are incomplete in the vendor SVD: the Ethernet MAC block
-    // is missing entirely (see `xtask/gen_emac.py`), and both timer groups lack
-    // their second counter (see `xtask/gen_timg.py`). Fragments carry the full
-    // definition and replace the vendor's peripheral of the same name.
-    for fragment in ["emac.svd", "timg.svd"] {
+    // is missing entirely (see `xtask/gen_emac.py`), both timer groups lack
+    // their second counter (see `xtask/gen_timg.py`), and the two PSRAM MSPI
+    // controllers are absent altogether. Fragments carry the full definition
+    // and replace the vendor's peripheral of the same name.
+    for fragment in ["emac.svd", "timg.svd", "psram_mspi.svd"] {
         let path = root.join(fragment);
         if !path.exists() {
             continue;

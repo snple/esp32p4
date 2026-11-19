@@ -724,10 +724,12 @@ cargo xtask gen-pac --check    # 仅校验生成代码是否与 SVD 一致
 生成器会展开 ESP SVD 的 `<dim>` 寄存器数组（`GPIO%s`、`IV_MEM[%s]` 等），
 并处理数组元素与普通寄存器重名的情况。生成代码已自动 `rustfmt`。
 
-厂商 SVD 缺失或残缺的外设由两个 fragment 补全，按名字**替换**厂商的定义：
-[`emac.svd`](emac.svd)（整块缺失，脚本见 `xtask/gen_emac.py`）和
+厂商 SVD 缺失或残缺的外设由 fragment 补全，按名字**替换**厂商的定义：
+[`emac.svd`](emac.svd)（整块缺失，脚本见 `xtask/gen_emac.py`）、
 [`timg.svd`](timg.svd)（两组各缺 timer 1，脚本见 `xtask/gen_timg.py`，重新生成用
-`python3 xtask/gen_timg.py`）。
+`python3 xtask/gen_timg.py`），以及 [`psram_mspi.svd`](psram_mspi.svd)
+（`PSRAM_MSPI0`/`PSRAM_MSPI1` 两个 PSRAM 控制器在 `0x5008_E000`/`0x5008_F000`
+整块缺失，用 `derivedFrom` 继承同为 MSPI IP 的 `SPI0`/`SPI1` 寄存器定义）。
 
 ## 工具链
 
