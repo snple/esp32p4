@@ -339,6 +339,7 @@ fn main() -> ! {
     }
 
     let mut ticks = 0u32;
+    let mut last_stats = emac.stats();
     loop {
         // Park the core until the MAC or the stack's next timer has something
         // to do, then run the whole loop body.
@@ -353,7 +354,9 @@ fn main() -> ! {
         // full sleep period, ~20 ms).
         net.poll(&mut emac);
 
-        // Report the link once in a while so a cable pull is visible.
+        // Report the link and the counters once a second: a cable pull shows up
+        // as `link false`, and anything the wire or the PHY drops shows up in
+        // the error counters instead of just "the network feels slow".
         if ticks.is_multiple_of(50) {
             let link = emac.poll_link();
             let ip = net.ipv4_addr().map(|addr| addr.octets());
@@ -370,6 +373,33 @@ fn main() -> ! {
                 ip,
                 states[0],
                 states[1]
+            );
+
+            let pending = emac.rx_pending();
+            let stats = emac.stats();
+            let sec = stats.delta_since(&last_stats);
+            last_stats = stats;
+            defmt::info!(
+                "  rx {} f/{} B, tx {} f/{} B, ring {} pending, dropped {} + {} fifo",
+                sec.rx_frames,
+                sec.rx_bytes,
+                sec.tx_frames,
+                sec.tx_bytes,
+                pending,
+                sec.rx_missed,
+                sec.rx_fifo_overflows,
+            );
+            defmt::info!(
+                "  errors rx {} (crc {} align {} mii {} len {} ovf {} desc {}), tx {} (uf {})",
+                sec.rx_errors,
+                sec.rx_crc_errors,
+                sec.rx_alignment_errors,
+                sec.rx_mii_errors,
+                sec.rx_length_errors,
+                sec.rx_overrun_errors,
+                sec.rx_descriptor_errors,
+                sec.tx_errors,
+                sec.tx_underflows,
             );
         }
         ticks = ticks.wrapping_add(1);

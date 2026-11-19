@@ -343,6 +343,24 @@ if let Some(rx) = emac.receive() {
   在读回前 invalidate；放在 PSRAM uncached 窗口则不需要维护。
 - **中断**：当前是轮询驱动，`DMAIN_EN` 和 `EMACINTMASK` 全部屏蔽，
   `transmit`/`receive` 都不阻塞等待。
+- **统计**：P4 的 EMAC 没有 Synopsys 那套 MMC 计数器块，[`Stats`](esp32p4/src/emac/stats.rs)
+  用三样东西拼出等价信息：走描述符时顺带累加 `RDES0`/`TDES0` 的状态位（CRC、dribble、
+  MII_RXER、看门狗、FIFO 溢出、长度、描述符错误 / 发送下溢、冲突、载波、flush）、
+  `DMAMISSEDFR`（`Missed_FC` 缓冲不足丢帧、`Overflow_FC` FIFO 溢出丢帧，**读清**，
+  所以 `Emac::stats()` 每次采样先累加）、以及 `DMASTATUS` 的锁存错误位（写一清全，
+  计数放在中断里先记账再清）。
+
+  ```rust
+  let stats = emac.stats();               // 单调递增的累计值
+  let rate = stats.delta_since(&last);    // 每秒速率
+  info!("rx {} f/{} B, tx {} f/{} B, crc {}", rate.rx_frames, rate.rx_bytes,
+        rate.tx_frames, rate.tx_bytes, rate.rx_crc_errors);
+  let pending = emac.rx_pending();        // 环里还没被读走的帧数
+  ```
+
+  这三个来源各有盲区，但对"是不是板子/驱动的问题"足够分辨：`rx_pending()` 卡在高位 =
+  驱动没取；`rx_crc_errors` 增长 = 线上/RMII 有问题；`rx_missed` 增长 = 驱动来不及取；
+  全 0 而外部丢包 = 丢在 MAC 之外。
 - **PHY**：`mdio_read`/`mdio_write` 是 clause-22 原始寄存器访问，
   `poll_link` 读标准 BMSR/BMCR/ANLPAR 推断速率与双工并同步到 MAC，
   `autonegotiate` 重新发起协商。厂商专有寄存器（例如 LAN8720 的 SCSR）需自行读写。

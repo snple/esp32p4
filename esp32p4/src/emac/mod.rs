@@ -97,6 +97,7 @@
 //! ```
 
 pub mod dma;
+mod stats;
 
 use core::cell::Cell;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -109,6 +110,7 @@ use crate::gpio::{
 };
 use crate::interrupt::{self, CpuInterrupt, InterruptHandler, Level, Source};
 pub use dma::{DmaBuffer, EmacBuffers, MAX_FRAME_SIZE, TxError};
+pub use stats::Stats;
 
 /// `DMAIN_EN` bits this driver uses: normal summary, receive and transmit.
 const DMAIN_NORMAL_SUMMARY: u32 = 1 << 16;
@@ -117,6 +119,15 @@ const DMAIN_TRANSMIT: u32 = 1 << 0;
 
 /// Set by the MAC interrupt handler; consumed by [`Emac::take_interrupt`].
 static INTERRUPT_PENDING: AtomicBool = AtomicBool::new(false);
+
+/// The error flags the handler has seen, since `DMASTATUS` clears on write.
+static DMA_ERRORS: stats::DmaErrors = stats::DmaErrors::new();
+
+/// `DMAMISSEDFR.Missed_FC`: frames dropped because no descriptor was free.
+const MISSED_FRAME_MASK: u32 = 0xffff;
+/// `DMAMISSEDFR.Overflow_FC`: frames dropped by an RX FIFO overflow.
+const FIFO_OVERFLOW_SHIFT: u32 = 17;
+const FIFO_OVERFLOW_MASK: u32 = 0x7ff;
 
 /// MAC interrupt handler.
 ///
@@ -127,7 +138,9 @@ static INTERRUPT_PENDING: AtomicBool = AtomicBool::new(false);
 fn emac_isr() {
     let emac = unsafe { &*EMAC::PTR };
     let status = emac.dmastatus.read_bits();
-    // DMASTATUS is write-one-to-clear.
+    // The status register is write-one-to-clear, so this is the last chance to
+    // count what it reports; `Emac::stats` later merges the totals in.
+    DMA_ERRORS.account(status);
     emac.dmastatus.write_bits(status);
 
     // A bus error or a descriptor we cannot supply would re-assert the line
@@ -390,6 +403,9 @@ pub struct Emac<'d, const RX: usize, const TX: usize> {
     speed: Speed,
     duplex: Duplex,
     handler: Cell<Option<InterruptHandler>>,
+    /// `DMAMISSEDFR` is read-clear, so its value is accumulated here.
+    rx_missed: Cell<u32>,
+    rx_fifo_overflows: Cell<u32>,
 }
 
 impl<'d, const RX: usize, const TX: usize> Emac<'d, RX, TX> {
@@ -445,6 +461,8 @@ impl<'d, const RX: usize, const TX: usize> Emac<'d, RX, TX> {
             speed: config.speed,
             duplex: config.duplex,
             handler: Cell::new(None),
+            rx_missed: Cell::new(0),
+            rx_fifo_overflows: Cell::new(0),
         }
     }
 
@@ -511,6 +529,47 @@ impl<'d, const RX: usize, const TX: usize> Emac<'d, RX, TX> {
     #[inline]
     pub fn transmit_ready(&self) -> bool {
         self.tx.has_capacity()
+    }
+
+    /// How many receive descriptors hold a frame the stack has not read yet.
+    ///
+    /// A number pinned at the ring size means the MAC is holding frames the
+    /// driver should have harvested, which is the difference between "the wire
+    /// is quiet" and "we are not looking".
+    pub fn rx_pending(&self) -> usize {
+        self.rx.pending()
+    }
+
+    /// Snapshot of the frame and error counters.
+    ///
+    /// The MAC has no MMC counter block, so the numbers come from three places:
+    /// the descriptor status words the driver records as it walks the rings, the
+    /// DMA error flags the interrupt handler latches, and `DMAMISSEDFR`.
+    ///
+    /// Sampling consumes the hardware counters — `DMAMISSEDFR` clears on read —
+    /// but the values reported here are totals since [`Emac::init`], so repeated
+    /// calls are monotonic. Take [`Stats::delta_since`] to log rates.
+    pub fn stats(&self) -> Stats {
+        let mut stats = self.rx.stats();
+        stats.merge(&self.tx.stats());
+
+        // Whatever the hardware counter holds now has not been counted yet.
+        let missed = self.emac.dmamissedfr.read_bits();
+        self.rx_missed.set(
+            self.rx_missed
+                .get()
+                .wrapping_add(missed & MISSED_FRAME_MASK),
+        );
+        self.rx_fifo_overflows.set(
+            self.rx_fifo_overflows
+                .get()
+                .wrapping_add((missed >> FIFO_OVERFLOW_SHIFT) & FIFO_OVERFLOW_MASK),
+        );
+        stats.rx_missed = self.rx_missed.get();
+        stats.rx_fifo_overflows = self.rx_fifo_overflows.get();
+
+        DMA_ERRORS.merge_into(&mut stats);
+        stats
     }
 
     /// Route the MAC's interrupt source to `cpu_int` and start taking it.
