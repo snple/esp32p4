@@ -13,7 +13,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | [`esp32p4-pac`](esp32p4-pac/) | **PAC**：由 `esp32p4.svd` 生成，提供寄存器块、字段常量和访问器。勿手改 |
 | [`esp32p4-rt`](esp32p4-rt/) | **运行时**：`_start`、trap 入口、`link.x`、CSR/汇编封装 |
 | [`esp32p4-macro`](esp32p4-macro/) | **过程宏**：`#[main]` |
-| [`esp32p4`](esp32p4/) | **HAL**：GPIO / IO MUX、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
+| [`esp32p4`](esp32p4/) | **HAL**：时钟树、GPIO / IO MUX、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
 | [`esp32p4-usb`](esp32p4-usb/) | **USB 设备栈**：DWC OTG 全速/高速控制器（slave 模式、轮询）、标准请求与描述符、CDC-ACM 虚拟串口、自定义类 |
 | [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC |
 | [`xtask`](xtask/) | 构建辅助：`cargo xtask gen-pac` |
@@ -483,6 +483,31 @@ Duration::from_secs(1))` 配合 `set_stage_action(stage, MwdtStageAction::ResetS
 喂狗不需要持有 group。`startup::init` 已经把 bootloader 留下的看门狗关掉了，所以不碰它的
 程序不会被 reset。
 
+### 时钟树：`ClockTree`
+
+`ClockTree::init(dp.HP_SYS_CLKRST, dp.LP_AON_CLKRST)` 拥有两个时钟/复位控制器，并 `Deref`
+到 `HP_SYS_CLKRST` 的寄存器块，所以可以直接传给其它驱动（`TimerGroup0::init(dp.TIMG0, &clocks)`）：
+
+- **ROOT_CLK 选源**：`XTAL_CLK` 40 MHz / `CPLL_CLK`（360 或 400 MHz）/ `RC_FAST_CLK`（约
+  17.5 MHz）。`root_source()` / `root_hz()` 读取，`set_root_source()`（unsafe）切换。
+- **SoC 分频链**：`CPU → MEM → SYS → APB` 串联。`dividers()`、`cpu_hz()`（含分数分频）、
+  `mem_hz()`、`sys_hz()`、`apb_hz()`；`set_dividers()` 按硬件要求的顺序写入每级并用
+  `SOC_CLK_DIV_UPDATE` 锁存（升频先 APB 后 CPU，降频反之），超出
+  `CPU/MEM/SYS/APB` 上限会 panic。
+- **CPU 变频**：`set_cpu_frequency(mhz)` 支持 360/180/90（360 MHz CPLL）或
+  400/200/100（400 MHz CPLL），自动配 MEM/APB 分频，最后才切换源；标记为 unsafe，
+  因为 flash/PSRAM 的 MSPI 时序重调不在驱动里（ESP-IDF 会挂起外部 cache 再切）。
+- **参考时钟 `PLL_FxxM`**：`RefClock::{F20M,F25M,F50M,F80M,F120M,F160M,F240M}`，
+  `ref_hz()` / `ref_enabled()` / `set_ref_divider()` / `enable_ref()`（F50/F25 来自 MPLL，
+  其余来自 SPLL）。
+- **LP 时钟**：`lp_slow_hz()`（RC_SLOW / XTAL32K / OSC_SLOW）、`lp_fast_hz`（RC_FAST / XTAL /
+  PLL_LP）、`lp_peri_hz()` 及对应设置函数。
+- **源门控**：`source_enabled()` / `set_source_enabled()`（XTAL / RC_FAST / CPLL / SPLL / MPLL）。
+
+PLL 的模拟配置（分频、校准）不在这里：CPLL 由 bootloader 拉起，MPLL 由 PSRAM 初始化提供。
+树按 [`Sources`](esp32p4/src/clock.rs) 表报告频率，`init_with(..., Sources { cpll_hz: CPLL_400M_HZ, .. })`
+可以覆盖 400 MHz 的情况。
+
 ### `SYSTIMER` 比较器闹钟
 
 `SYSTIMER` 的 3 个比较器里，COMP0 归 `Delay`，另外两个是
@@ -578,6 +603,9 @@ espflash save-image --chip esp32p4 \
 
 ## 当前范围
 
+路线图（还缺哪些模块、按什么顺序补、每个模块的完成标准）见
+[`docs/roadmap.md`](docs/roadmap.md)。
+
 已实现：
 
 - 从 SVD 生成完整 PAC（89 个外设、约 5600 个展开寄存器）
@@ -588,6 +616,8 @@ espflash save-image --chip esp32p4 \
 - 定时器组（`TimerGroup0/1` → `Timer00/01/10/11`：4 路 54 位计数器，时钟源与预分频、增/减计数、
   软件重载、一次性与周期性闹钟中断）与主系统看门狗（`Watchdog0/1`：分阶段超时、
   中断/复位动作、`feed()`）
+- 时钟树（`clock::ClockTree`：ROOT_CLK 选源、CPU/MEM/SYS/APB 分频与 CPU 变频、
+  PLL_FxxM 参考时钟、LP 慢/快时钟、源门控）
 - 复位控制与复位原因（`system::software_reset` / `software_reset_cpu` / `reset_reason`，纯寄存器实现）；
   外设复位（`reset::Resettable`：`HP_SYS_CLKRST.HP_RST_EN0/1/2` 上的 HP 外设位，
   `init()` / `reset()` / `unreset()`，掩码可用 `|` 组合）
@@ -606,7 +636,7 @@ espflash save-image --chip esp32p4 \
 尚未实现：
 
 - 中断嵌套与优先级分级、其它外设中断
-- 完整时钟树（PLL/分频）配置
+- PLL 的模拟配置（CPLL/SPLL/APLL 的分频与校准；时钟树本身见 `clock::ClockTree`）
 - UART、SPI、I2C、DMA、RMT、WS2812 等驱动
 - EMAC 中断驱动、TX/RX 校验和卸载、PTP 时间戳、MII/RGMII 接口
 - 阻塞式 socket API（当前是 smoltcp 的事件/轮询风格）、DHCP 服务端

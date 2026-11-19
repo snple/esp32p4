@@ -48,6 +48,11 @@ path = "src/defmt_log.rs"
 required-features = ["defmt"]
 
 [[bin]]
+name = "clock"
+path = "src/clock.rs"
+required-features = ["defmt"]
+
+[[bin]]
 name = "emac"
 path = "src/emac.rs"
 
