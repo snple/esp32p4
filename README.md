@@ -588,7 +588,9 @@ espflash save-image --chip esp32p4 \
 - 定时器组（`TimerGroup0/1` → `Timer00/01/10/11`：4 路 54 位计数器，时钟源与预分频、增/减计数、
   软件重载、一次性与周期性闹钟中断）与主系统看门狗（`Watchdog0/1`：分阶段超时、
   中断/复位动作、`feed()`）
-- 复位控制与复位原因（`system::software_reset` / `software_reset_cpu` / `reset_reason`，纯寄存器实现）
+- 复位控制与复位原因（`system::software_reset` / `software_reset_cpu` / `reset_reason`，纯寄存器实现）；
+  外设复位（`reset::Resettable`：`HP_SYS_CLKRST.HP_RST_EN0/1/2` 上的 HP 外设位，
+  `init()` / `reset()` / `unreset()`，掩码可用 `|` 组合）
 - 封装内 PSRAM 初始化（MPLL 250 MHz、16/32 MB 自动检测、MMU 映射、`PsramAllocator`）
 - USB Serial/JTAG（CDC-ACM）收发：`UsbSerialJtag`，以及可选的 `defmt` 全局 logger
 - 以太网 MAC（RMII + MDIO + DMA 描述符环），含 L1/L2 cache 维护

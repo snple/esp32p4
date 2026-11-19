@@ -21,6 +21,9 @@
 //!   reset and the reset-cause registers;
 //! - `HP_SYS` (`0x500E_5000`) has no reset-trigger field at all.
 //!
+//! Resetting one *peripheral* rather than the chip is a different block: that is
+//! [`crate::reset`] and its `HP_RST_EN0/1/2` bits.
+//!
 //! Writing `LP_SYSTEM_SYS_CTRL` must be a read-modify-write: the same register
 //! holds live `DIG_FIB`/`ANA_FIB`/`IO_MUX_RESET_DISABLE` fields whose reset
 //! values (`0xff`/`0x7f`) would otherwise be clobbered — the generated

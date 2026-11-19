@@ -174,6 +174,7 @@ pub mod interrupt;
 pub mod net;
 pub mod psram;
 pub mod regi2c;
+pub mod reset;
 pub mod startup;
 pub mod system;
 pub mod systimer;
