@@ -217,8 +217,11 @@ pub unsafe fn unmask(cpu_int: u32) {
 
     // SAFETY: fixed MMIO addresses; the caller vouched for the consequences.
     unsafe {
-        // Level-triggered (`TRIG = 0b00`) and direct mode (`SHV = 0`).
-        core::ptr::write_volatile(int_byte(cpu_int, 2), 0);
+        // `clicintattr`: MODE (bits 7:6) is hardwired to machine mode
+        // (`mcliccfg.NMBITS = 0`), but it is written explicitly to keep the
+        // byte at its documented value; `TRIG = 0b00` selects a positive level
+        // and `SHV = 0` the shared, non-vectored trap entry.
+        core::ptr::write_volatile(int_byte(cpu_int, 2), 0b11 << 6);
         core::ptr::write_volatile(int_byte(cpu_int, 1), 1);
     }
 }

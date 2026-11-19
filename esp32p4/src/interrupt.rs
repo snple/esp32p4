@@ -270,16 +270,28 @@ fn map_register(source: Source) -> *mut u32 {
 /// it. Several sources may share a line. The source stays pending until its
 /// peripheral is acknowledged, so route it before unmasking the line.
 pub fn route(source: impl Into<Source>, line: CpuInterrupt) {
+    // The register holds the destination as the **CLIC id**, not as the line
+    // number: the 32 external interrupts sit at CLIC ids 16..=47, so a source
+    // routed to the bare line number lands on a CLINT id and is never taken.
     // SAFETY: `Source` only holds indices below `SOURCE_COUNT`, and the block is
     // MMIO.
-    unsafe { core::ptr::write_volatile(map_register(source.into()), line.number() as u32) };
+    unsafe {
+        core::ptr::write_volatile(
+            map_register(source.into()),
+            line.number() as u32 + rt::FIRST_EXT_INTR_ID,
+        )
+    };
 }
 
 /// The line `source` is currently mapped to.
+///
+/// Sources the bootloader left unmapped (or mapped below the CLIC's external
+/// interrupt ids) report line 0.
 pub fn route_of(source: impl Into<Source>) -> CpuInterrupt {
     // SAFETY: see `route`.
     let value = unsafe { core::ptr::read_volatile(map_register(source.into())) };
-    CpuInterrupt::new((value & 0x1f) as u8)
+    let id = (value & 0x3f).saturating_sub(rt::FIRST_EXT_INTR_ID);
+    CpuInterrupt::new(id.min(CPU_INTERRUPT_COUNT - 1) as u8)
 }
 
 /// Whether `source` is currently asserting.
