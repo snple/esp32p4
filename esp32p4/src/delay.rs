@@ -154,7 +154,6 @@ impl Delay {
 
         let deadline = self.ticks().wrapping_add(ticks);
 
-        TIMER_FIRED.store(false, Ordering::Release);
         self.systimer
             .target0_lo
             .write_timer_target0_lo(deadline as u32);
@@ -169,9 +168,19 @@ impl Delay {
         self.systimer.target0_conf.clr_target0_period_mode();
         self.systimer.conf.set_target0_work_en();
         self.systimer.comp0_load.trigger_timer_comp0_load();
+        // A previous sleep that ended on the counter check (rather than on the
+        // comparator interrupt) leaves the request latched. Enabling the source
+        // would then fire it immediately and end this sleep at once — the
+        // measured effect was every other 20 ms sleep returning in 0 us.
+        self.systimer.int_clr.trigger_target0_int_clr();
+        TIMER_FIRED.store(false, Ordering::Release);
         self.systimer.int_ena.set_target0_int_ena();
 
         let mut elapsed = true;
+        // Any interrupt ends the sleep: the handler may have produced work the
+        // caller has to service (a received frame, a completed transmission),
+        // and the caller re-arms the comparator when it comes back.
+        let epoch = interrupt::epoch();
         loop {
             if TIMER_FIRED.swap(false, Ordering::AcqRel) {
                 // Woken by the comparator; check the clock in case another
@@ -181,6 +190,11 @@ impl Delay {
             }
 
             if self.ticks() >= deadline {
+                break;
+            }
+
+            if interrupt::epoch() != epoch {
+                elapsed = false;
                 break;
             }
 

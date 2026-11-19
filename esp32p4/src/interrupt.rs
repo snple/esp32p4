@@ -103,9 +103,9 @@ use esp32p4_rt::interrupt as rt;
 pub use esp32p4_pac::Interrupt;
 
 pub use esp32p4_rt::interrupt::{
-    CPU_INTERRUPT_COUNT, MAX_LEVEL, clear_handler, current_level, disable, enable, in_interrupt,
-    is_enabled, is_pending, is_unmasked, level, mask, pend, restore, set_handler, set_level, sleep,
-    unmask, unpend,
+    CPU_INTERRUPT_COUNT, MAX_LEVEL, clear_handler, current_level, disable, enable, epoch,
+    in_interrupt, is_enabled, is_pending, is_unmasked, level, mask, pend, restore, set_handler,
+    set_level, sleep, unmask, unpend,
 };
 
 /// Number of interrupt sources the matrix accepts.

@@ -46,7 +46,7 @@
 //! instead (see [`in_interrupt`]). The threshold also has a memory-mapped mirror
 //! at `CLIC + 0x8`, which is the way to raise it if that ever becomes necessary.
 
-use core::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicUsize, Ordering};
 
 use crate::register::mstatus;
 
@@ -100,6 +100,22 @@ static HANDLERS: [AtomicUsize; CPU_INTERRUPT_COUNT as usize] =
 static IN_HANDLER: AtomicBool = AtomicBool::new(false);
 /// Level of the handler that is running, or 0 outside a handler.
 static HANDLER_LEVEL: AtomicU8 = AtomicU8::new(0);
+
+/// Bumped for every interrupt the trap entry dispatches.
+///
+/// Lets a driver that parks the core tell "the timer I armed expired" from
+/// "something else needed the CPU": [`epoch`] read before and after a `wfi`
+/// differs in both cases, but only the first one is a reason to keep sleeping
+/// past the deadline.
+static IRQ_EPOCH: AtomicU32 = AtomicU32::new(0);
+
+/// Number of interrupts dispatched so far.
+///
+/// The value wraps; only compare two readings with `!=`.
+#[inline]
+pub fn epoch() -> u32 {
+    IRQ_EPOCH.load(Ordering::Acquire)
+}
 
 /// Byte address of `clicintXX[i]` for `field` 0..=3.
 #[inline]
@@ -297,6 +313,8 @@ pub(crate) fn dispatch(cpu_int: u32) {
     if cpu_int >= CPU_INTERRUPT_COUNT {
         return;
     }
+
+    IRQ_EPOCH.fetch_add(1, Ordering::Release);
 
     let previous_in_handler = IN_HANDLER.swap(true, Ordering::Relaxed);
     let previous_level = HANDLER_LEVEL.swap(level(cpu_int), Ordering::Relaxed);
