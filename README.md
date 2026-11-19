@@ -40,7 +40,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `timer` | `TIMG0` 的两路通用定时器：100 ms 周期中断闪灯，外加 1 s 的倒计时闹钟 |
 | `alarm` | `SYSTIMER` 比较器：250 ms 周期闹钟 + 5 s 一次性 deadline，主循环用 `sleep_until` 睡到下一个检查点 |
 | `watchdog` | `TIMG0` 的 MWDT：1 s 超时复位系统，主循环每 100 ms `feed()` 一次 |
-| `emac` | 初始化 RMII 以太网、自动协商、打印链路状态并收发 ARP 帧 |
+| `emac` | 初始化 RMII 以太网（P4 Function-EV 板的 IP101）、扫描 MDIO、自动协商、打印链路状态并收发 ARP 帧 |
 | `net_tcp_echo` | DHCP + TCP echo 服务器（需 `--features net`，无堆、无 async） |
 | `uart` | `UART1` 内部回环自检：三组数据原样收发，并打印波特率与帧格式 |
 | `i2c_scan` | `I2C0` 扫描 7 位地址空间，逐个探测并打印应答的从机 |
@@ -267,7 +267,7 @@ p4::UsbFs / p4::UsbHs         DWC OTG 寄存器、FIFO 分配、复位与枚举
 ## 以太网 MAC
 
 P4 内置 DesignWare 10/100 MAC + DMA，通过 RMII 连接外部 PHY
-（LAN8720 / DP83848 之类）。SVD 里没有这个外设，所以寄存器定义来自 TRM
+（LAN8720 / DP83848 / IP101 之类）。SVD 里没有这个外设，所以寄存器定义来自 TRM
 第 53 章：`xtask/gen_emac.py` 从 LaTeX 源生成根目录下的 `emac.svd` 片段，
 `cargo xtask gen-pac` 再把它和 `esp32p4.svd` 合并。片段已提交，正常构建不需要
 TRM 源或 Python。
@@ -275,17 +275,24 @@ TRM 源或 Python。
 ```rust
 static mut BUFFERS: EmacBuffers<8, 4> = EmacBuffers::new();
 
-let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
+// 官方 P4 Function-EV 板：IP101GRI，PHY_AD0 上拉 -> MDIO 地址 1，
+// nRST 接 GPIO51（拉高前 PHY 不响应 MDIO）。
+let mut phy_reset = pins.pin::<51>();
+phy_reset.into_output().set_low();
+delay.delay_ms(100);
+phy_reset.set_high();
+delay.delay_ms(300);
+
 let rmii = RmiiPins::new(
-    pins.pin::<33>(), // TXEN
+    pins.pin::<49>(), // TXEN
     pins.pin::<34>(), // TXD0
     pins.pin::<35>(), // TXD1
     pins.pin::<30>(), // RXD1
     pins.pin::<29>(), // RXD0
     pins.pin::<28>(), // CRS_DV
-    pins.pin::<32>(), // REF_CLK
-    pins.pin::<20>(), // MDC
-    pins.pin::<21>(), // MDIO
+    pins.pin::<50>(), // REF_CLK（PHY 输出的 50 MHz）
+    pins.pin::<31>(), // MDC
+    pins.pin::<52>(), // MDIO
 );
 let (gpio, io_mux) = pins.release();
 
@@ -293,7 +300,10 @@ let (gpio, io_mux) = pins.release();
 let mut emac = Emac::init(
     dp.EMAC,
     rmii,
-    EmacConfig::default(),
+    EmacConfig {
+        phy_address: 1, // PHY 的 strapping 决定的 MDIO 地址
+        ..EmacConfig::default()
+    },
     unsafe { &mut *core::ptr::addr_of_mut!(BUFFERS) },
     EmacResources {
         gpio: &gpio,
@@ -325,6 +335,9 @@ if let Some(rx) = emac.receive() {
   `RefClock::InternalMpll` 用 MPLL 500 MHz / 10 输出到 `REF_50M_CLK`，需板上回环到
   `REF_CLK`。RMII 模式下 EMAC 时钟树由 `HP_SYS_CLKRST.PERI_CLK_CTRL00/01` 配置，
   复位在 `LP_AON_CLKRST.HP_SDMMC_EMAC_RST_CTRL`（不在 HP 复位门里）。
+  另外 `HP_SYS_CLKRST.SOC_CLK_CTRL1.REG_EMAC_SYS_CLK_EN` 才是外设自身的时钟门控，
+  没打开时**第一次访问 MAC 寄存器就会 fault**（现象是程序在 `Emac::init` 里静默挂死），
+  驱动在钟树配置前先把它置位。
 - **DMA**：32 字节增强描述符、`ALT_DESC_SIZE = 1`，描述符和缓冲区必须常驻
   `static`。驱动通过 [`cache`](esp32p4/src/cache.rs) 在交给 MAC 前 writeback、
   在读回前 invalidate；放在 PSRAM uncached 窗口则不需要维护。
@@ -333,6 +346,10 @@ if let Some(rx) = emac.receive() {
 - **PHY**：`mdio_read`/`mdio_write` 是 clause-22 原始寄存器访问，
   `poll_link` 读标准 BMSR/BMCR/ANLPAR 推断速率与双工并同步到 MAC，
   `autonegotiate` 重新发起协商。厂商专有寄存器（例如 LAN8720 的 SCSR）需自行读写。
+  IP101 的 ID 是 `0x0243:0x0c54`，`phy_address` 必须与其 strapping 一致
+  （`PHY_AD0` 上拉即地址 1），否则 MDIO 全部读回 `0xffff`。
+- **站地址过滤**：地址写入 `ADDR0HIGH`（字节 5-4）/`ADDR0LOW`（字节 3-0，字节 0 在 bit7:0）。
+  字节序写反时广播/组播照收，但发给本站的单播帧会被 MAC 静默丢弃。
 
 ## TCP/IP（smoltcp）
 
@@ -376,9 +393,11 @@ loop {
   网络栈可以同时持有接收 token 和发送 token（`Device::receive` 的签名要求）。
 - **校验和走软件**（`ChecksumCapabilities::default()`）。MAC 支持硬件校验和，
   但需要额外的描述符位，暂未启用。
-- **中断驱动**：`Emac::enable_interrupts(lines::EMAC)` 把 MAC 的 DMA 完成中断接到 CPU，
-  `Net::poll_wait()` 用 `wfi` 把核心停住，等 MAC 中断或 smoltcp 的下一个定时器
-  （`SYSTIMER` target 0）唤醒。详见下节。
+- **轮询，不睡核**：`net_tcp_echo` 用 `Net::poll()` + `delay_ms(1)` 的忙轮询。
+  `Emac::enable_interrupts(lines::EMAC)` 和 `Net::poll_wait()`（`wfi` 等 MAC 中断或
+  `SYSTIMER` target 0）都可用，但**目前不要用**：在这块板上进入 `wfi` 后主循环会退化到
+  约 460 ms 一轮（实测），收到的帧要等很久才处理，TCP 表现为反复重传、连接要几秒。
+  忙轮询下同一张板子 8/8 连接成功、回显 8–9 ms。
 
 ## 中断
 
@@ -395,6 +414,9 @@ P4 没有 PLIC，用的是 Espressif 自己的 CLIC（TRM 第 1 章）：
   target 上生成），调用 Rust 侧分发后 `mret` 返回。
 - CLIC 配置成 **direct 模式**（`SHV = 0`），所有中断都进同一个入口，按 `mcause` 分发，
   不需要 RAM 里的向量表。
+- **矩阵里的目标写的是 CLIC ID**（线号 + 16），不是线号本身：`CORE0_xxx_INT_MAP_REG`
+  写成 `19` 会让中断落到 CLINT 的 id 19 上，永远不会被取走。`interrupt::route` 会自动加
+  偏移，用 `route_of` 读回的是线号。
 - 处理器是普通 `fn()`，注册到按 CPU 中断线索引的表里；处理期间 `MIE = 0`，不支持嵌套。
 
 HAL 固定占用两条线（见 [`interrupt::lines`](esp32p4/src/interrupt.rs)）：
@@ -412,8 +434,10 @@ emac.enable_interrupts(esp32p4::interrupt::lines::EMAC);
 // 全局开关（启动最后一步）
 unsafe { esp32p4::interrupt::enable() };
 
+// 注意：wfi 睡眠路径目前会导致接收停滞（见“TCP/IP”一节），示例改用忙轮询：
 loop {
-    net.poll_wait(&mut emac, 20);   // 有活干就处理，没活就 wfi 睡 20 ms 或睡到定时器
+    net.poll(&mut emac);
+    delay.delay_ms(1);
 }
 ```
 
