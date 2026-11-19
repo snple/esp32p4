@@ -169,12 +169,23 @@ delay.delay_ms(500);
   `defmt-rtt` 等需要它的库可以直接用。
 - `defmt`：为公开类型实现 `defmt::Format`，并在启动、复位、PSRAM 初始化、regi2c
   关键路径输出 `debug`/`info`/`warn`/`error` 日志。日志传输由最终二进制提供
-  （例如 `defmt-rtt`）；不开启时所有日志语句展开为空。
+  （`defmt-rtt`，或下面的 `defmt-usb`）；不开启时所有日志语句展开为空。
+- `defmt-usb`：在 `defmt` 之上把 USB Serial/JTAG 注册成全局 logger，日志直接从
+  `espflash monitor` 那根线出来，不需要调试探针。和任何其它全局 logger
+  （`defmt-rtt`）互斥。
 
 ## 日志（defmt）
 
+日志语句本身不带输出通道，要由最终二进制接上一个 **logger**。两个现成的选择互斥：
+
+| 读日志的工具 | 在二进制里装哪个 logger | 备注 |
+|---|---|---|
+| `espflash monitor`（只用 USB 线） | `esp32p4` 的 `defmt-usb` feature | 帧走 USB Serial/JTAG；ELF 里的 `espflash.LOG_FORMAT` 标记让 espflash 自动按 defmt 解码 |
+| `probe-rs run`（JTAG 调试器） | `defmt-rtt` crate 的 logger | 帧写进 RAM 的 RTT 缓冲，`espflash` 看不到 |
+
 ```rust
-use defmt_rtt as _;                     // logger，只能在一个二进制里出现一次
+// A. probe-rs：自己装 RTT logger（只能在一个二进制里出现一次）
+use defmt_rtt as _;
 
 defmt::timestamp!("{=u64:us}", esp32p4::delay::micros());
 
@@ -185,13 +196,21 @@ fn main() -> ! {
 }
 ```
 
-```bash
-cargo run --features defmt --bin defmt_log
-# 读取 RTT 需要调试器（JTAG）：
-probe-rs run --chip esp32p4 target/riscv32imafc-unknown-none-elf/debug/defmt_log
+```toml
+# B. espflash：HAL 自己注册 USB logger，二进制里不要再装别的
+[dependencies]
+esp32p4 = { path = "../esp32p4", features = ["defmt", "defmt-usb"] }
 ```
 
-`espflash monitor` 走的是 UART，看不到 RTT 数据。
+```bash
+# A. RTT
+probe-rs run --chip esp32p4 target/riscv32imafc-unknown-none-elf/debug/defmt_log
+# B. USB Serial/JTAG（espflash monitor 直接解码）
+cargo run --features defmt-usb --bin my_app
+```
+
+两个 logger 只能二选一，同时启用会重复定义 `_defmt_acquire` 等符号。另外 `DEFMT_LOG`
+要设（例如 `debug`）：defmt 1.x 没有它只编译 `error!`。
 
 在自己的项目里开启 `defmt` 时，还要把 defmt 的链接脚本挂上，否则格式字符串会散落在
 多个独立段里，主机端无法解码：

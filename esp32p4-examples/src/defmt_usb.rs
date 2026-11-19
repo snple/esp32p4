@@ -1,11 +1,15 @@
 //! Log over the USB Serial/JTAG port with `defmt`.
 //!
-//! The HAL owns the global logger (`defmt-usb-logger`), so unlike the RTT
-//! example this needs nothing but the USB cable `espflash` already uses:
+//! The HAL owns the global logger (`defmt-usb`), so unlike the RTT
+//! example this needs nothing but the USB cable `espflash` already uses, and
+//! `espflash monitor` decodes the frames on its own.
 //!
 //! ```text
-//! cargo run --bin defmt_usb --features defmt-usb
+//! cargo run --bin defmt_usb
 //! ```
+//!
+//! The `defmt-rtt` and `defmt-usb` features each install a global logger, so
+//! they cannot be enabled together; the default features pick this one.
 
 #![no_std]
 #![no_main]

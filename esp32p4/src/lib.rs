@@ -8,7 +8,7 @@
 //! - `panic-handler` - Provide a default `#[panic_handler]` that parks the
 //!   core (disable it if the application supplies its own)
 //! - `defmt` - `defmt::Format` implementations and log statements
-//! - `defmt-usb-logger` - Register the USB Serial/JTAG port as the global
+//! - `defmt-usb` - Also register the USB Serial/JTAG port as the global
 //!   `defmt` logger, so `espflash monitor` shows the logs
 //! - `net` - Synchronous TCP/IP over the EMAC (`smoltcp`), heap-free
 //! - `net-alloc` - Same, with the socket table allocated from the global

@@ -5,10 +5,17 @@
 //!
 //! Requires a debugger attached over JTAG (`probe-rs run --chip esp32p4 ...`);
 //! RTT data is not visible over the UART used by `espflash monitor`.
+//!
+//! Build it with `--no-default-features --features defmt-rtt`:
+//!
+//! ```text
+//! cargo run --bin defmt_log --no-default-features --features defmt-rtt
+//! ```
 
 #![no_std]
 #![no_main]
 
+#[cfg(feature = "defmt-rtt")]
 use defmt_rtt as _;
 
 defmt::timestamp!("{=u64:us}", esp32p4::delay::micros());

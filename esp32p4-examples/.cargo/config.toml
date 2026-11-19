@@ -2,4 +2,15 @@
 target = "riscv32imafc-unknown-none-elf"
 
 [target.riscv32imafc-unknown-none-elf]
-runner = "espflash flash --chip esp32p4 --monitor"
+# espflash + defmt-usb
+runner = "espflash flash --chip esp32p4 --monitor --log-format defmt"
+# probe-rs + defmt-rtt
+# runner = "probe-rs run --chip esp32p4"
+
+
+# `defmt` filters log statements at compile time. Without `DEFMT_LOG` only
+# `error!` survives, which silently removes every `info!`/`debug!` in the HAL and
+# the examples. `debug` is what the examples expect: it shows the HAL's bring-up
+# steps as well as the application's own output.
+[env]
+DEFMT_LOG = "debug"

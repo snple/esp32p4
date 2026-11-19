@@ -15,13 +15,13 @@ rt = ["esp32p4-rt/rt"]
 panic-handler = []
 # `critical-section` implementation based on masking machine interrupts.
 critical-section-impl = ["dep:critical-section"]
-# `defmt::Format` implementations and log statements. Requires a logger in the
-# final binary, e.g. `defmt-rtt`.
+# `defmt::Format` implementations and log statements. The final binary still has
+# to install a logger, e.g. `defmt-rtt`.
 defmt = ["dep:defmt", "smoltcp?/defmt"]
-# Registers a global `defmt` logger that writes to the USB Serial/JTAG CDC-ACM
-# port, so `espflash monitor` decodes the frames. Mutually exclusive with
-# `defmt-rtt` and any other global logger.
-defmt-usb-logger = ["defmt", "critical-section-impl"]
+# Also registers the USB Serial/JTAG CDC-ACM port as the global `defmt` logger,
+# so `espflash monitor` decodes the frames with no debug probe. Mutually
+# exclusive with any other global logger, `defmt-rtt` in particular.
+defmt-usb = ["defmt", "critical-section-impl"]
 # Synchronous TCP/IP over the EMAC, backed by `smoltcp`: Ethernet medium,
 # IPv4, TCP/UDP/ICMP sockets, a DHCP client and a DNS client. Interrupts and
 # async are deliberately *not* involved — the stack is driven by
