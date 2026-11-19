@@ -1,11 +1,9 @@
 //! DHCP client and a TCP echo server on port 7, over the on-chip Ethernet MAC.
 //!
 //! Everything is `no_std` and heap-free: the socket table, the TCP windows and
-//! the DMA rings all live in `static`s. The loop polls the stack, so there is no
-//! executor and no async anywhere. It is *not* parked in `wfi` between polls:
-//! `Net::poll_wait` exists for that, but on this board entering `wfi` while the
-//! MAC is receiving makes the loop miss frames (measured: one iteration every
-//! ~460 ms instead of the timer period), which shows up as TCP retransmissions.
+//! the DMA rings all live in `static`s. The loop is interrupt-driven — the MAC's
+//! DMA completion line and the system timer's comparator wake the core out of
+//! `wfi` — but there is no executor and no async anywhere.
 //!
 //! ```text
 //! cargo run --bin net_tcp_echo
@@ -52,6 +50,8 @@ const PHY_ADDRESS: u8 = 1;
 const PHY_RESET_PIN: u32 = 51;
 
 const ECHO_PORT: u16 = 7;
+/// How long a graceful close may take before the socket is reset instead.
+const CLOSE_TIMEOUT_US: u64 = 500_000;
 
 #[main]
 fn main() -> ! {
@@ -167,6 +167,12 @@ fn main() -> ! {
     }
     defmt::info!("echo server on port {}", ECHO_PORT);
 
+    // Interrupt-driven from here on: the MAC's DMA completion line and the
+    // system timer's comparator both wake the core out of `wfi`.
+    emac.enable_interrupts(esp32p4::interrupt::lines::EMAC);
+    // SAFETY: both handlers are installed and the peripheral sources cleared.
+    unsafe { esp32p4::interrupt::enable() };
+
     // SAFETY: handed to the socket once, below.
     let tcp_buffers = unsafe { &mut *core::ptr::addr_of_mut!(TCP_BUFFERS) };
     let socket = tcp::Socket::new(
@@ -177,13 +183,12 @@ fn main() -> ! {
 
     let mut ticks = 0u32;
     let mut echoed = 0u32;
+    let mut closing_since: Option<u64> = None;
     let mut last_state = tcp::State::Closed;
     loop {
-        // Move every frame that is waiting and run the stack's timers. A short
-        // busy wait keeps the loop cheap without parking the core (see the
-        // module documentation).
-        net.poll(&mut emac);
-        delay.delay_ms(1);
+        // Park the core until the MAC or the stack's next timer has something
+        // to do, then run the whole loop body.
+        net.poll_wait(&mut emac, 20);
 
         // Serve whatever the echo socket currently has room for. The borrow of
         // the socket ends before the status report below.
@@ -203,19 +208,33 @@ fn main() -> ! {
             }
 
             let state = socket.state();
-
-            // A peer that closed leaves the socket half-closed: without our own
-            // FIN it stays in CloseWait and the next client gets a reset.
-            if state == tcp::State::CloseWait {
-                socket.close();
-            }
-
-            // Closed and TIME-WAIT both accept a fresh `listen`, and asking
-            // while already listening succeeds without doing anything.
-            if matches!(state, tcp::State::Closed | tcp::State::TimeWait)
-                && socket.listen(ECHO_PORT).is_ok()
-            {
-                echoed = 0;
+            match state {
+                // A peer that closed leaves the socket half-closed: without our
+                // own FIN it stays in CloseWait and the next client gets a reset.
+                tcp::State::CloseWait => {
+                    socket.close();
+                    closing_since = Some(delay.now_us());
+                }
+                // Our FIN is out and the peer has to acknowledge it. If that
+                // last ACK never comes (a lossy link drops it), waiting keeps
+                // the only socket out of `Listen` and every new client is
+                // refused, so give the graceful close a bounded amount of time.
+                tcp::State::LastAck => {
+                    let since = *closing_since.get_or_insert_with(|| delay.now_us());
+                    if delay.now_us().wrapping_sub(since) > CLOSE_TIMEOUT_US {
+                        socket.abort();
+                        closing_since = None;
+                    }
+                }
+                // Closed and TIME-WAIT both accept a fresh `listen`, and asking
+                // while already listening succeeds without doing anything.
+                tcp::State::Closed | tcp::State::TimeWait => {
+                    if socket.listen(ECHO_PORT).is_ok() {
+                        echoed = 0;
+                    }
+                    closing_since = None;
+                }
+                _ => closing_since = None,
             }
 
             let state = socket.state();
@@ -224,6 +243,11 @@ fn main() -> ! {
                 last_state = state;
             }
         }
+
+        // Data written to a socket only leaves the stack on the next `poll`.
+        // Flushing here keeps the echo from waiting for the next wake-up (a
+        // full sleep period, ~20 ms).
+        net.poll(&mut emac);
 
         // Report the link once in a while so a cable pull is visible.
         if ticks.is_multiple_of(50) {

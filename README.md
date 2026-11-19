@@ -393,11 +393,11 @@ loop {
   网络栈可以同时持有接收 token 和发送 token（`Device::receive` 的签名要求）。
 - **校验和走软件**（`ChecksumCapabilities::default()`）。MAC 支持硬件校验和，
   但需要额外的描述符位，暂未启用。
-- **轮询，不睡核**：`net_tcp_echo` 用 `Net::poll()` + `delay_ms(1)` 的忙轮询。
-  `Emac::enable_interrupts(lines::EMAC)` 和 `Net::poll_wait()`（`wfi` 等 MAC 中断或
-  `SYSTIMER` target 0）都可用，但**目前不要用**：在这块板上进入 `wfi` 后主循环会退化到
-  约 460 ms 一轮（实测），收到的帧要等很久才处理，TCP 表现为反复重传、连接要几秒。
-  忙轮询下同一张板子 8/8 连接成功、回显 8–9 ms。
+- **中断驱动**：`Emac::enable_interrupts(lines::EMAC)` 把 MAC 的 DMA 完成中断接到 CPU，
+  `Net::poll_wait()` 用 `wfi` 把核心停住，等 MAC 中断或 smoltcp 的下一个定时器
+  （`SYSTIMER` target 0）唤醒。注意 `sleep_ticks` 必须以**任意**中断结束睡眠，否则收到的
+  帧要等到比较器到期才被处理（曾经因此多出最多一个睡眠周期的延迟）；写数据到 socket 后
+  也要再 `poll()` 一次，否则 echo 要等下一轮唤醒才发出。
 
 ## 中断
 
@@ -417,6 +417,12 @@ P4 没有 PLIC，用的是 Espressif 自己的 CLIC（TRM 第 1 章）：
 - **矩阵里的目标写的是 CLIC ID**（线号 + 16），不是线号本身：`CORE0_xxx_INT_MAP_REG`
   写成 `19` 会让中断落到 CLINT 的 id 19 上，永远不会被取走。`interrupt::route` 会自动加
   偏移，用 `route_of` 读回的是线号。
+- `sleep_ticks` 在 arm 比较器前会先清掉可能残留的 `INT_CLR` 请求：上一次睡眠若是通过读计数
+  器结束的（而不是比较器中断），残留的请求会让下一次 `int_ena` 置位时立刻触发，实测表现为
+  "每隔一次睡眠立刻返回"（20 ms 的目标平均只睡 10 ms）。
+- `interrupt::epoch()` 在每次中断分发时自增，`sleep_ticks` 用它判断"这轮睡眠是否被别的中断
+  打断"，从而把 CPU 让给调用者。实测有 200 pkt/s 广播流量时，20 ms 的睡眠平均 4.2 ms 就被
+  MAC 中断打断，wfi 与忙轮询收到的帧数相同（1195 vs 1199 帧/5 s）。
 - 处理器是普通 `fn()`，注册到按 CPU 中断线索引的表里；处理期间 `MIE = 0`，不支持嵌套。
 
 HAL 固定占用两条线（见 [`interrupt::lines`](esp32p4/src/interrupt.rs)）：
@@ -434,10 +440,10 @@ emac.enable_interrupts(esp32p4::interrupt::lines::EMAC);
 // 全局开关（启动最后一步）
 unsafe { esp32p4::interrupt::enable() };
 
-// 注意：wfi 睡眠路径目前会导致接收停滞（见“TCP/IP”一节），示例改用忙轮询：
 loop {
-    net.poll(&mut emac);
-    delay.delay_ms(1);
+    net.poll_wait(&mut emac, 20);   // 有活干就处理，没活就 wfi 睡 20 ms 或睡到定时器
+    // ... 处理 socket，往 socket 写数据 ...
+    net.poll(&mut emac);            // 把刚写进 socket 的帧立刻发出去
 }
 ```
 
