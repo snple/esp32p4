@@ -2,10 +2,10 @@
 //!
 //! The PSRAM die is connected through dedicated MSPI pads that are *not* part
 //! of `IO_MUX` (and therefore not in the PAC): they live in their own
-//! `IOMUX_MSPI_PIN` block at `0x500E_1200`. Each pad register carries a drive
-//! strength field in `[13:12]`; the two DQS pads additionally need their
-//! output driver powered up (`XPD`, bit 0), which is what enables the DDR
-//! strobe latch.
+//! `IOMUX_MSPI_PIN` block at `0x500E_1200`. Each data/clock/CS pad register
+//! carries a drive strength field in `[13:12]`; on the two DQS pads the same
+//! field sits at `[16:15]` and the pads additionally need their output driver
+//! powered up (`XPD`, bit 0), which is what enables the DDR strobe latch.
 //!
 //! The ROM bootloader does not touch these registers unless it initializes
 //! PSRAM itself, so the full set is programmed here.
@@ -28,9 +28,13 @@ const PSRAM_CS: usize = 0x44;
 const PSRAM_DQ8: usize = 0x48;
 const PSRAM_DQS1: usize = 0x68;
 
-/// Drive strength field, `[13:12]`.
+/// Drive strength field of the data/clock/CS pads, `[13:12]`.
 const DRV_SHIFT: u32 = 12;
 const DRV_MASK: u32 = 0b11 << DRV_SHIFT;
+/// Drive strength field of the DQS pads, `[16:15]`; the DQS registers lay the
+/// fields out differently from the data pads.
+const DQS_DRV_SHIFT: u32 = 15;
+const DQS_DRV_MASK: u32 = 0b11 << DQS_DRV_SHIFT;
 /// 20 mA, matching the value IDF's timing calibration uses.
 const DRV_20MA: u32 = 2;
 
@@ -50,6 +54,14 @@ fn set_drive_strength(offset: usize) {
     modify(offset, |v| (v & !DRV_MASK) | (DRV_20MA << DRV_SHIFT));
 }
 
+/// Powers the output stage of a DQS pad and sets its drive strength.
+#[inline]
+fn enable_dqs(offset: usize) {
+    modify(offset, |v| {
+        (v & !DQS_DRV_MASK) | (DRV_20MA << DQS_DRV_SHIFT) | XPD
+    });
+}
+
 /// Configures every PSRAM pad for `mode`.
 pub(crate) fn configure(is_hex: bool) {
     for offset in [
@@ -60,16 +72,12 @@ pub(crate) fn configure(is_hex: bool) {
     }
 
     // The DQS pads also need their output stage powered.
-    modify(PSRAM_DQS0, |v| {
-        (v & !DRV_MASK) | (DRV_20MA << DRV_SHIFT) | XPD
-    });
+    enable_dqs(PSRAM_DQS0);
 
     if is_hex {
         for offset in [PSRAM_DQ8, 0x4c, 0x50, 0x54, 0x58, 0x5c, 0x60, 0x64] {
             set_drive_strength(offset);
         }
-        modify(PSRAM_DQS1, |v| {
-            (v & !DRV_MASK) | (DRV_20MA << DRV_SHIFT) | XPD
-        });
+        enable_dqs(PSRAM_DQS1);
     }
 }

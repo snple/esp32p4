@@ -34,7 +34,7 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use esp32p4_pac::SPI0;
+use esp32p4_pac::PSRAM_MSPI0;
 
 /// MMU page size in bytes.
 pub const PAGE_SIZE: usize = 64 * 1024;
@@ -131,7 +131,7 @@ impl Region {
         // the previous mapping cannot be reused after the entries are free.
         crate::cache::invalidate(self.cached_ptr().cast(), self.size());
 
-        let spi = unsafe { SPI0::steal() };
+        let spi = unsafe { PSRAM_MSPI0::steal() };
         for entry in self.entry_range() {
             spi.spi_mem_mmu_item_index
                 .write_spi_mmu_item_index(entry as u32);
@@ -202,7 +202,7 @@ impl Region {
     }
 
     fn program(&self) {
-        let spi = unsafe { SPI0::steal() };
+        let spi = unsafe { PSRAM_MSPI0::steal() };
         for (offset, entry) in self.entry_range().enumerate() {
             spi.spi_mem_mmu_item_index
                 .write_spi_mmu_item_index(entry as u32);

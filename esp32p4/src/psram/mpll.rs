@@ -44,9 +44,12 @@ pub(crate) fn enable() {
 
     mpll::DHREF.write(DHREF_VALUE);
 
-    // Restart the calibration state machine.
-    mpll::IR_CAL_RSTB_CAL.write(0);
-    mpll::IR_CAL_RSTB_CAL.write(1);
+    // Restart the calibration state machine. Only the reset bit is touched:
+    // the same register holds the calibration-capacitor trim, which a plain
+    // byte write would clear.
+    let rstb = mpll::IR_CAL_RSTB.read();
+    mpll::IR_CAL_RSTB.write(rstb & !(1 << 5));
+    mpll::IR_CAL_RSTB.write(rstb | (1 << 5));
 
     // 500 MHz / 20 MHz - 1 = 24.
     let div = (FREQUENCY_MHZ / 20) as u8 - 1;

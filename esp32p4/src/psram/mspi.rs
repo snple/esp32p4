@@ -1,9 +1,12 @@
 //! PSRAM controller bring-up (PSRAM MSPI0 / MSPI1).
 //!
-//! The PSRAM die sits on the *second* MSPI controller (`SPI0` in the SVD,
-//! called `MEMSPI2`/PSRAM_MSPI0 in other code bases), which is the one that
-//! owns the AXI cache interface and the MMU. `SPI1` (`MEMSPI3`/PSRAM_MSPI1) is
-//! the small controller used for direct mode-register transactions.
+//! The PSRAM die sits on two dedicated MSPI controllers that the vendor SVD
+//! leaves out: `PSRAM_MSPI0` at `0x5008_E000` (called `SPI_MEM_S`/`SPIMEM2`/
+//! `MEMSPI2` elsewhere) is the one that owns the AXI cache interface and the
+//! MMU, and `PSRAM_MSPI1` at `0x5008_F000` (`SPIMEM3`/`MEMSPI3`) is the small
+//! controller used for direct mode-register transactions. They are **not** the
+//! flash controllers at `0x5008_C000`/`0x5008_D000`, which look identical
+//! register-wise but drive the QSPI flash pins.
 //!
 //! Initialization order matters and follows ESP-IDF:
 //!
@@ -11,7 +14,7 @@
 //! 2. enable the PSRAM clocks and pulse the MSPI reset,
 //! 3. program the bus clock divider,
 //! 4. enable the DLL, configure the pads and the CS timing,
-//! 5. program the PSRAM mode registers through `SPI1`,
+//! 5. program the PSRAM mode registers through `PSRAM_MSPI1`,
 //! 6. detect the density, configure the AXI controller,
 //! 7. map the pages into the `0x4800_0000` window.
 //!
@@ -21,7 +24,7 @@
 
 use core::ptr::null_mut;
 
-use esp32p4_pac::{HP_SYS, HP_SYS_CLKRST, PMU, SPI0, SPI1};
+use esp32p4_pac::{HP_SYS, HP_SYS_CLKRST, PMU, PSRAM_MSPI0, PSRAM_MSPI1};
 
 use super::{Error, pads};
 
@@ -155,14 +158,18 @@ fn set_bus_clock(timing: &Timing) -> Result<(), Error> {
     }
     let bits = bus_clock_bits(SOURCE_MHZ / timing.bus_clock_mhz);
 
-    unsafe { SPI0::steal() }.spi_mem_sram_clk.write_bits(bits);
-    unsafe { SPI1::steal() }.spi_mem_clock.write_bits(bits);
+    unsafe { PSRAM_MSPI0::steal() }
+        .spi_mem_sram_clk
+        .write_bits(bits);
+    unsafe { PSRAM_MSPI1::steal() }
+        .spi_mem_clock
+        .write_bits(bits);
     Ok(())
 }
 
 /// Enables DLL timing calibration on both controllers.
 fn enable_dll() {
-    let spi0 = unsafe { SPI0::steal() };
+    let spi0 = unsafe { PSRAM_MSPI0::steal() };
     spi0.spi_mem_timing_cali.set_spi_mem_dll_timing_cali();
     spi0.spi_smem_timing_cali.set_spi_smem_dll_timing_cali();
 }
@@ -173,7 +180,7 @@ fn set_cs_timing() {
     const CS_HOLD_TIME: u32 = 4;
     const CS_HOLD_DELAY: u32 = 3;
 
-    let ac = &unsafe { SPI0::steal() }.spi_smem_ac;
+    let ac = &unsafe { PSRAM_MSPI0::steal() }.spi_smem_ac;
     ac.set_spi_smem_cs_setup();
     ac.set_spi_smem_cs_hold();
     ac.set_spi_smem_split_trans_en();
@@ -184,7 +191,7 @@ fn set_cs_timing() {
 
 /// Configures the AXI controller for 16-line DDR access.
 fn configure_controller(timing: &Timing, is_hex: bool) {
-    let spi = unsafe { SPI0::steal() };
+    let spi = unsafe { PSRAM_MSPI0::steal() };
 
     let sctrl = &spi.spi_mem_cache_sctrl;
     sctrl.set_spi_mem_cache_usr_saddr_4byte();
@@ -232,7 +239,7 @@ fn configure_controller(timing: &Timing, is_hex: bool) {
 fn kick_and_wait() -> Result<(), Error> {
     const MAX_ITERATIONS: u32 = 1_000_000;
 
-    let spi = unsafe { SPI1::steal() };
+    let spi = unsafe { PSRAM_MSPI1::steal() };
     // Select PSRAM (CS1) and deselect flash (CS0).
     spi.spi_mem_misc.clr_spi_mem_cs1_dis();
     spi.spi_mem_misc.set_spi_mem_cs0_dis();
@@ -276,7 +283,7 @@ fn mr_read(timing: &Timing, mr_addr: u32) -> Result<(u8, u8), Error> {
     kick_and_wait()?;
 
     // The received bytes land in W0, low half first.
-    let word = unsafe { SPI1::steal() }.spi_mem_w0.read_bits();
+    let word = unsafe { PSRAM_MSPI1::steal() }.spi_mem_w0.read_bits();
     rx[0] = word as u8;
     rx[1] = (word >> 8) as u8;
 
@@ -355,7 +362,7 @@ pub(crate) fn map(size: usize) -> Result<crate::mmu::Region, crate::mmu::Error> 
 /// Silicon revision 3.0 needs two dummy reads and a controller reset before
 /// the final mapping takes effect (ESP-IDF `esp_psram_p4_rev3_workaround`).
 pub(crate) fn rev3_workaround() {
-    let spi = unsafe { SPI0::steal() };
+    let spi = unsafe { PSRAM_MSPI0::steal() };
 
     let cache_fctrl = spi.spi_mem_cache_fctrl.read_bits();
     let cache_sctrl = spi.spi_mem_cache_sctrl.read_bits();
