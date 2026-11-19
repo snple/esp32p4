@@ -189,11 +189,23 @@ impl Efuse {
     }
 
     /// The factory MAC address, in transmission order.
+    ///
+    /// `RD_MAC_SYS1.MAC_1` holds the first two octets and `RD_MAC_SYS0.MAC_0`
+    /// the last four, both with the first octet in the most significant byte —
+    /// the layout ESP-IDF's `esp_efuse_mac_get_default` swizzles the same way.
+    /// Reading the words as little-endian yields the address reversed.
     #[inline]
     pub fn mac(&self) -> [u8; 6] {
-        let low = self.efuse.rd_mac_sys0.mac_0().to_le_bytes();
-        let high = self.efuse.rd_mac_sys1.mac_1().to_le_bytes();
-        [low[0], low[1], low[2], low[3], high[0], high[1]]
+        let high = self.efuse.rd_mac_sys1.mac_1();
+        let low = self.efuse.rd_mac_sys0.mac_0();
+        [
+            (high >> 8) as u8,
+            high as u8,
+            (low >> 24) as u8,
+            (low >> 16) as u8,
+            (low >> 8) as u8,
+            low as u8,
+        ]
     }
 
     /// Package version code (`EFUSE_PKG_VERSION`).
