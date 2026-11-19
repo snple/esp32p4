@@ -26,6 +26,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 |--------|------|
 | `blink` | GPIO2 每 500 ms 翻转一次 |
 | `gpio_interrupt` | GPIO3 下降沿中断（`GPIO_INTR0` + CPU 线 21）翻转 GPIO2 |
+| `gpio_pads` | 打印若干焊盘的直接 IO MUX 功能，演示 `set_mux_function`/`mux_function` 往返 |
 | `efuse` | 打印芯片版本、MAC、Flash/PSRAM 参数，并用版本号配置时钟树 |
 | `mmu` | 把 PSRAM 物理页 0 映射到 MMU 表项 512，验证 cached/uncached 别名 |
 | `clock` | 打印时钟树的根/CPU/MEM/SYS/APB 频率与参考时钟状态 |
@@ -482,6 +483,32 @@ let handler = unsafe {
 };
 handler.enable();
 ```
+
+### 焊盘直接功能（`pins`）
+
+GPIO 矩阵让任意引脚都能接任意外设，但每个焊盘另有最多 4 个**直接** IO MUX 功能
+（`IO_MUX_GPIOx.MCU_SEL`）：功能 1 在所有焊盘上都是 GPIO（走矩阵），功能 0/2/3 是焊盘
+专有的 —— GPIO2–5 的 JTAG、GPIO8–13 与 37–38 的 UART、GPIO6–11/28–38 的 SPI2 flash、
+GPIO39–48 的 SD1、GPIO28–53 的 GMAC PHY/RMII。
+
+[`gpio::pins`](esp32p4/src/gpio/pins.rs) 把 TRM 的「HP IO MUX Pin Functions」表编成
+`PAD_TABLE`：
+
+```rust
+use esp32p4::gpio::MuxFunction;
+
+let mut sd_clk = pins.pin::<43>();
+sd_clk.set_mux_function(MuxFunction::Sd1Cclk);   // 写 MCU_SEL = 0
+assert_eq!(sd_clk.mux_function(), Some(MuxFunction::Sd1Cclk));
+sd_clk.set_mux_function(MuxFunction::Gpio);      // 回到矩阵
+
+for pad in esp32p4::gpio::pins::pads_with(MuxFunction::Uart0Txd) {
+    // GPIO37
+}
+```
+
+`PadDesc` 还记录每个焊盘的复位驱动强度、以及它是否属于 LP 域（GPIO0–15）——
+后者是 LP UART/LP I2C 等 LP 外设能用的引脚集合。
 
 ## UART
 

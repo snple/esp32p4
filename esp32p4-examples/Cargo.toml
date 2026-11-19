@@ -47,6 +47,11 @@ name = "gpio_interrupt"
 path = "src/gpio_interrupt.rs"
 
 [[bin]]
+name = "gpio_pads"
+path = "src/gpio_pads.rs"
+required-features = ["defmt"]
+
+[[bin]]
 name = "efuse"
 path = "src/efuse.rs"
 required-features = ["defmt"]

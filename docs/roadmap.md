@@ -19,7 +19,7 @@
 | `reset` | [reset.rs](../esp32p4/src/reset.rs) | `HP_RST_EN0/1/2` 上的外设复位 |
 | `timer` | [timer/mod.rs](../esp32p4/src/timer/mod.rs) | TIMG0/1 四路计数器与两个 MWDT，中断归 group |
 | `systimer` | [systimer.rs](../esp32p4/src/systimer.rs) | COMP1/COMP2 闹钟，COMP0 归 `Delay` |
-| `gpio` | [gpio/](../esp32p4/src/gpio) | 引脚电气配置、GPIO 读写、四路中断与完整的 HP GPIO 交换矩阵信号路由 |
+| `gpio` | [gpio/](../esp32p4/src/gpio) | 引脚电气配置、GPIO 读写、四路中断、完整的 HP GPIO 交换矩阵信号路由，以及每个焊盘的直接 IO MUX 功能表（`pins`） |
 | `uart` | [uart.rs](../esp32p4/src/uart.rs) | UART0–4：轮询收发、帧格式、流控、按源中断、GPIO 矩阵引脚路由 |
 | `i2c` | [i2c.rs](../esp32p4/src/i2c.rs) | I2C0/1 主机：任意 SCL、7 位地址、写/读/写读、总线恢复、按源中断 |
 | `spin` | [spin.rs](../esp32p4/src/spin.rs) | 有界自旋助手（`spin_wait` / `try_spin_wait`），驱动轮询的统一上界 |
@@ -66,7 +66,8 @@
 
 - **LP 引脚与 LP 外设**：`LP_IO_MUX` 的焊盘配置 + `LP_GPIO` 交换矩阵（LP UART / LP I2C /
   LP SPI / LP I2S 的引脚都在这里），是 LP UART、LP I2C 的前置；LP 外设本身与 HP 版共用
-  寄存器布局，补上引脚后可直接复用现有驱动。
+  寄存器布局，补上引脚后可直接复用现有驱动。`gpio::pins` 已经标出 LP 域可达的
+  GPIO0–15，以及 GPIO14/15 的 `LP_UART_TXD/RXD` 直接功能。
 - **PMU / 低功耗**：light sleep、deep sleep、HP 核心电源域、唤醒源（GPIO / LP timer /
   LP UART）。电池设备必需，也是 P4 上仅次于时钟树的复杂模块。
 - **LP 核（ULP RISC-V）**：固件加载、启动、与 HP 核共享内存。
