@@ -180,8 +180,13 @@ impl Default for RDes {
     }
 }
 
-/// A single frame buffer, aligned for the 8-byte descriptor format.
-#[repr(C, align(8))]
+/// A single frame buffer.
+///
+/// Each buffer starts on a cache line of its own: the maintenance helpers round
+/// their range outwards to whole lines, so two buffers sharing a line would mean
+/// invalidating one frame's tail (or a neighbour's dirty bytes) every time the
+/// other one is read back.
+#[repr(C, align(64))]
 pub struct DmaBuffer([u8; MAX_FRAME_SIZE]);
 
 impl DmaBuffer {
