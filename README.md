@@ -486,13 +486,23 @@ handler.enable();
 
 ### 焊盘直接功能（`pins`）
 
-GPIO 矩阵让任意引脚都能接任意外设，但每个焊盘另有最多 4 个**直接** IO MUX 功能
-（`IO_MUX_GPIOx.MCU_SEL`）：功能 1 在所有焊盘上都是 GPIO（走矩阵），功能 0/2/3 是焊盘
-专有的 —— GPIO2–5 的 JTAG、GPIO8–13 与 37–38 的 UART、GPIO6–11/28–38 的 SPI2 flash、
-GPIO39–48 的 SD1、GPIO28–53 的 GMAC PHY/RMII。
+「HP GPIO 矩阵能接任意外设」只对**在矩阵里有信号**的外设成立（UART、I2C、SPI、I2S、
+TWAI、PWM、PCNT、RMT、SD、USB 控制信号……）。以下几类是例外，只有固定焊盘：
 
-[`gpio::pins`](esp32p4/src/gpio/pins.rs) 把 TRM 的「HP IO MUX Pin Functions」表编成
-`PAD_TABLE`：
+| 功能 | 焊盘 | 选择方式 |
+|------|------|----------|
+| **GMAC PHY/RMII** 数据与时钟（TXD0/1、TXEN、TXER、RXD0/1、RXDV、RXER、RMII_CLK） | GPIO28–53 中带 GMAC 功能的那些 | IO MUX 功能 3，**矩阵里没有这些信号** |
+| **USB 数据线** USB Serial/JTAG（D-/D+） | GPIO24 / GPIO25 | 焊盘功能 0（模拟通路） |
+| **USB 数据线** OTG 全速（D-/D+） | GPIO26 / GPIO27 | 焊盘功能 0（模拟通路） |
+| **模拟功能** ADC1 / ADC2 / 触摸 / 比较器 / 32 kHz 晶振 | GPIO16–23 / GPIO49–54 / GPIO2–15 / GPIO51–54 / GPIO0–1 | 焊盘保持浮空，交给模拟模块 |
+| **LP 外设**（LP UART、LP I2C、LP SPI……） | 仅 GPIO0–15 | 独立的 LP GPIO 矩阵 |
+
+每个焊盘另有最多 4 个**直接** IO MUX 功能（`IO_MUX_GPIOx.MCU_SEL`）：功能 1 在所有焊盘上
+都是 GPIO（走矩阵），功能 0/2/3 是焊盘专有的 —— GPIO2–5 的 JTAG、GPIO8–13 与 37–38 的
+UART、GPIO6–11/28–38 的 SPI2 flash、GPIO39–48 的 SD1、GPIO28–53 的 GMAC PHY/RMII。
+
+[`gpio::pins`](esp32p4/src/gpio/pins.rs) 把 TRM 的「HP IO MUX Pin Functions」和
+「GPIO Pin Analog Functions」两张表编成 `PAD_TABLE`：
 
 ```rust
 use esp32p4::gpio::MuxFunction;
@@ -507,8 +517,10 @@ for pad in esp32p4::gpio::pins::pads_with(MuxFunction::Uart0Txd) {
 }
 ```
 
-`PadDesc` 还记录每个焊盘的复位驱动强度、以及它是否属于 LP 域（GPIO0–15）——
-后者是 LP UART/LP I2C 等 LP 外设能用的引脚集合。
+`PadDesc` 还记录每个焊盘的复位驱动强度、模拟功能（`AnalogFunction`：ADC/触摸/比较器/
+32 kHz 晶振/USB PHY）、以及它是否属于 LP 域（GPIO0–15）。`PadDesc::is_usb_phy()` 与
+`PadDesc::is_gmac_phy()` 用来判断某个焊盘是不是那两类专用引脚；USB 两对焊盘另有常量
+`USB_SERIAL_JTAG_PADS` (24, 25) 与 `USB_OTG_FS_PADS` (26, 27)。
 
 ## UART
 
@@ -522,7 +534,8 @@ for pad in esp32p4::gpio::pins::pads_with(MuxFunction::Uart0Txd) {
   波特率用「整数预分频 + 16 分频小数」计算，`set_baudrate` 返回实际值；
 - CTS/RTS 硬件流控（RTS 阈值可配）；
 - 每个中断源单独 `enable_interrupt`/`interrupt_pending`/`clear_interrupt`；
-- 引脚走 GPIO 矩阵（`set_pins(tx, rx)`），任何 GPIO 都能当 TX/RX/CTS/RTS。
+- 引脚走 GPIO 矩阵（`set_pins(tx, rx)`），任何 GPIO 都能当 TX/RX/CTS/RTS ——
+  UART 的信号都在矩阵里；USB、EMAC PHY 这类没有矩阵信号的请见上一节的例外表。
 
 ```rust
 let uart = Uart1::init(dp.UART1, &UartConfig::default().baudrate(115_200), &dp.HP_SYS_CLKRST);

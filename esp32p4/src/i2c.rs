@@ -5,6 +5,9 @@
 //! iteration count, so a slave that stretches the clock cannot cause a
 //! spurious timeout.
 //!
+//! SCL and SDA are GPIO-matrix signals, so any GPIO can carry them (unlike the
+//! dedicated pads of the USB and EMAC PHYs, see [`crate::gpio::pins`]).
+//!
 //! # Features
 //!
 //! - Any SCL rate the clock source and the timing constraints allow, 100 kHz

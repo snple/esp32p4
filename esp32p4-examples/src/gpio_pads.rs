@@ -20,7 +20,7 @@ use defmt_rtt as _;
 defmt::timestamp!("{=u64:us}", esp32p4::delay::micros());
 
 use esp32p4::gpio::pins::pads_with;
-use esp32p4::gpio::{MuxFunction, PinOps, Pins};
+use esp32p4::gpio::{AnalogFunction, MuxFunction, PinOps, Pins};
 use esp32p4::main;
 use esp32p4::pac::Peripherals;
 use esp32p4::usb_serial_jtag::UsbSerialJtag;
@@ -47,6 +47,21 @@ fn describe(pin: impl PinOps) {
             None => defmt::info!("  function {}: -", index),
         }
     }
+    for (index, analog) in pad.analog().iter().enumerate() {
+        match analog {
+            Some(AnalogFunction::Touch(_) | AnalogFunction::Adc1(_) | AnalogFunction::Adc2(_)) => {
+                defmt::info!(
+                    "  analog {}: {} {}",
+                    index,
+                    analog.unwrap().name(),
+                    analog.unwrap().channel().unwrap()
+                )
+            }
+            Some(analog) => defmt::info!("  analog {}: {}", index, analog.name()),
+            None => defmt::info!("  analog {}: -", index),
+        }
+    }
+    defmt::info!("  usb={} gmac={}", pad.is_usb_phy(), pad.is_gmac_phy());
 }
 
 #[main]
@@ -65,6 +80,11 @@ fn main() -> ! {
     describe(pins.pin::<37>());
     // SD1 clock, shared with a GMAC PHY output.
     describe(pins.pin::<43>());
+    // USB full-speed D-: one of the pads that no matrix route can replace.
+    describe(pins.pin::<26>());
+    // ADC1 channel 0 and an EMAC PHY pad, for the analog and GMAC cases.
+    describe(pins.pin::<16>());
+    describe(pins.pin::<33>());
 
     // Which pads can drive UART0 TX directly?
     for pad in pads_with(MuxFunction::Uart0Txd) {

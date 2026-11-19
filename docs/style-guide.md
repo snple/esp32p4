@@ -249,8 +249,11 @@ bootloader 的具体版本。新增外设时，如果它有自己的时钟门控
   `mod.rs`（共享类型与 `Pins`）+ `pin.rs`（`Pin<N>` 与 `impl_pin!`）+ `pins.rs`
   （焊盘功能表）+ `signal.rs`（矩阵信号））。
 - **每引脚实现宏 + 引脚能力表**：`Pin<N>` 的寄存器操作由 `impl_pin!` 逐脚展开，
-  所有驱动通过 `PinOps` 泛型接收引脚；焊盘专有的直接功能（IO MUX 的 `MCU_SEL`）
-  放在 `gpio::pins::PAD_TABLE`，不要把它们写成 `Function` 的裸数字。
+  所有驱动通过 `PinOps` 泛型接收引脚；焊盘专有的直接功能（IO MUX 的 `MCU_SEL`）与
+  模拟功能放在 `gpio::pins::PAD_TABLE`，不要把它们写成 `Function` 的裸数字。
+- **矩阵不是万能的**：写「任意引脚都能接」之前先查信号表 —— GMAC PHY/RMII 数据与时钟、
+  USB 数据线、模拟功能都只有专用焊盘，LP 外设只能用 GPIO0–15。这类驱动的引脚检查
+  用 `PadDesc`（`is_gmac_phy` / `is_usb_phy` / `function_index`），别假设矩阵能救。
 - 类型：`Pins`（控制器）、`Pin<N>`（零大小令牌，配置 `&mut self`、读写 `&self`，
   `into_output()` 返回 `&Self`，与 rp2350 一致）。
 - 模块文档统一结构：一段概述 → `## Features` 列表 → `## Example`

@@ -1,16 +1,29 @@
 //! Per-pad capability table.
 //!
-//! The ESP32-P4 routes almost every peripheral through the GPIO matrix, so a
-//! driver usually only needs a [`signal`](super::signal) index. Every pad also
-//! has up to four *direct* IO MUX functions, selected by
-//! `IO_MUX_GPIOx.MCU_SEL`: on every pin function 1 is the GPIO function (the
-//! matrix path), and functions 0, 2 and 3 are pad-specific — JTAG on GPIO2-5,
-//! UART0/1 on GPIO8-13 and 37-38, SPI2 on GPIO6-11 and 28-38, SD1 on
-//! GPIO39-48, the GMAC PHY/RMII signals on GPIO28-53, and so on.
+//! The ESP32-P4 routes most HP peripheral signals through the GPIO matrix, so a
+//! driver usually only needs a [`signal`](super::signal) index and any pad will
+//! do. That is not true for everything:
 //!
-//! This module encodes the TRM's "HP IO MUX Pin Functions" table, so a pin can
-//! report what it can do and a driver can pick a direct function instead of a
-//! matrix route:
+//! - **The GPIO matrix is not the only path.** Every pad also has up to four
+//!   *direct* IO MUX functions, selected by `IO_MUX_GPIOx.MCU_SEL`. Function 1
+//!   is the GPIO function (the matrix path) on every pad; 0, 2 and 3 are
+//!   pad-specific — JTAG on GPIO2-5, UART0/1 on GPIO8-13 and 37-38, SPI2 on
+//!   GPIO6-11 and 28-38, SD1 on GPIO39-48 and the GMAC PHY/RMII signals on
+//!   GPIO28-53.
+//! - **Some peripherals have no matrix signal at all.** The GMAC PHY/RMII data
+//!   and clock signals exist only as the direct function 3 of GPIO28-53, and
+//!   the USB data lines are hard-wired to their pads (GPIO24/25 for the USB
+//!   Serial/JTAG PHY, GPIO26/27 for the OTG full-speed PHY), selected through
+//!   the pad's function 0. No amount of matrix routing moves them.
+//! - **Analog functions are pad-specific too**: ADC1 on GPIO16-23, ADC2 on
+//!   GPIO49-54, touch on GPIO2-15, the comparators on GPIO51-54 and the 32 kHz
+//!   crystal on GPIO0-1.
+//! - **The low-power peripherals** (LP UART, LP I2C, ...) are only reachable
+//!   from GPIO0-15, through the separate LP GPIO matrix.
+//!
+//! This module encodes the TRM's "HP IO MUX Pin Functions" and "GPIO Pin
+//! Analog Functions" tables, so a pin reports what it can do and a driver can
+//! pick a direct function instead of a matrix route:
 //!
 //! ```ignore
 //! use esp32p4::gpio::{MuxFunction, Pins};
@@ -19,10 +32,6 @@
 //! sclk.set_mux_function(MuxFunction::Sd1Cclk);
 //! assert_eq!(sclk.mux_function(), Some(MuxFunction::Sd1Cclk));
 //! ```
-//!
-//! It also records which pads the low-power domain can reach (GPIO0-15). Those
-//! are the pins the LP GPIO matrix — and therefore LP UART, LP I2C and the
-//! other LP peripherals — can use.
 //!
 //! GPIO54-56 exist in the GPIO register blocks but have no `IO_MUX` register in
 //! this chip's register map, so the table stops at GPIO53.
@@ -183,6 +192,77 @@ impl MuxFunction {
     }
 }
 
+/// A pad's analog function, from the TRM's "GPIO Pin Analog Functions" table.
+///
+/// These do not use `MCU_SEL`: the pad is handed to the analog block by making
+/// it floating (input buffer, pulls and output enable off) and leaving the
+/// analog block selected.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum AnalogFunction {
+    /// 32 kHz crystal, negative terminal (GPIO0).
+    Xtal32kN,
+    /// 32 kHz crystal, positive terminal (GPIO1).
+    Xtal32kP,
+    /// Capacitive touch channel `n` (GPIO2-15, channels 0-13).
+    Touch(u8),
+    /// ADC1 channel `n` (GPIO16-23, channels 0-7).
+    Adc1(u8),
+    /// ADC2 channel `n` (GPIO49-54, channels 0-5).
+    Adc2(u8),
+    /// Analog comparator 0 input (GPIO51/52).
+    AnaComp0,
+    /// Analog comparator 1 input (GPIO53/54).
+    AnaComp1,
+    /// USB Serial/JTAG PHY, D- (GPIO24).
+    Usb1p1N0,
+    /// USB Serial/JTAG PHY, D+ (GPIO25).
+    Usb1p1P0,
+    /// USB OTG full-speed PHY, D- (GPIO26).
+    Usb1p1N1,
+    /// USB OTG full-speed PHY, D+ (GPIO27).
+    Usb1p1P1,
+}
+
+impl AnalogFunction {
+    /// The channel number of a touch/ADC function.
+    pub const fn channel(self) -> Option<u8> {
+        match self {
+            Self::Touch(channel) | Self::Adc1(channel) | Self::Adc2(channel) => Some(channel),
+            _ => None,
+        }
+    }
+
+    /// The name the TRM uses for this function.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Xtal32kN => "XTAL_32K_N",
+            Self::Xtal32kP => "XTAL_32K_P",
+            Self::Touch(_) => "TOUCH_CHANNEL",
+            Self::Adc1(_) => "ADC1_CHANNEL",
+            Self::Adc2(_) => "ADC2_CHANNEL",
+            Self::AnaComp0 => "ANA_COMP0",
+            Self::AnaComp1 => "ANA_COMP1",
+            Self::Usb1p1N0 => "USB1P1_N0",
+            Self::Usb1p1P0 => "USB1P1_P0",
+            Self::Usb1p1N1 => "USB1P1_N1",
+            Self::Usb1p1P1 => "USB1P1_P1",
+        }
+    }
+}
+
+/// The pads of the USB Serial/JTAG PHY: D- on GPIO24, D+ on GPIO25.
+///
+/// The USB data lines are not GPIO-matrix signals; the pads are switched to the
+/// PHY with IO MUX function 0.
+pub const USB_SERIAL_JTAG_PADS: (u32, u32) = (24, 25);
+
+/// The pads of the USB OTG full-speed PHY: D- on GPIO26, D+ on GPIO27.
+///
+/// Like the Serial/JTAG pair, these are fixed pads reached through IO MUX
+/// function 0, not matrix signals.
+pub const USB_OTG_FS_PADS: (u32, u32) = (26, 27);
+
 /// Everything the HAL knows about one pad.
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -199,6 +279,8 @@ pub struct PadDesc {
     /// Index 1 is always [`MuxFunction::Gpio`]; a `None` entry means the pad
     /// has no function in that slot.
     functions: [Option<MuxFunction>; 4],
+    /// Analog functions, in the TRM's column order.
+    analog: [Option<AnalogFunction>; 2],
 }
 
 impl PadDesc {
@@ -233,6 +315,59 @@ impl PadDesc {
     pub const fn functions(&self) -> &[Option<MuxFunction>; 4] {
         &self.functions
     }
+
+    /// The analog functions available on this pad.
+    #[inline]
+    pub const fn analog(&self) -> &[Option<AnalogFunction>; 2] {
+        &self.analog
+    }
+
+    /// Whether this pad belongs to a USB PHY.
+    ///
+    /// USB data lines are not GPIO-matrix signals: the pad must be switched to
+    /// its analog function.
+    pub const fn is_usb_phy(&self) -> bool {
+        matches!(
+            self.analog[0],
+            Some(
+                AnalogFunction::Usb1p1N0
+                    | AnalogFunction::Usb1p1P0
+                    | AnalogFunction::Usb1p1N1
+                    | AnalogFunction::Usb1p1P1
+            )
+        )
+    }
+
+    /// Whether this pad carries one of the dedicated GMAC PHY/RMII signals.
+    ///
+    /// Those signals have no GPIO-matrix entry at all, so the MAC can only use
+    /// the pads whose IO MUX exposes the function.
+    pub const fn is_gmac_phy(&self) -> bool {
+        let mut index = 0;
+        while index < self.functions.len() {
+            match self.functions[index] {
+                Some(function) if is_gmac_function(function) => return true,
+                _ => index += 1,
+            }
+        }
+        false
+    }
+}
+
+/// Whether `function` is one of the GMAC PHY/RMII pads.
+const fn is_gmac_function(function: MuxFunction) -> bool {
+    matches!(
+        function,
+        MuxFunction::GmacPhyRxdv
+            | MuxFunction::GmacPhyRxd0
+            | MuxFunction::GmacPhyRxd1
+            | MuxFunction::GmacPhyRxer
+            | MuxFunction::GmacRmiiClk
+            | MuxFunction::GmacPhyTxen
+            | MuxFunction::GmacPhyTxd0
+            | MuxFunction::GmacPhyTxd1
+            | MuxFunction::GmacPhyTxer
+    )
 }
 
 /// Every pad with an IO MUX register, indexed by GPIO number.
@@ -243,6 +378,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
         lp: true,
         reset_drive_strength: DriveStrength::_20mA,
         functions: [Some(MuxFunction::Gpio), Some(MuxFunction::Gpio), None, None],
+        analog: [Some(AnalogFunction::Xtal32kN), None],
     },
     // 1
     PadDesc {
@@ -250,6 +386,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
         lp: true,
         reset_drive_strength: DriveStrength::_20mA,
         functions: [Some(MuxFunction::Gpio), Some(MuxFunction::Gpio), None, None],
+        analog: [Some(AnalogFunction::Xtal32kP), None],
     },
     // 2
     PadDesc {
@@ -262,6 +399,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             None,
         ],
+        analog: [Some(AnalogFunction::Touch(0)), None],
     },
     // 3
     PadDesc {
@@ -274,6 +412,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             None,
         ],
+        analog: [Some(AnalogFunction::Touch(1)), None],
     },
     // 4
     PadDesc {
@@ -286,6 +425,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             None,
         ],
+        analog: [Some(AnalogFunction::Touch(2)), None],
     },
     // 5
     PadDesc {
@@ -298,6 +438,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             None,
         ],
+        analog: [Some(AnalogFunction::Touch(3)), None],
     },
     // 6
     PadDesc {
@@ -310,6 +451,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::Spi2Hold),
         ],
+        analog: [Some(AnalogFunction::Touch(4)), None],
     },
     // 7
     PadDesc {
@@ -322,6 +464,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::Spi2Cs),
         ],
+        analog: [Some(AnalogFunction::Touch(5)), None],
     },
     // 8
     PadDesc {
@@ -334,6 +477,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::Spi2D),
         ],
+        analog: [Some(AnalogFunction::Touch(6)), None],
     },
     // 9
     PadDesc {
@@ -346,6 +490,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::Spi2Ck),
         ],
+        analog: [Some(AnalogFunction::Touch(7)), None],
     },
     // 10
     PadDesc {
@@ -358,6 +503,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::Spi2Q),
         ],
+        analog: [Some(AnalogFunction::Touch(8)), None],
     },
     // 11
     PadDesc {
@@ -370,6 +516,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::Spi2Wp),
         ],
+        analog: [Some(AnalogFunction::Touch(9)), None],
     },
     // 12
     PadDesc {
@@ -382,6 +529,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             None,
         ],
+        analog: [Some(AnalogFunction::Touch(10)), None],
     },
     // 13
     PadDesc {
@@ -394,6 +542,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             None,
         ],
+        analog: [Some(AnalogFunction::Touch(11)), None],
     },
     // 14
     PadDesc {
@@ -401,6 +550,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
         lp: true,
         reset_drive_strength: DriveStrength::_20mA,
         functions: [None, Some(MuxFunction::Gpio), None, None],
+        analog: [Some(AnalogFunction::Touch(12)), None],
     },
     // 15
     PadDesc {
@@ -408,6 +558,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
         lp: true,
         reset_drive_strength: DriveStrength::_20mA,
         functions: [None, Some(MuxFunction::Gpio), None, None],
+        analog: [Some(AnalogFunction::Touch(13)), None],
     },
     // 16
     PadDesc {
@@ -415,6 +566,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
         lp: false,
         reset_drive_strength: DriveStrength::_20mA,
         functions: [None, Some(MuxFunction::Gpio), None, None],
+        analog: [Some(AnalogFunction::Adc1(0)), None],
     },
     // 17
     PadDesc {
@@ -422,6 +574,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
         lp: false,
         reset_drive_strength: DriveStrength::_20mA,
         functions: [None, Some(MuxFunction::Gpio), None, None],
+        analog: [Some(AnalogFunction::Adc1(1)), None],
     },
     // 18
     PadDesc {
@@ -429,6 +582,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
         lp: false,
         reset_drive_strength: DriveStrength::_20mA,
         functions: [None, Some(MuxFunction::Gpio), None, None],
+        analog: [Some(AnalogFunction::Adc1(2)), None],
     },
     // 19
     PadDesc {
@@ -436,6 +590,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
         lp: false,
         reset_drive_strength: DriveStrength::_20mA,
         functions: [None, Some(MuxFunction::Gpio), None, None],
+        analog: [Some(AnalogFunction::Adc1(3)), None],
     },
     // 20
     PadDesc {
@@ -443,6 +598,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
         lp: false,
         reset_drive_strength: DriveStrength::_20mA,
         functions: [None, Some(MuxFunction::Gpio), None, None],
+        analog: [Some(AnalogFunction::Adc1(4)), None],
     },
     // 21
     PadDesc {
@@ -450,6 +606,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
         lp: false,
         reset_drive_strength: DriveStrength::_20mA,
         functions: [None, Some(MuxFunction::Gpio), None, None],
+        analog: [Some(AnalogFunction::Adc1(5)), None],
     },
     // 22
     PadDesc {
@@ -457,6 +614,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
         lp: false,
         reset_drive_strength: DriveStrength::_20mA,
         functions: [None, Some(MuxFunction::Gpio), None, None],
+        analog: [Some(AnalogFunction::Adc1(6)), None],
     },
     // 23
     PadDesc {
@@ -469,6 +627,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::Ref50mClk),
         ],
+        analog: [Some(AnalogFunction::Adc1(7)), None],
     },
     // 24
     PadDesc {
@@ -476,6 +635,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
         lp: false,
         reset_drive_strength: DriveStrength::_40mA,
         functions: [None, Some(MuxFunction::Gpio), None, None],
+        analog: [Some(AnalogFunction::Usb1p1N0), None],
     },
     // 25
     PadDesc {
@@ -483,6 +643,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
         lp: false,
         reset_drive_strength: DriveStrength::_40mA,
         functions: [None, Some(MuxFunction::Gpio), None, None],
+        analog: [Some(AnalogFunction::Usb1p1P0), None],
     },
     // 26
     PadDesc {
@@ -490,6 +651,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
         lp: false,
         reset_drive_strength: DriveStrength::_20mA,
         functions: [None, Some(MuxFunction::Gpio), None, None],
+        analog: [Some(AnalogFunction::Usb1p1N1), None],
     },
     // 27
     PadDesc {
@@ -497,6 +659,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
         lp: false,
         reset_drive_strength: DriveStrength::_20mA,
         functions: [None, Some(MuxFunction::Gpio), None, None],
+        analog: [Some(AnalogFunction::Usb1p1P1), None],
     },
     // 28
     PadDesc {
@@ -509,6 +672,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::GmacPhyRxdv),
         ],
+        analog: [None, None],
     },
     // 29
     PadDesc {
@@ -521,6 +685,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::GmacPhyRxd0),
         ],
+        analog: [None, None],
     },
     // 30
     PadDesc {
@@ -533,6 +698,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::GmacPhyRxd1),
         ],
+        analog: [None, None],
     },
     // 31
     PadDesc {
@@ -545,6 +711,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::GmacPhyRxer),
         ],
+        analog: [None, None],
     },
     // 32
     PadDesc {
@@ -557,6 +724,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::GmacRmiiClk),
         ],
+        analog: [None, None],
     },
     // 33
     PadDesc {
@@ -569,6 +737,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::GmacPhyTxen),
         ],
+        analog: [None, None],
     },
     // 34
     PadDesc {
@@ -581,6 +750,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::GmacPhyTxd0),
         ],
+        analog: [None, None],
     },
     // 35
     PadDesc {
@@ -593,6 +763,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::GmacPhyTxd1),
         ],
+        analog: [None, None],
     },
     // 36
     PadDesc {
@@ -605,6 +776,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::GmacPhyTxer),
         ],
+        analog: [None, None],
     },
     // 37
     PadDesc {
@@ -617,6 +789,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::Spi2Io7),
         ],
+        analog: [None, None],
     },
     // 38
     PadDesc {
@@ -629,6 +802,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::Spi2Dqs),
         ],
+        analog: [None, None],
     },
     // 39
     PadDesc {
@@ -641,6 +815,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::Ref50mClk),
         ],
+        analog: [None, None],
     },
     // 40
     PadDesc {
@@ -653,6 +828,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::GmacPhyTxen),
         ],
+        analog: [None, None],
     },
     // 41
     PadDesc {
@@ -665,6 +841,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::GmacPhyTxd0),
         ],
+        analog: [None, None],
     },
     // 42
     PadDesc {
@@ -677,6 +854,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::GmacPhyTxd1),
         ],
+        analog: [None, None],
     },
     // 43
     PadDesc {
@@ -689,6 +867,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::GmacPhyTxer),
         ],
+        analog: [None, None],
     },
     // 44
     PadDesc {
@@ -701,6 +880,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::GmacRmiiClk),
         ],
+        analog: [None, None],
     },
     // 45
     PadDesc {
@@ -713,6 +893,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::GmacPhyRxdv),
         ],
+        analog: [None, None],
     },
     // 46
     PadDesc {
@@ -725,6 +906,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::GmacPhyRxd0),
         ],
+        analog: [None, None],
     },
     // 47
     PadDesc {
@@ -737,6 +919,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::GmacPhyRxd1),
         ],
+        analog: [None, None],
     },
     // 48
     PadDesc {
@@ -749,6 +932,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::GmacPhyRxer),
         ],
+        analog: [None, None],
     },
     // 49
     PadDesc {
@@ -761,6 +945,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::GmacPhyTxen),
         ],
+        analog: [Some(AnalogFunction::Adc2(0)), None],
     },
     // 50
     PadDesc {
@@ -773,6 +958,7 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::GmacRmiiClk),
         ],
+        analog: [Some(AnalogFunction::Adc2(1)), None],
     },
     // 51
     PadDesc {
@@ -784,6 +970,10 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             Some(MuxFunction::Gpio),
             None,
             Some(MuxFunction::GmacPhyRxdv),
+        ],
+        analog: [
+            Some(AnalogFunction::Adc2(2)),
+            Some(AnalogFunction::AnaComp0),
         ],
     },
     // 52
@@ -797,6 +987,10 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             None,
             Some(MuxFunction::GmacPhyRxd0),
         ],
+        analog: [
+            Some(AnalogFunction::Adc2(3)),
+            Some(AnalogFunction::AnaComp0),
+        ],
     },
     // 53
     PadDesc {
@@ -808,6 +1002,10 @@ pub const PAD_TABLE: [PadDesc; 54] = [
             Some(MuxFunction::Gpio),
             None,
             Some(MuxFunction::GmacPhyRxd1),
+        ],
+        analog: [
+            Some(AnalogFunction::Adc2(4)),
+            Some(AnalogFunction::AnaComp1),
         ],
     },
 ];
@@ -822,6 +1020,23 @@ pub const fn pad(number: u32) -> Option<&'static PadDesc> {
         Some(&PAD_TABLE[number as usize])
     } else {
         None
+    }
+}
+
+/// Whether pad `number` exposes `function` directly through the IO MUX.
+///
+/// Returns `false` for pads without an `IO_MUX` register (GPIO54 and above).
+/// Usable in a `const` block, so a driver can reject a wrong pin at compile
+/// time:
+///
+/// ```ignore
+/// const { assert!(pad_has(33, MuxFunction::GmacPhyTxen)) };
+/// ```
+#[inline]
+pub const fn pad_has(number: u32, function: MuxFunction) -> bool {
+    match pad(number) {
+        Some(desc) => desc.function_index(function).is_some(),
+        None => false,
     }
 }
 

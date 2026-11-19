@@ -1,8 +1,10 @@
 //! UART (Universal Asynchronous Receiver/Transmitter).
 //!
-//! UART0-UART4 are the five high-performance UARTs. Their pins come from the
-//! GPIO matrix, so *any* GPIO can be TX, RX, CTS or RTS — the driver does not
-//! restrict the choice the way a fixed-function MCU would.
+//! UART0-UART4 are the five high-performance UARTs. Their signals are part of
+//! the GPIO matrix, so every GPIO can be TX, RX, CTS or RTS — the driver does
+//! not restrict the choice the way a fixed-function MCU would. (Peripherals
+//! without a matrix signal, such as USB or the EMAC PHY, are the exception;
+//! see [`crate::gpio::pins`].)
 //!
 //! # Features
 //!

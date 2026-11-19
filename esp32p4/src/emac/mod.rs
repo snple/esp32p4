@@ -87,7 +87,10 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use esp32p4_pac::{EMAC, GPIO, HP_SYS, HP_SYS_CLKRST, IO_MUX, LP_AON_CLKRST};
 
-use crate::gpio::Pin;
+use crate::gpio::{
+    Pin,
+    pins::{self, MuxFunction},
+};
 use crate::interrupt::{self, CpuInterrupt, InterruptHandler, Level, Source};
 pub use dma::{DmaBuffer, EmacBuffers, MAX_FRAME_SIZE, TxError};
 
@@ -133,7 +136,6 @@ const SIGNAL_EMAC_MDC: u32 = 108;
 const SIGNAL_EMAC_MDO: u32 = 109;
 
 /// IO MUX function number that connects a pad to the EMAC.
-const IO_MUX_FUNCTION_EMAC: u32 = 3;
 /// Drive strength setting used for EMAC pads (~20 mA), matching ESP-IDF.
 const PAD_DRIVE_20MA: u32 = 2;
 
@@ -282,38 +284,49 @@ impl RmiiPins {
         _mdc: Pin<MDC>,
         _mdio: Pin<MDIO>,
     ) -> Self {
-        // Only three GPIO groups carry the EMAC IO MUX function, and not every
-        // signal is available on every pin of a group. These checks are const
-        // evaluated, so a wrong pin is a compile error.
+        // The GMAC PHY/RMII signals have no GPIO-matrix entry: only the pads
+        // whose IO MUX exposes the function can carry them, so the check reads
+        // the pad table. It is const evaluated, making a wrong pin a compile
+        // error.
         const {
             assert!(
-                matches!(TXEN, 33 | 40 | 49),
+                pins::pad_has(TXEN, MuxFunction::GmacPhyTxen),
                 "GPIO has no EMAC_TXEN function"
             )
         };
-        const { assert!(matches!(TXD0, 34 | 41), "GPIO has no EMAC_TXD0 function") };
-        const { assert!(matches!(TXD1, 35 | 42), "GPIO has no EMAC_TXD1 function") };
         const {
             assert!(
-                matches!(RXD1, 30 | 47 | 53),
+                pins::pad_has(TXD0, MuxFunction::GmacPhyTxd0),
+                "GPIO has no EMAC_TXD0 function"
+            )
+        };
+        const {
+            assert!(
+                pins::pad_has(TXD1, MuxFunction::GmacPhyTxd1),
+                "GPIO has no EMAC_TXD1 function"
+            )
+        };
+        const {
+            assert!(
+                pins::pad_has(RXD1, MuxFunction::GmacPhyRxd1),
                 "GPIO has no EMAC_RXD1 function"
             )
         };
         const {
             assert!(
-                matches!(RXD0, 29 | 46 | 52),
+                pins::pad_has(RXD0, MuxFunction::GmacPhyRxd0),
                 "GPIO has no EMAC_RXD0 function"
             )
         };
         const {
             assert!(
-                matches!(CRS_DV, 28 | 45 | 51),
+                pins::pad_has(CRS_DV, MuxFunction::GmacPhyRxdv),
                 "GPIO has no EMAC_RXDV function"
             )
         };
         const {
             assert!(
-                matches!(REF_CLK, 32 | 44 | 50),
+                pins::pad_has(REF_CLK, MuxFunction::GmacRmiiClk),
                 "GPIO has no EMAC_RMII_CLK function"
             )
         };
@@ -803,16 +816,16 @@ fn configure_pins(res: &EmacResources<'_>, pins: &RmiiPins) {
     // GPIO-matrix signals: selecting function 3 hard-wires the pad to the MAC,
     // including its output enable. GPIO_ENABLE is bypassed in that case, so
     // nothing here touches it.
-    for pin in [
-        pins.txen,
-        pins.txd0,
-        pins.txd1,
-        pins.crs_dv,
-        pins.rx_d0,
-        pins.rx_d1,
-        pins.ref_clk,
+    for (pin, function) in [
+        (pins.txen, MuxFunction::GmacPhyTxen),
+        (pins.txd0, MuxFunction::GmacPhyTxd0),
+        (pins.txd1, MuxFunction::GmacPhyTxd1),
+        (pins.crs_dv, MuxFunction::GmacPhyRxdv),
+        (pins.rx_d0, MuxFunction::GmacPhyRxd0),
+        (pins.rx_d1, MuxFunction::GmacPhyRxd1),
+        (pins.ref_clk, MuxFunction::GmacRmiiClk),
     ] {
-        configure_emac_pad(pin);
+        configure_emac_pad(pin, function);
     }
 
     // MDC and MDIO have no dedicated pad function, so they do go through the
@@ -826,21 +839,26 @@ fn configure_pins(res: &EmacResources<'_>, pins: &RmiiPins) {
     configure_input_signal(pins.mdio, SIGNAL_EMAC_MDI);
 }
 
-/// Point an IO MUX pad at the EMAC function.
+/// Point an IO MUX pad at one of the dedicated EMAC functions.
 ///
 /// Once `MCU_SEL` names a peripheral function the pad's direction is owned by
 /// that peripheral — ESP-IDF spells this out in `gpio_hal_iomux_out`: "as long
 /// as the func sel is not GPIO, the oe can only be controlled by the
 /// peripheral". Setting `GPIO_ENABLE` would therefore do nothing, and the MAC
 /// drives TXEN/TXD itself.
-fn configure_emac_pad(pin: u8) {
+fn configure_emac_pad(pin: u8, function: MuxFunction) {
+    let selector = pins::pad(pin as u32)
+        .expect("EMAC pads have an IO MUX register")
+        .function_index(function)
+        .expect("EMAC pad lacks the function");
+
     write_io_mux(pin, |value| {
         (value
             & !(esp32p4_pac::io_mux::Gpio0::MCU_SEL_MASK
                 | esp32p4_pac::io_mux::Gpio0::FUN_DRV_MASK
                 | esp32p4_pac::io_mux::Gpio0::FUN_WPU_MASK
                 | esp32p4_pac::io_mux::Gpio0::FUN_WPD_MASK))
-            | (IO_MUX_FUNCTION_EMAC << esp32p4_pac::io_mux::Gpio0::MCU_SEL_OFFSET)
+            | (selector << esp32p4_pac::io_mux::Gpio0::MCU_SEL_OFFSET)
             | (PAD_DRIVE_20MA << esp32p4_pac::io_mux::Gpio0::FUN_DRV_OFFSET)
             | esp32p4_pac::io_mux::Gpio0::FUN_IE_MASK
     });

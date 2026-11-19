@@ -162,7 +162,7 @@ pub mod pins;
 pub mod signal;
 
 pub use pin::Pin;
-pub use pins::{MuxFunction, PadDesc};
+pub use pins::{AnalogFunction, MuxFunction, PadDesc};
 pub use signal::{InputSignal, OutputSignal};
 
 /// Output signal number that selects the GPIO matrix's own output register.
@@ -307,10 +307,13 @@ pub enum OutputEnable {
 /// uart.set_pins(pins.pin::<20>(), pins.pin::<21>());
 /// ```
 ///
-/// Unlike the fixed-function pins of other MCUs, the ESP32-P4 GPIO matrix
-/// accepts *any* pin for *any* peripheral signal, so the trait does not
-/// restrict which pin a driver may use — it only gives the driver a way to
-/// reach the routing registers.
+/// Most HP peripheral signals reach a pad through the GPIO matrix, which
+/// accepts every pin, so a driver usually does not need to constrain its pin
+/// argument. Not everything is routable, though: the GMAC PHY/RMII data and
+/// clock signals, the USB data lines and the analog functions have dedicated
+/// pads, and the LP peripherals are limited to GPIO0-15. [`pins::PadDesc`]
+/// records those capabilities; drivers for such peripherals check them instead
+/// of relying on the matrix.
 pub trait PinOps {
     /// The GPIO number.
     fn number(&self) -> u32;
