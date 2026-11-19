@@ -87,6 +87,7 @@ required-features = ["defmt"]
 [[bin]]
 name = "emac"
 path = "src/emac.rs"
+required-features = ["defmt"]
 
 [[bin]]
 name = "net_tcp_echo"
@@ -131,4 +132,3 @@ required-features = ["defmt"]
 name = "adc"
 path = "src/adc.rs"
 required-features = ["defmt"]
-
