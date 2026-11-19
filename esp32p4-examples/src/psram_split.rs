@@ -28,6 +28,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use esp32p4::delay::Delay;
+use esp32p4::efuse::Efuse;
 use esp32p4::gpio::Pins;
 use esp32p4::main;
 use esp32p4::pac::Peripherals;
@@ -55,7 +56,8 @@ fn main() -> ! {
     let mut led = pins.pin::<LED_PIN>();
     led.into_output();
 
-    let psram = Psram::init(PsramConfig::default()).expect("PSRAM init failed");
+    let efuse = Efuse::init(dp.EFUSE);
+    let psram = Psram::init(PsramConfig::from_efuse(&efuse)).expect("PSRAM init failed");
 
     // [ ......... global heap (cached) ......... | ... DMA pool (uncached) ... ]
     let dma_len = DMA_POOL_SIZE.min(psram.size() / 4) & !(SPLIT_ALIGN - 1);

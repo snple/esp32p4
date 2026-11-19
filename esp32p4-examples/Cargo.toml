@@ -35,6 +35,20 @@ name = "blink"
 path = "src/blink.rs"
 
 [[bin]]
+name = "gpio_interrupt"
+path = "src/gpio_interrupt.rs"
+
+[[bin]]
+name = "efuse"
+path = "src/efuse.rs"
+required-features = ["defmt"]
+
+[[bin]]
+name = "mmu"
+path = "src/mmu.rs"
+required-features = ["defmt"]
+
+[[bin]]
 name = "psram"
 path = "src/psram.rs"
 

@@ -32,7 +32,10 @@
 //! The analog side of the PLLs (dividers, calibration) is not here: the CPLL is
 //! brought up by the bootloader, the MPLL by [`crate::psram`], and the audio and
 //! SDIO PLLs by whatever uses them. [`ClockTree`] takes their frequencies from a
-//! [`Sources`] table instead of guessing them.
+//! [`Sources`] table instead of guessing them; with an
+//! [`Efuse`](crate::efuse::Efuse) handle,
+//! [`ClockTree::init_from_efuse`] fills in the CPLL frequency that matches the
+//! die revision.
 //!
 //! # Changing the CPU frequency
 //!
@@ -84,7 +87,8 @@ const SOC_CLK_DIV_UPDATE_BIT: u32 = 1 << 4;
 /// The analog PLL configuration is not readable in a revision-independent way,
 /// so the tree takes the source frequencies as an input. [`Sources::DEFAULT`]
 /// matches a 40 MHz crystal, a 360 MHz CPLL, the 500 MHz MPLL that
-/// [`crate::psram`] starts and the fixed 480 MHz SPLL.
+/// [`crate::psram`] starts and the fixed 480 MHz SPLL. [`Sources::from_efuse`]
+/// replaces the CPLL entry with the frequency the die actually runs.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Sources {
@@ -109,6 +113,17 @@ impl Sources {
         spll_hz: SPLL_HZ,
         rc_fast_hz: RC_FAST_HZ,
     };
+
+    /// Read the CPLL frequency from the chip version reported by eFuse.
+    ///
+    /// Everything else keeps [`Sources::DEFAULT`]: the crystal, MPLL and SPLL
+    /// do not depend on the die revision.
+    pub fn from_efuse(efuse: &crate::efuse::Efuse) -> Self {
+        Self {
+            cpll_hz: efuse.chip_version().cpll_hz(),
+            ..Self::DEFAULT
+        }
+    }
 }
 
 impl Default for Sources {
@@ -339,6 +354,19 @@ impl ClockTree {
     /// instead of 360 MHz, so the reported frequencies match the hardware.
     pub fn init_with(hp: HP_SYS_CLKRST, lp: LP_AON_CLKRST, sources: Sources) -> Self {
         Self { hp, lp, sources }
+    }
+
+    /// Take both controllers and derive the CPLL frequency from eFuse.
+    ///
+    /// This is the recommended constructor when an [`Efuse`](crate::efuse::Efuse)
+    /// handle is available: dies before v3.0 run the CPLL at 360 MHz, v3.0 and
+    /// later at 400 MHz.
+    pub fn init_from_efuse(
+        hp: HP_SYS_CLKRST,
+        lp: LP_AON_CLKRST,
+        efuse: &crate::efuse::Efuse,
+    ) -> Self {
+        Self::init_with(hp, lp, Sources::from_efuse(efuse))
     }
 
     /// Give the two controllers back.
@@ -713,7 +741,9 @@ impl ClockTree {
     ///   driver does not start or calibrate it.
     /// - Flash and PSRAM are timed for the current frequency. ESP-IDF suspends
     ///   the external-memory cache and re-tunes the MSPI around the switch; a
-    ///   program running from PSRAM has to do the same.
+    ///   program running from PSRAM has to do the same with
+    ///   [`cache::suspend`](crate::cache::suspend) /
+    ///   [`cache::resume`](crate::cache::resume).
     pub unsafe fn set_cpu_frequency(&self, mhz: u32) {
         let target = mhz.saturating_mul(1_000_000);
         let (mem, apb) = match mhz {

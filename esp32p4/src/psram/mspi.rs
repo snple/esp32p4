@@ -26,14 +26,9 @@ use esp32p4_pac::{HP_SYS, HP_SYS_CLKRST, PMU, SPI0, SPI1};
 use super::{Error, pads};
 
 /// PSRAM page size used by the MMU.
-pub(crate) const PAGE_SIZE: usize = 64 * 1024;
+pub(crate) const PAGE_SIZE: usize = crate::mmu::PAGE_SIZE;
 /// Number of MMU entries, i.e. the size of the external memory window.
-pub(crate) const MMU_ENTRIES: usize = 1024;
-/// Base address of the mapped PSRAM window.
-pub(crate) const BASE: usize = 0x4800_0000;
-/// Uncached alias of the same window, usable for DMA and integrity checks.
-pub(crate) const UNCACHED_BASE: usize = 0x8800_0000;
-
+pub(crate) const MMU_ENTRIES: usize = crate::mmu::PAGE_COUNT;
 /// Mode-register pair addresses.
 const MR0_MR1: u32 = 0x0;
 const MR2_MR3: u32 = 0x2;
@@ -350,20 +345,11 @@ fn detect_size(timing: &Timing) -> Option<usize> {
 }
 
 /// Maps `size` bytes of PSRAM starting at [`BASE`].
-pub(crate) fn map(size: usize) {
+pub(crate) fn map(size: usize) -> Result<crate::mmu::Region, crate::mmu::Error> {
     let pages = (size / PAGE_SIZE).min(MMU_ENTRIES);
-    let spi = unsafe { SPI0::steal() };
-
-    for page in 0..pages {
-        spi.spi_mem_mmu_item_index
-            .write_spi_mmu_item_index(page as u32);
-        // paddr[9:0] | access_spiram (bit 10) | valid (bit 11)
-        spi.spi_mem_mmu_item_content
-            .write_bits((page as u32 & 0x3ff) | (1 << 10) | (1 << 11));
-    }
-
-    // Drop any line the cache may have prefetched from the window.
-    crate::cache::invalidate((BASE as *const u8).cast(), size);
+    // Physical page 0 is the first PSRAM page, and the cached window starts at
+    // MMU entry 0 (`mmu::CACHED_BASE`).
+    crate::mmu::Region::map(0, 0, pages as u32)
 }
 
 /// Silicon revision 3.0 needs two dummy reads and a controller reset before
@@ -392,8 +378,8 @@ pub(crate) fn rev3_workaround() {
     spi.spi_mem_mmu_item_content
         .write_bits((1 << 10) | (1 << 11));
     unsafe {
-        let _ = core::ptr::read_volatile(0x8800_0000u32 as *const u32);
-        let _ = core::ptr::read_volatile(0x8800_0080u32 as *const u32);
+        let _ = core::ptr::read_volatile((crate::mmu::UNCACHED_BASE) as *const u32);
+        let _ = core::ptr::read_volatile((crate::mmu::UNCACHED_BASE + 0x80) as *const u32);
     }
     crate::delay::Delay::init(unsafe { esp32p4_pac::SYSTIMER::steal() }).delay_us(1);
 

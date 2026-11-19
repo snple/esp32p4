@@ -168,9 +168,11 @@ pub use esp32p4_rt as rt;
 pub mod cache;
 pub mod clock;
 pub mod delay;
+pub mod efuse;
 pub mod emac;
 pub mod gpio;
 pub mod interrupt;
+pub mod mmu;
 #[cfg(feature = "net")]
 pub mod net;
 pub mod psram;

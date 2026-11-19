@@ -25,6 +25,9 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | 二进制 | 内容 |
 |--------|------|
 | `blink` | GPIO2 每 500 ms 翻转一次 |
+| `gpio_interrupt` | GPIO3 下降沿中断（`GPIO_INTR0` + CPU 线 21）翻转 GPIO2 |
+| `efuse` | 打印芯片版本、MAC、Flash/PSRAM 参数，并用版本号配置时钟树（需 `--features defmt`） |
+| `mmu` | 把 PSRAM 物理页 0 映射到 MMU 表项 512，验证 cached/uncached 别名（需 `--features defmt`） |
 | `psram` | 初始化封装内 PSRAM，整体作为全局堆使用 |
 | `psram_split` | 把 PSRAM 分成「cached 全局堆 + uncached DMA 池」两部分 |
 | `defmt_log` | 用 `defmt-rtt` 输出日志（需 `--features defmt`，JTAG 读取） |
@@ -401,6 +404,75 @@ interrupt::free(|cs| COUNTER.borrow(cs).set(0));
 - **矩阵状态**：`source_pending(source)` 读 `CORE0_INTR_STATUS_REG_n`，共享中断线的
   处理器据此判断是自己的哪个源。
 
+### GPIO 中断与外设信号路由
+
+[`gpio`](esp32p4/src/gpio/mod.rs) 现在覆盖 GPIO 交换矩阵的两件事：
+
+- **中断**：`GPIO_PINn.INT_TYPE` 选边沿/电平，`INT_ENA` 的 bit 13/14/16/17 分别对应
+  `GPIO_INTR0..3`；`GPIO_STATUS_INTERRUPT` 是四个线共用的锁存状态，`clear_interrupt()`
+  走 `STATUS_W1TC`，`interrupt_pending(line)` 读对应线的 `GPIO_INTRn`。
+  `InterruptLine::source()` 直接给出 `Interrupt::GPIO_INTn`，交给 `interrupt::claim`。
+- **信号路由**：[`gpio::signal`](esp32p4/src/gpio/signal.rs) 按 TRM 表 10.12-1 生成了全部
+  输入/输出信号的具名常量。发送方向用 `Pin::set_output_signal`（输出使能可来自
+  `GPIO_ENABLE` 或外设），接收方向用 `Pin::set_input_signal`；同一个引脚可以同时喂给
+  多个输入信号。
+
+```rust
+use esp32p4::gpio::signal::{InputSignal, OutputSignal};
+
+tx.set_output_signal(OutputSignal::UART0_TXD_PAD_OUT);
+rx.set_input_signal(InputSignal::UART0_RXD_PAD_IN);
+
+button.set_interrupt_type(InterruptType::NegativeEdge);
+button.enable_interrupt(InterruptLine::Line0);
+let handler = unsafe {
+    interrupt::claim(InterruptLine::Line0.source(), CpuInterrupt::new(21), Level::LOW, isr)
+};
+handler.enable();
+```
+
+## eFuse 与芯片版本
+
+[`efuse`](esp32p4/src/efuse.rs) 只读 BLOCK0/1 的寄存器快照（bootloader 已在复位时加载）：
+
+- `chip_version()`：主/次版本，`revision()` 采用 ESP-IDF 的 `major*100+minor`；
+  `cpll_hz()` 在 v3.0 之前返回 360 MHz，v3.0 起返回 400 MHz。
+- `mac()`：出厂 48 位 MAC。
+- `flash_type()` / `flash_page_size_code()` / `flash_ecc_enabled()` /
+  `flash_power_up_delay_ms()`。
+- `psram_capacity_code()` / `psram_vendor()` / `package_version()` /
+  `temperature_code()`。
+
+需要版本相关默认值的模块现在直接吃这个句柄：
+
+```rust
+let efuse = Efuse::init(dp.EFUSE);
+let clocks = ClockTree::init_from_efuse(dp.HP_SYS_CLKRST, dp.LP_AON_CLKRST, &efuse);
+let psram = Psram::init(PsramConfig::from_efuse(&efuse))?;
+```
+
+## 外部内存 MMU 与 cache
+
+[`mmu`](esp32p4/src/mmu.rs) 把 PSRAM 控制器的 1024 个 64 KB 表项做成带所有权的
+`Region`：
+
+```rust
+let alias = Region::map(0, 512, 1).unwrap();   // 物理页 0 → 表项 512
+let cached = alias.cached_ptr();               // 0x4A00_0000
+let uncached = alias.uncached_ptr();           // 0x8A00_0000
+alias.unmap();
+```
+
+映射表用一个全局位图记录占用，重叠映射返回 `Error::AlreadyMapped`；`map`/`unmap` 会自动
+失效对应窗口的 cache 行。`Psram` 现在内部就持有这个 `Region`。
+
+[`cache`](esp32p4/src/cache.rs) 补齐了 DMA 一致性和现场保护：
+
+- `writeback`（只清脏位）、`invalidate`（丢弃副本）、`writeback_invalidate`（交给 DMA
+  后还要读回）；
+- `suspend()` / `resume()` 暂停 L1 I/D 与 L2，用于改 Flash/PSRAM 时序或重映射 MMU；
+  这两个包装函数放在 `.ramfunc`，调用方的临界区也必须从 RAM 执行。
+
 ## 定时器
 
 按用途分成三层：
@@ -638,7 +710,8 @@ espflash save-image --chip esp32p4 \
 
 - 从 SVD 生成完整 PAC（89 个外设、约 5600 个展开寄存器）
 - RISC-V 启动、trap 入口、CSR/汇编封装、ESP-IDF 兼容镜像布局
-- GPIO0–GPIO53 的简单推挽输出/输入、IO MUX 配置
+- GPIO0–GPIO53 的推挽/开漏输出与输入、IO MUX 配置、四路中断（边沿/电平、按线使能与状态清除）、
+  完整的 HP GPIO 交换矩阵信号路由（`gpio::signal`）
 - SYSTIMER 阻塞延时（`sleep_ms` / `sleep_until`）与单调时钟（`time::Instant` / `Duration`）
 - SYSTIMER 比较器闹钟（`Systimer` → `Alarm1` / `Alarm2`：绝对 deadline 与周期模式，带中断）
 - 定时器组（`TimerGroup0/1` → `Timer00/01/10/11`：4 路 54 位计数器，时钟源与预分频、增/减计数、
@@ -650,7 +723,10 @@ espflash save-image --chip esp32p4 \
 - 复位控制与复位原因（`system::software_reset` / `software_reset_cpu` / `reset_reason`，纯寄存器实现）；
   外设复位（`reset::Resettable`：`HP_SYS_CLKRST.HP_RST_EN0/1/2` 上的 HP 外设位，
   `init()` / `reset()` / `unreset()`，掩码可用 `|` 组合）
-- 封装内 PSRAM 初始化（MPLL 250 MHz、16/32 MB 自动检测、MMU 映射、`PsramAllocator`）
+- 封装内 PSRAM 初始化（MPLL 250 MHz、16/32 MB 自动检测、MMU 映射、`PsramAllocator`）；
+  `mmu::Region` 提供外部内存页的 map/unmap 与 cached/uncached 地址
+- eFuse 只读访问（芯片/块版本、MAC、Flash 与 PSRAM 参数），`clock`/`psram` 可按版本取默认值
+- cache 维护补齐 `writeback_invalidate` 与 L1 I/D + L2 的 `suspend`/`resume`
 - USB Serial/JTAG（CDC-ACM）收发：`UsbSerialJtag`，以及可选的 `defmt` 全局 logger
 - 以太网 MAC（RMII + MDIO + DMA 描述符环），含 L1/L2 cache 维护
 - 同步 TCP/IP（smoltcp）：DHCP 客户端、TCP/UDP/ICMP、可选 IPv6，无 async、堆可选

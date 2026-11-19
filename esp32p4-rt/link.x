@@ -136,9 +136,18 @@ SECTIONS
 
 PROVIDE(__global_pointer$ = MIN(_sdata + 0x800, _edata));
 
-/* Mask ROM entry points used by the PSRAM bring-up (addresses from
- * ESP-IDF's `esp32p4.rom.ld`; the ROM lives at 0x4FC0_0000). */
+/* Mask ROM entry points used by the PSRAM bring-up and cache maintenance
+ * (addresses from ESP-IDF's `esp32p4.rom.ld`; the ROM lives at 0x4FC0_0000). */
 PROVIDE(esp_rom_spi_cmd_config = 0x4fc00108);
 PROVIDE(esp_rom_spi_set_op_mode = 0x4fc00110);
 PROVIDE(Cache_Invalidate_Addr = 0x4fc003e4);
 PROVIDE(Cache_WriteBack_Addr = 0x4fc003f4);
+PROVIDE(Cache_WriteBack_Invalidate_Addr = 0x4fc003fc);
+PROVIDE(Cache_Suspend_L1_CORE0_ICache = 0x4fc004d8);
+PROVIDE(Cache_Resume_L1_CORE0_ICache = 0x4fc004dc);
+PROVIDE(Cache_Suspend_L1_CORE1_ICache = 0x4fc004e8);
+PROVIDE(Cache_Resume_L1_CORE1_ICache = 0x4fc004ec);
+PROVIDE(Cache_Suspend_L1_DCache = 0x4fc004f8);
+PROVIDE(Cache_Resume_L1_DCache = 0x4fc004fc);
+PROVIDE(Cache_Suspend_L2_Cache = 0x4fc00508);
+PROVIDE(Cache_Resume_L2_Cache = 0x4fc0050c);

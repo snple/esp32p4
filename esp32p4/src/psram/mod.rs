@@ -17,13 +17,17 @@
 //! - 250 MHz bus clock from the MPLL, no PLL configuration from the
 //!   application required
 //! - Optional allocator: [`PsramAllocator`]
+//! - Mapping through [`crate::mmu::Region`], with the cached and uncached
+//!   addresses exposed as `Psram::base` / `Psram::uncached_base`
 //!
 //! # Example
 //!
 //! ```ignore
+//! use esp32p4::efuse::Efuse;
 //! use esp32p4::psram::{Psram, PsramConfig};
 //!
-//! let psram = Psram::init(PsramConfig::default()).unwrap();
+//! let efuse = Efuse::init(dp.EFUSE);
+//! let psram = Psram::init(PsramConfig::from_efuse(&efuse)).unwrap();
 //! let (ptr, len) = psram.raw_parts();
 //! let ram = unsafe { core::slice::from_raw_parts_mut(ptr, len) };
 //! ram[0] = 0x5a;
@@ -77,7 +81,8 @@ pub struct PsramConfig {
     /// Enable the silicon revision 3.0 workaround.
     ///
     /// ESP32-P4 v3.0 (ECO5) needs two dummy reads and a controller reset before
-    /// the MMU mapping is committed. Enable it when running on such a die.
+    /// the MMU mapping is committed. Use [`PsramConfig::from_efuse`] to set it
+    /// from the chip version instead of hard-coding the revision.
     pub rev3_workaround: bool,
     /// Write and read back a pattern after mapping.
     pub verify: bool,
@@ -90,6 +95,19 @@ impl Default for PsramConfig {
             size: PsramSize::Auto,
             rev3_workaround: false,
             verify: true,
+        }
+    }
+}
+
+impl PsramConfig {
+    /// Build a configuration whose revision-dependent parts come from eFuse.
+    ///
+    /// Currently that is [`rev3_workaround`](Self::rev3_workaround): dies at
+    /// v3.0 or later need the workaround, older ones do not.
+    pub fn from_efuse(efuse: &crate::efuse::Efuse) -> Self {
+        Self {
+            rev3_workaround: efuse.chip_version().revision() >= 300,
+            ..Self::default()
         }
     }
 }
@@ -108,12 +126,13 @@ pub enum Error {
     VerifyFailed,
     /// PSRAM has already been initialized.
     AlreadyInitialized,
+    /// The MMU window could not be claimed.
+    Mmu(crate::mmu::Error),
 }
 
 /// Handle to the mapped PSRAM window.
 pub struct Psram {
-    start: usize,
-    size: usize,
+    region: crate::mmu::Region,
 }
 
 static INITIALIZED: AtomicBool = AtomicBool::new(false);
@@ -144,16 +163,24 @@ impl Psram {
             PsramSize::Auto => detected,
             PsramSize::Bytes(bytes) => bytes.min(detected),
         };
-        mspi::map(size);
-        info!("PSRAM: {} bytes mapped at {:#x}", size, mspi::BASE);
-
-        let psram = Self {
-            start: mspi::BASE,
-            size,
+        let region = match mspi::map(size) {
+            Ok(region) => region,
+            Err(err) => {
+                INITIALIZED.store(false, Ordering::Release);
+                return Err(Error::Mmu(err));
+            }
         };
+        info!(
+            "PSRAM: {} bytes mapped at {:#x}",
+            size,
+            region.cached_addr()
+        );
+
+        let psram = Self { region };
 
         if config.verify && !psram.check() {
             warn!("PSRAM: read-back check failed");
+            psram.region.unmap();
             INITIALIZED.store(false, Ordering::Release);
             return Err(Error::VerifyFailed);
         }
@@ -161,30 +188,36 @@ impl Psram {
         Ok(psram)
     }
 
+    /// The MMU region backing the window.
+    #[inline]
+    pub const fn region(&self) -> &crate::mmu::Region {
+        &self.region
+    }
+
     /// First address of the mapped window.
     #[inline]
-    pub const fn base(&self) -> *mut u8 {
-        self.start as *mut u8
+    pub fn base(&self) -> *mut u8 {
+        self.region.cached_ptr()
     }
 
     /// Size of the mapped window in bytes.
     #[inline]
-    pub const fn size(&self) -> usize {
-        self.size
+    pub fn size(&self) -> usize {
+        self.region.size()
     }
 
     /// Raw pointer and length of the mapped window.
     #[inline]
-    pub const fn raw_parts(&self) -> (*mut u8, usize) {
-        (self.base(), self.size)
+    pub fn raw_parts(&self) -> (*mut u8, usize) {
+        (self.base(), self.size())
     }
 
     /// Uncached alias of the mapped window, bypassing the L2 cache.
     ///
     /// Use this for DMA buffers or when the cache must not interfere.
     #[inline]
-    pub const fn uncached_base(&self) -> *mut u8 {
-        (mspi::UNCACHED_BASE + (self.start - mspi::BASE)) as *mut u8
+    pub fn uncached_base(&self) -> *mut u8 {
+        self.region.uncached_ptr()
     }
 
     /// Writes a pattern to the start of the window and reads it back.

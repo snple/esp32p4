@@ -19,25 +19,27 @@
 | `reset` | [reset.rs](../esp32p4/src/reset.rs) | `HP_RST_EN0/1/2` 上的外设复位 |
 | `timer` | [timer/mod.rs](../esp32p4/src/timer/mod.rs) | TIMG0/1 四路计数器与两个 MWDT，中断归 group |
 | `systimer` | [systimer.rs](../esp32p4/src/systimer.rs) | COMP1/COMP2 闹钟，COMP0 归 `Delay` |
-| `gpio` | [gpio.rs](../esp32p4/src/gpio.rs) | 引脚电气配置与 GPIO 读写（**无中断、无外设信号路由**） |
+| `gpio` | [gpio/](../esp32p4/src/gpio) | 引脚电气配置、GPIO 读写、四路中断与完整的 HP GPIO 交换矩阵信号路由 |
 | `interrupt` | [interrupt.rs](../esp32p4/src/interrupt.rs) | CLIC 线与矩阵、`claim`/`InterruptHandler` |
 | `emac` / `net` | [emac/](../esp32p4/src/emac) / [net.rs](../esp32p4/src/net.rs) | RMII + MDIO + DMA，smoltcp 同步栈 |
 | `psram` | [psram/](../esp32p4/src/psram) | MPLL、MSPI、MMU 映射、分配器 |
 | `usb` | [esp32p4-usb](../esp32p4-usb/) | USB OTG **设备（slave）** 侧：CDC-ACM 等 |
 | `usb_serial_jtag` | [usb_serial_jtag.rs](../esp32p4/src/usb_serial_jtag.rs) | USB Serial/JTAG 控制台 |
 | `system` / `startup` | [system.rs](../esp32p4/src/system.rs) / [startup.rs](../esp32p4/src/startup.rs) | 软复位、复位原因、看门狗与核 1 的启动清理 |
-| `cache` | [cache.rs](../esp32p4/src/cache.rs) | 只有 writeback/invalidate |
+| `cache` | [cache.rs](../esp32p4/src/cache.rs) | writeback / invalidate / writeback_invalidate，L1 I/D + L2 挂起与恢复 |
+| `efuse` | [efuse.rs](../esp32p4/src/efuse.rs) | 芯片/块版本、MAC、Flash/PSRAM 参数的只读访问 |
+| `mmu` | [mmu.rs](../esp32p4/src/mmu.rs) | 外部内存页的 map/unmap、cached/uncached 窗口与占用位图 |
 | `tcm` | [tcm.rs](../esp32p4/src/tcm.rs) | 8 KB HP SPM（寄存器里叫 HP TCM）：`#[ramfunc]` / `#[tcmfunc]` / `#[tcmdata]` 放置、范围查询、奇偶校验初始化 |
 
-## 2. 第 0 层：先补现有模块的缺口
+## 2. 第 0 层：现有模块的缺口（已完成）
 
-后面所有驱动都建立在这一层上。
+后面所有驱动都建立在这一层上。三项缺口已经补齐：
 
-| 缺口 | 现状 | 需要补什么 | 为什么是前置 |
-|------|------|------------|--------------|
-| **GPIO 中断 + 外设信号矩阵** | `gpio.rs` 只有引脚电气配置和 GPIO 读写，`FUNCx_OUT_SEL` 固定指向 GPIO | GPIO_INTR 的边沿/电平配置、状态清除与 CPU 线；`FUNCx_OUT_SEL/IN_SEL` 的外设信号路由 API | UART/SPI/I2S/LEDC/RMT 想用引脚都要经过 GPIO matrix；按键与传感器中断也在这里 |
-| **eFuse / 芯片版本** | 没有 | 芯片版本、MAC、Flash/PSRAM 参数的只读访问 | CPLL 是 360 还是 400 MHz、PSRAM 时序、USB PHY 都取决于版本；`clock::Sources` 目前只能由用户手填 |
-| **MMU / cache 公共 API** | region 映射藏在 `psram` 里，`cache` 只有 writeback/invalidate | 外部内存 region 的 map/unmap、DMA 一致性维护、切换频率前挂起 ext-mem cache | 接外部 PSRAM 以外的映射、DMA 缓冲、`set_cpu_frequency` 的前置操作都要它 |
+| 项 | 实现 | 为什么是前置 |
+|----|------|--------------|
+| **GPIO 中断 + 外设信号矩阵** | `gpio`：`InterruptType`/`InterruptLine`、`STATUS`/`INTRn` 状态与清除、`signal` 下完整的 `OUT_SEL`/`IN_SEL` 路由 API | UART/SPI/I2S/LEDC/RMT 想用引脚都要经过 GPIO matrix；按键与传感器中断也在这里 |
+| **eFuse / 芯片版本** | `efuse`：芯片/块版本、MAC、Flash/PSRAM 参数；`Sources::from_efuse`、`ClockTree::init_from_efuse`、`PsramConfig::from_efuse` | CPLL 是 360 还是 400 MHz、PSRAM 时序、USB PHY 都取决于版本；`clock::Sources` 不再需要手工填写 |
+| **MMU / cache 公共 API** | `mmu::Region` 的 map/unmap 与占用位图；`cache::writeback_invalidate`、`cache::suspend`/`resume` | 接外部 PSRAM 以外的映射、DMA 缓冲、`set_cpu_frequency` 的前置操作都要它 |
 
 ## 3. 第 1 层：通信与常用外设
 
@@ -74,10 +76,10 @@ I3C、UHCI、SOC_ETM（事件矩阵）、APM/访问权限、eFuse 编程、运�
 
 | 阶段 | 内容 | 验收 |
 |------|------|------|
-| 0 | eFuse / 芯片版本、MMU/cache 公共 API | `clock`/`psram` 不再需要手工参数 |
-| 1 | GPIO 信号矩阵 + GPIO 中断 | 引脚可以路由到任一外设信号；按键中断示例可编译 |
+| 0 | ~~eFuse / 芯片版本、MMU/cache 公共 API~~ | 已完成：`clock`/`psram` 不再需要手工参数 |
+| 1 | ~~GPIO 信号矩阵 + GPIO 中断~~ | 已完成：引脚可以路由到任一外设信号，`gpio_interrupt` 示例可编译 |
 | 2 | UART（含 LP UART） | 轮询与中断收发示例，README 与模块文档更新 |
-| 3 | eFuse / 芯片版本 | `clock` 与 `psram` 按版本判断，不再需要手工 `Sources` |
+| 3 | ~~eFuse / 芯片版本~~ | 已完成：`clock` 与 `psram` 按版本判断，不再需要手工 `Sources` |
 | 4 | I2C（HP + LP） | 扫描/读写示例 |
 | 5 | GDMA | 描述符环 + UART/SPI 的 DMA 路径 |
 | 6 | SPI/SD、ADC/TSENS、PWM 家族 | 各自示例 |
