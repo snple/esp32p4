@@ -18,13 +18,13 @@
 #[cfg(feature = "defmt-rtt")]
 use defmt_rtt as _;
 #[cfg(feature = "defmt")]
-defmt::timestamp!("{=u64:us}", esp32p4::delay::micros());
+defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
-use esp32p4::gpio::Pins;
-use esp32p4::main;
-use esp32p4::pac::Peripherals;
-use esp32p4::uart::{DataBits, Parity, StopBits, Uart1, UartConfig};
-use esp32p4::usb_serial_jtag::UsbSerialJtag;
+use esp32p4_hal::gpio::Pins;
+use esp32p4_hal::main;
+use esp32p4_hal::pac::Peripherals;
+use esp32p4_hal::uart::{DataBits, Parity, StopBits, Uart1, UartConfig};
+use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
 
 /// GPIO used for TX when loopback is turned off.
 const UART_TX_PIN: u32 = 20;

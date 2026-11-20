@@ -13,7 +13,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | [`esp32p4-pac`](esp32p4-pac/) | **PAC**：由 `esp32p4.svd` 生成，提供寄存器块、字段常量和访问器。勿手改 |
 | [`esp32p4-rt`](esp32p4-rt/) | **运行时**：`_start`、trap 入口、`link.x`、CSR/汇编封装 |
 | [`esp32p4-macro`](esp32p4-macro/) | **过程宏**：`#[main]` |
-| [`esp32p4`](esp32p4/) | **HAL**：时钟树、GPIO / IO MUX、UART、I2C 主机、ADC、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
+| [`esp32p4-hal`](esp32p4-hal/) | **HAL**：时钟树、GPIO / IO MUX、UART、I2C 主机、ADC、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
 | [`esp32p4-usb`](esp32p4-usb/) | **USB 设备栈**：DWC OTG 全速/高速控制器（slave 模式、轮询）、标准请求与描述符、CDC-ACM 虚拟串口、自定义类 |
 | [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、UART 回环、I2C 扫描、ADC 采样、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC |
 | [`xtask`](xtask/) | 构建辅助：`cargo xtask gen-pac` |
@@ -54,11 +54,11 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 #![no_std]
 #![no_main]
 
-use esp32p4::delay::Delay;
-use esp32p4::gpio::Pins;
-use esp32p4::main;
-use esp32p4::pac::Peripherals;
-use esp32p4::usb_serial_jtag::UsbSerialJtag;
+use esp32p4_hal::delay::Delay;
+use esp32p4_hal::gpio::Pins;
+use esp32p4_hal::main;
+use esp32p4_hal::pac::Peripherals;
+use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
 
 #[main]
 fn main() -> ! {
@@ -158,7 +158,7 @@ USB 转串口芯片。
 ```rust
 use core::fmt::Write;
 
-use esp32p4::usb_serial_jtag::UsbSerialJtag;
+use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
 
 let mut serial = UsbSerialJtag::init(
     dp.USB_DEVICE,
@@ -339,7 +339,7 @@ if let Some(rx) = emac.receive() {
   没打开时**第一次访问 MAC 寄存器就会 fault**（现象是程序在 `Emac::init` 里静默挂死），
   驱动在钟树配置前先把它置位。
 - **DMA**：32 字节增强描述符、`ALT_DESC_SIZE = 1`，描述符和缓冲区必须常驻
-  `static`。驱动通过 [`cache`](esp32p4/src/cache.rs) 在交给 MAC 前 writeback、
+  `static`。驱动通过 [`cache`](esp32p4-hal/src/cache.rs) 在交给 MAC 前 writeback、
   在读回前 invalidate；放在 PSRAM uncached 窗口则不需要维护。
 - **描述符和缓冲区各自独占一个 cache 行**（`#[repr(C, align(64))]`）。cache 维护以整行
   为单位，而描述符只有 32 字节：两个描述符共用一行时，写回当前描述符会把它邻居里 DMA 刚
@@ -352,7 +352,7 @@ if let Some(rx) = emac.receive() {
   `transmit`/`receive` 都不阻塞等待。
 - **统计**：这块 MAC 没有 Synopsys 的 MMC 计数器块，真计数只有 `DMAMISSEDFR` 里的两个:
   `Missed_FC`（没有空闲描述符而丢的帧）和 `Overflow_FC`（RX FIFO 溢出丢的帧）。该寄存器
-  **读清**，所以 [`Emac::stats`](esp32p4/src/emac/mod.rs) 每次采样先累加，返回的是自
+  **读清**，所以 [`Emac::stats`](esp32p4-hal/src/emac/mod.rs) 每次采样先累加，返回的是自
   `init` 以来的累计值。描述符状态位和 `DMASTATUS` 都是"看一眼就没了"的一次性状态，不为了
   凑一张 MMC 表去软件复刻。
 
@@ -464,7 +464,7 @@ P4 没有 PLIC，用的是 Espressif 自己的 CLIC（TRM 第 1 章）：
   MAC 中断打断，wfi 与忙轮询收到的帧数相同（1195 vs 1199 帧/5 s）。
 - 处理器是普通 `fn()`，注册到按 CPU 中断线索引的表里；处理期间 `MIE = 0`，不支持嵌套。
 
-HAL 固定占用两条线（见 [`interrupt::lines`](esp32p4/src/interrupt.rs)）：
+HAL 固定占用两条线（见 [`interrupt::lines`](esp32p4-hal/src/interrupt.rs)）：
 
 | 线 | 用途 |
 |----|------|
@@ -475,9 +475,9 @@ HAL 固定占用两条线（见 [`interrupt::lines`](esp32p4/src/interrupt.rs)�
 
 ```rust
 // 打开 MAC 中断，处理器只做两件事：清 DMASTATUS、置一个标志
-emac.enable_interrupts(esp32p4::interrupt::lines::EMAC);
+emac.enable_interrupts(esp32p4_hal::interrupt::lines::EMAC);
 // 全局开关（启动最后一步）
-unsafe { esp32p4::interrupt::enable() };
+unsafe { esp32p4_hal::interrupt::enable() };
 
 loop {
     net.poll_wait(&mut emac, 20);   // 有活干就处理，没活就 wfi 睡 20 ms 或睡到定时器
@@ -491,10 +491,10 @@ ISR 里不碰描述符环：环的所有权仍然只在主循环里，中断只�
 
 ### HAL 中断接口
 
-[`esp32p4::interrupt`](esp32p4/src/interrupt.rs) 把矩阵、CLIC 和处理器表包成一套带所有权的 API：
+[`esp32p4_hal::interrupt`](esp32p4-hal/src/interrupt.rs) 把矩阵、CLIC 和处理器表包成一套带所有权的 API：
 
 ```rust
-use esp32p4::interrupt::{self, CpuInterrupt, Interrupt, Level};
+use esp32p4_hal::interrupt::{self, CpuInterrupt, Interrupt, Level};
 
 fn isr() { /* 清外设状态，置一个标志 */ }
 
@@ -529,19 +529,19 @@ interrupt::free(|cs| COUNTER.borrow(cs).set(0));
 
 ### GPIO 中断与外设信号路由
 
-[`gpio`](esp32p4/src/gpio/mod.rs) 现在覆盖 GPIO 交换矩阵的两件事：
+[`gpio`](esp32p4-hal/src/gpio/mod.rs) 现在覆盖 GPIO 交换矩阵的两件事：
 
 - **中断**：`GPIO_PINn.INT_TYPE` 选边沿/电平，`INT_ENA` 的 bit 13/14/16/17 分别对应
   `GPIO_INTR0..3`；`GPIO_STATUS_INTERRUPT` 是四个线共用的锁存状态，`clear_interrupt()`
   走 `STATUS_W1TC`，`interrupt_pending(line)` 读对应线的 `GPIO_INTRn`。
   `InterruptLine::source()` 直接给出 `Interrupt::GPIO_INTn`，交给 `interrupt::claim`。
-- **信号路由**：[`gpio::signal`](esp32p4/src/gpio/signal.rs) 按 TRM 表 10.12-1 生成了全部
+- **信号路由**：[`gpio::signal`](esp32p4-hal/src/gpio/signal.rs) 按 TRM 表 10.12-1 生成了全部
   输入/输出信号的具名常量。发送方向用 `Pin::set_output_signal`（输出使能可来自
   `GPIO_ENABLE` 或外设），接收方向用 `Pin::set_input_signal`；同一个引脚可以同时喂给
   多个输入信号。
 
 ```rust
-use esp32p4::gpio::signal::{InputSignal, OutputSignal};
+use esp32p4_hal::gpio::signal::{InputSignal, OutputSignal};
 
 tx.set_output_signal(OutputSignal::UART0_TXD_PAD_OUT);
 rx.set_input_signal(InputSignal::UART0_RXD_PAD_IN);
@@ -571,18 +571,18 @@ TWAI、PWM、PCNT、RMT、SD、USB 控制信号……）。以下几类是例外
 都是 GPIO（走矩阵），功能 0/2/3 是焊盘专有的 —— GPIO2–5 的 JTAG、GPIO8–13 与 37–38 的
 UART、GPIO6–11/28–38 的 SPI2 flash、GPIO39–48 的 SD1、GPIO28–53 的 GMAC PHY/RMII。
 
-[`gpio::pins`](esp32p4/src/gpio/pins.rs) 把 TRM 的「HP IO MUX Pin Functions」和
+[`gpio::pins`](esp32p4-hal/src/gpio/pins.rs) 把 TRM 的「HP IO MUX Pin Functions」和
 「GPIO Pin Analog Functions」两张表编成 `PAD_TABLE`：
 
 ```rust
-use esp32p4::gpio::MuxFunction;
+use esp32p4_hal::gpio::MuxFunction;
 
 let mut sd_clk = pins.pin::<43>();
 sd_clk.set_mux_function(MuxFunction::Sd1Cclk);   // 写 MCU_SEL = 0
 assert_eq!(sd_clk.mux_function(), Some(MuxFunction::Sd1Cclk));
 sd_clk.set_mux_function(MuxFunction::Gpio);      // 回到矩阵
 
-for pad in esp32p4::gpio::pins::pads_with(MuxFunction::Uart0Txd) {
+for pad in esp32p4_hal::gpio::pins::pads_with(MuxFunction::Uart0Txd) {
     // GPIO37
 }
 ```
@@ -594,7 +594,7 @@ for pad in esp32p4::gpio::pins::pads_with(MuxFunction::Uart0Txd) {
 
 ## UART
 
-[`uart`](esp32p4/src/uart.rs) 覆盖 `UART0..UART4`（LP UART 的寄存器布局相同，但走 LP GPIO
+[`uart`](esp32p4-hal/src/uart.rs) 覆盖 `UART0..UART4`（LP UART 的寄存器布局相同，但走 LP GPIO
 矩阵，等 LP 引脚模型补上再接）：
 
 - 轮询收发：`write`/`write_byte`/`flush`、`read`/`read_byte`/`read_byte_blocking`、
@@ -619,7 +619,7 @@ uart.flush();
 
 ## I2C
 
-[`i2c`](esp32p4/src/i2c.rs) 是 `I2C0`/`I2C1` 的主机模式驱动：
+[`i2c`](esp32p4-hal/src/i2c.rs) 是 `I2C0`/`I2C1` 的主机模式驱动：
 
 - 100 kHz / 400 kHz 及介于其间的任意 SCL 频率，时钟源 XTAL 或 RC_FAST；
   时序按 ESP-IDF `i2c_ll_master_cal_bus_clk` 的公式算（预分频 + 低/高/等待高/保持/建立）；
@@ -644,11 +644,11 @@ i2c.write_read(0x48, &[0x0f], &mut value).unwrap();
 
 ## ADC
 
-[`adc`](esp32p4/src/adc.rs) 是两路 12 位 SAR ADC 的 one-shot 驱动（RTC/LP 控制器；
+[`adc`](esp32p4-hal/src/adc.rs) 是两路 12 位 SAR ADC 的 one-shot 驱动（RTC/LP 控制器；
 HP 数字控制器 + DMA 的连续采样模式还没做）：
 
 - `ADC1` 八通道（GPIO16–23）、`ADC2` 六通道（GPIO49–54）；ADC 通道不是 GPIO 矩阵信号，
-  `AdcInput::new` 从焊盘功能表（[`gpio::pins`](esp32p4/src/gpio/pins.rs)）反查通道号，
+  `AdcInput::new` 从焊盘功能表（[`gpio::pins`](esp32p4-hal/src/gpio/pins.rs)）反查通道号，
   并把焊盘设成浮空（关输入缓冲、关上下拉、关输出）；
 - 每个通道独立衰减：0 / 2.5 / 6 / 12 dB，随 `AdcInput` 携带；
 - 阻塞读取 `read_raw`（0–4095）与 `read_millivolts`，也可以 `start` / `is_done` /
@@ -670,7 +670,7 @@ mV，差异来自采样把焊盘电容一点点放掉），说明衰减与校准
 
 ## eFuse 与芯片版本
 
-[`efuse`](esp32p4/src/efuse.rs) 只读 BLOCK0/1 的寄存器快照（bootloader 已在复位时加载）：
+[`efuse`](esp32p4-hal/src/efuse.rs) 只读 BLOCK0/1 的寄存器快照（bootloader 已在复位时加载）：
 
 - `chip_version()`：主/次版本，`revision()` 采用 ESP-IDF 的 `major*100+minor`；
   `cpll_hz()` 在 v3.0 之前返回 360 MHz，v3.0 起返回 400 MHz。
@@ -690,7 +690,7 @@ let psram = Psram::init(PsramConfig::from_efuse(&efuse))?;
 
 ## 外部内存 MMU 与 cache
 
-[`mmu`](esp32p4/src/mmu.rs) 把 PSRAM 控制器的 1024 个 64 KB 表项做成带所有权的
+[`mmu`](esp32p4-hal/src/mmu.rs) 把 PSRAM 控制器的 1024 个 64 KB 表项做成带所有权的
 `Region`：
 
 ```rust
@@ -703,7 +703,7 @@ alias.unmap();
 映射表用一个全局位图记录占用，重叠映射返回 `Error::AlreadyMapped`；`map`/`unmap` 会自动
 失效对应窗口的 cache 行。`Psram` 现在内部就持有这个 `Region`。
 
-[`cache`](esp32p4/src/cache.rs) 补齐了 DMA 一致性和现场保护：
+[`cache`](esp32p4-hal/src/cache.rs) 补齐了 DMA 一致性和现场保护：
 
 - `writeback`（只清脏位）、`invalidate`（丢弃副本）、`writeback_invalidate`（交给 DMA
   后还要读回）；
@@ -716,9 +716,9 @@ alias.unmap();
 
 | 模块 | 硬件 | 计数单位 | 用途 |
 |------|------|----------|------|
-| [`time`](esp32p4/src/time.rs) | `SYSTIMER` unit 0 | 16 MHz tick（62.5 ns） | 单调时钟：`Instant` / `Duration`；52 位，约 8.9 年回绕 |
-| [`systimer`](esp32p4/src/systimer.rs) | `SYSTIMER` COMP1 / COMP2 | 同上 | 绝对 deadline（一次性）与固定周期闹钟，带中断 |
-| [`timer`](esp32p4/src/timer/mod.rs) | `TIMG0` / `TIMG1`，各 2 路 + 1 个 MWDT | 可配预分频，默认 1 µs | `TimerGroup0/1` → `Timer00/01/10/11` 通用计数器 + `Watchdog0/1` 看门狗 |
+| [`time`](esp32p4-hal/src/time.rs) | `SYSTIMER` unit 0 | 16 MHz tick（62.5 ns） | 单调时钟：`Instant` / `Duration`；52 位，约 8.9 年回绕 |
+| [`systimer`](esp32p4-hal/src/systimer.rs) | `SYSTIMER` COMP1 / COMP2 | 同上 | 绝对 deadline（一次性）与固定周期闹钟，带中断 |
+| [`timer`](esp32p4-hal/src/timer/mod.rs) | `TIMG0` / `TIMG1`，各 2 路 + 1 个 MWDT | 可配预分频，默认 1 µs | `TimerGroup0/1` → `Timer00/01/10/11` 通用计数器 + `Watchdog0/1` 看门狗 |
 
 `time` 只读计数器，永远自由运行；`Delay` 在它上面借 comparator 0 睡到指定 tick（`sleep_ms` 睡一段时间，`sleep_until(Instant)` 睡到某个时刻）。
 
@@ -814,13 +814,13 @@ Duration::from_secs(1))` 配合 `set_stage_action(stage, MwdtStageAction::ResetS
 - **源门控**：`source_enabled()` / `set_source_enabled()`（XTAL / RC_FAST / CPLL / SPLL / MPLL）。
 
 PLL 的模拟配置（分频、校准）不在这里：CPLL 由 bootloader 拉起，MPLL 由 PSRAM 初始化提供。
-树按 [`Sources`](esp32p4/src/clock.rs) 表报告频率，`init_with(..., Sources { cpll_hz: CPLL_400M_HZ, .. })`
+树按 [`Sources`](esp32p4-hal/src/clock.rs) 表报告频率，`init_with(..., Sources { cpll_hz: CPLL_400M_HZ, .. })`
 可以覆盖 400 MHz 的情况。
 
 ### `SYSTIMER` 比较器闹钟
 
 `SYSTIMER` 的 3 个比较器里，COMP0 归 `Delay`，另外两个是
-[`systimer::Systimer`](esp32p4/src/systimer.rs) 的部件：`systimer.alarm1`（COMP1）与
+[`systimer::Systimer`](esp32p4-hal/src/systimer.rs) 的部件：`systimer.alarm1`（COMP1）与
 `systimer.alarm2`（COMP2）。`Systimer::init(dp.SYSTIMER)` 接管外设所有权，每个 alarm 各持有
 一个指向同一寄存器的句柄；CPU 线由 `Systimer` 拥有，`enable_alarm1_interrupt(line, handler)` /
 `enable_alarm2_interrupt(...)` 负责申请与释放，drop 时自动屏蔽并交还。
@@ -876,13 +876,13 @@ ESP32-P4 不是“ROM 直接跳到应用”的芯片：镜像由 ESP-IDF 2nd-sta
 两个属性宏对应两种 RAM，都是“镜像里在 flash、启动时被 bootloader 拷到 RAM”：
 
 ```rust
-#[esp32p4::ramfunc]           // .ramfunc → SRAM，flash cache 挂起时仍可运行
+#[esp32p4_hal::ramfunc]           // .ramfunc → SRAM，flash cache 挂起时仍可运行
 fn mspi_retune() { /* ... */ }
 
-#[esp32p4::tcmfunc]           // .tcm.text → 0x3010_0000，CPU 自己的总线，无 cache
+#[esp32p4_hal::tcmfunc]           // .tcm.text → 0x3010_0000，CPU 自己的总线，无 cache
 fn fast_isr() { /* ... */ }
 
-#[esp32p4::tcmdata]           // .tcm.data → 0x3010_0000
+#[esp32p4_hal::tcmdata]           // .tcm.data → 0x3010_0000
 static SAMPLES: [u32; 64] = [0; 64];
 ```
 
@@ -892,7 +892,7 @@ static SAMPLES: [u32; 64] = [0; 64];
   它调用的函数不跟着走，需要一起标。
 - 初始化值随镜像在 flash，`link.x` 把 `.tcm.text` / `.tcm.data` 放进 `SPM` 区，
   `memory.x` 提供该区（本仓库两份 `memory.x` 已包含）。
-- [`tcm`](esp32p4/src/tcm.rs) 模块提供 `contains()`、`used_range()` 以及
+- [`tcm`](esp32p4-hal/src/tcm.rs) 模块提供 `contains()`、`used_range()` 以及
   `init_parity()`（SPM 的奇偶校验初始化，bootloader 不做）。
 - 例程见 [`esp32p4-examples/src/tcm.rs`](esp32p4-examples/src/tcm.rs)，它会打印每个
   函数实际落在哪个地址。
@@ -928,8 +928,8 @@ cargo xtask gen-pac --check    # 仅校验生成代码是否与 SVD 一致
 
 ```bash
 cargo check -p esp32p4-pac --target riscv32imafc-unknown-none-elf
-cargo check -p esp32p4 --target riscv32imafc-unknown-none-elf
-cargo clippy -p esp32p4 -p esp32p4-rt -p esp32p4-macro -p esp32p4-examples \
+cargo check -p esp32p4-hal --target riscv32imafc-unknown-none-elf
+cargo clippy -p esp32p4-hal -p esp32p4-rt -p esp32p4-macro -p esp32p4-examples \
   --target riscv32imafc-unknown-none-elf -- -D warnings
 cargo fmt --all -- --check
 cargo xtask gen-pac --check

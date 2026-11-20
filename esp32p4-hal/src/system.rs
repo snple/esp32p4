@@ -39,9 +39,9 @@
 //! # Example
 //!
 //! ```ignore
-//! use esp32p4::system::{software_reset, reset_reason, Cpu};
+//! use esp32p4_hal::system::{software_reset, reset_reason, Cpu};
 //!
-//! if reset_reason(Cpu::ProCpu) == Some(esp32p4::system::ResetReason::ChipPowerOn) {
+//! if reset_reason(Cpu::ProCpu) == Some(esp32p4_hal::system::ResetReason::ChipPowerOn) {
 //!     // cold boot
 //! }
 //!

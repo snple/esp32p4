@@ -22,7 +22,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use esp32p4::reset::Resettable;
+//! use esp32p4_hal::reset::Resettable;
 //! use esp32p4_pac::{I2C0, I2C1};
 //!
 //! // Reset and release again: every register back at its hardware default.
@@ -33,7 +33,7 @@
 //! I2C0::unreset();
 //!
 //! // Several peripherals at once.
-//! esp32p4::reset::reset(I2C0::RESET_MASK | I2C1::RESET_MASK);
+//! esp32p4_hal::reset::reset(I2C0::RESET_MASK | I2C1::RESET_MASK);
 //! ```
 
 use core::ops::{BitOr, BitOrAssign};

@@ -26,7 +26,7 @@
 //! pick a direct function instead of a matrix route:
 //!
 //! ```ignore
-//! use esp32p4::gpio::{MuxFunction, Pins};
+//! use esp32p4_hal::gpio::{MuxFunction, Pins};
 //!
 //! let mut sclk = pins.pin::<43>();
 //! sclk.set_mux_function(MuxFunction::Sd1Cclk);
@@ -1061,7 +1061,7 @@ impl Iterator for PadsWith {
 /// The pads that expose `function` directly through the IO MUX.
 ///
 /// ```ignore
-/// for pad in esp32p4::gpio::pins::pads_with(MuxFunction::Uart0Txd) {
+/// for pad in esp32p4_hal::gpio::pins::pads_with(MuxFunction::Uart0Txd) {
 ///     // GPIO37 is the only pad with a direct UART0 TXD function
 /// }
 /// ```

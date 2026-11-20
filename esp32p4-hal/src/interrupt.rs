@@ -61,7 +61,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use esp32p4::interrupt::{self, CpuInterrupt, Interrupt, Level};
+//! use esp32p4_hal::interrupt::{self, CpuInterrupt, Interrupt, Level};
 //!
 //! fn timer_isr() {
 //!     // acknowledge the peripheral here
@@ -474,7 +474,7 @@ where
 ///
 /// ```ignore
 /// use core::cell::RefCell;
-/// use esp32p4::interrupt::{self, Mutex};
+/// use esp32p4_hal::interrupt::{self, Mutex};
 ///
 /// static QUEUE: Mutex<RefCell<Queue>> = Mutex::new(RefCell::new(Queue::new()));
 ///

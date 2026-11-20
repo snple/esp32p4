@@ -32,7 +32,7 @@
 //!    exactly like `.data`.
 //!
 //! ```ignore
-//! #[esp32p4::tcmfunc]
+//! #[esp32p4_hal::tcmfunc]
 //! fn toggles() -> u32 {
 //!     // Runs from the scratchpad.
 //! }

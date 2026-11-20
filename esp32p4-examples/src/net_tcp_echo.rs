@@ -24,16 +24,16 @@
 #[cfg(feature = "defmt-rtt")]
 use defmt_rtt as _;
 #[cfg(feature = "defmt")]
-defmt::timestamp!("{=u64:us}", esp32p4::delay::micros());
+defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
-use esp32p4::delay::{self, Delay};
-use esp32p4::efuse::Efuse;
-use esp32p4::emac::{Emac, EmacBuffers, EmacConfig, EmacResources, RmiiPins};
-use esp32p4::gpio::Pins;
-use esp32p4::main;
-use esp32p4::net::{Net, SocketSet, SocketStorage, TcpBuffers, smoltcp};
-use esp32p4::pac::Peripherals;
-use esp32p4::usb_serial_jtag::UsbSerialJtag;
+use esp32p4_hal::delay::{self, Delay};
+use esp32p4_hal::efuse::Efuse;
+use esp32p4_hal::emac::{Emac, EmacBuffers, EmacConfig, EmacResources, RmiiPins};
+use esp32p4_hal::gpio::Pins;
+use esp32p4_hal::main;
+use esp32p4_hal::net::{Net, SocketSet, SocketStorage, TcpBuffers, smoltcp};
+use esp32p4_hal::pac::Peripherals;
+use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
 use smoltcp::iface::SocketHandle;
 use smoltcp::socket::tcp;
 
@@ -323,9 +323,9 @@ fn main() -> ! {
 
     // Interrupt-driven from here on: the MAC's DMA completion line and the
     // system timer's comparator both wake the core out of `wfi`.
-    emac.enable_interrupts(esp32p4::interrupt::lines::EMAC);
+    emac.enable_interrupts(esp32p4_hal::interrupt::lines::EMAC);
     // SAFETY: both handlers are installed and the peripheral sources cleared.
-    unsafe { esp32p4::interrupt::enable() };
+    unsafe { esp32p4_hal::interrupt::enable() };
 
     // SAFETY: handed to the sockets once, below.
     let tcp_buffers = unsafe { &mut *core::ptr::addr_of_mut!(TCP_BUFFERS) };

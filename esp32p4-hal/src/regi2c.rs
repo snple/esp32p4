@@ -24,7 +24,7 @@
 //! already knows are grouped per block, for example [`mpll`]:
 //!
 //! ```ignore
-//! use esp32p4::regi2c::mpll;
+//! use esp32p4_hal::regi2c::mpll;
 //!
 //! let divider = mpll::DIV.read();
 //! mpll::DHREF.write(3);                              // bits [5:4] only
@@ -35,7 +35,7 @@
 //! description can live in the driver instead of here:
 //!
 //! ```ignore
-//! use esp32p4::regi2c::{Block, Field, Register};
+//! use esp32p4_hal::regi2c::{Block, Field, Register};
 //!
 //! const OSC: Register = Register::new(Block::SAR_ADC, 2);
 //! const SAMPLE_CYCLE: Field = Field::new(OSC, 2, 0);

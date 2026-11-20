@@ -1,4 +1,4 @@
-# esp32p4
+# esp32p4-hal
 
 ESP32-P4 的最小硬件抽象层。
 
@@ -55,7 +55,7 @@ ESP32-P4 没有 Cortex-M 的 `SYSRESETREQ`，复位由 always-on 的 **LP 域**�
 等默认非零字段），PAC 生成的 `trigger_sys_sw_rst()` 已经是读-改-写。
 
 ```rust
-use esp32p4::system::{reset_reason, software_reset, Cpu, ResetReason};
+use esp32p4_hal::system::{reset_reason, software_reset, Cpu, ResetReason};
 
 if reset_reason(Cpu::ProCpu) == Some(ResetReason::CpuSoftware) {
     // 上一次复位来自 software_reset_cpu()
@@ -73,7 +73,7 @@ software_reset(); // 不复返
 （PHY LDO → 时钟 → 复位 → 引脚 → 控制器 → Mode Register → MMU 映射）：
 
 ```rust
-use esp32p4::psram::{Psram, PsramAllocator, PsramConfig};
+use esp32p4_hal::psram::{Psram, PsramAllocator, PsramConfig};
 
 #[global_allocator]
 static HEAP: PsramAllocator = PsramAllocator::empty();
@@ -180,16 +180,16 @@ delay.delay_ms(500);
 
 | 读日志的工具 | 在二进制里装哪个 logger | 备注 |
 |---|---|---|
-| `espflash monitor`（只用 USB 线） | `esp32p4` 的 `defmt-usb` feature | 帧走 USB Serial/JTAG；ELF 里的 `espflash.LOG_FORMAT` 标记让 espflash 自动按 defmt 解码 |
+| `espflash monitor`（只用 USB 线） | `esp32p4-hal` 的 `defmt-usb` feature | 帧走 USB Serial/JTAG；ELF 里的 `espflash.LOG_FORMAT` 标记让 espflash 自动按 defmt 解码 |
 | `probe-rs run`（JTAG 调试器） | `defmt-rtt` crate 的 logger | 帧写进 RAM 的 RTT 缓冲，`espflash` 看不到 |
 
 ```rust
 // A. probe-rs：自己装 RTT logger（只能在一个二进制里出现一次）
 use defmt_rtt as _;
 
-defmt::timestamp!("{=u64:us}", esp32p4::delay::micros());
+defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
-#[esp32p4::main]
+#[esp32p4_hal::main]
 fn main() -> ! {
     defmt::info!("hello from ESP32-P4");   // HAL 自己的日志走同一通道
     loop {}
@@ -199,7 +199,7 @@ fn main() -> ! {
 ```toml
 # B. espflash：HAL 自己注册 USB logger，二进制里不要再装别的
 [dependencies]
-esp32p4 = { path = "../esp32p4", features = ["defmt", "defmt-usb"] }
+esp32p4-hal = { path = "../esp32p4-hal", features = ["defmt", "defmt-usb"] }
 ```
 
 ```bash

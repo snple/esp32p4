@@ -24,14 +24,14 @@
 #[cfg(feature = "defmt-rtt")]
 use defmt_rtt as _;
 #[cfg(feature = "defmt")]
-defmt::timestamp!("{=u64:us}", esp32p4::delay::micros());
+defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
-use esp32p4::efuse::Efuse;
-use esp32p4::main;
-use esp32p4::mmu::Region;
-use esp32p4::pac::Peripherals;
-use esp32p4::psram::{Psram, PsramConfig, PsramSize};
-use esp32p4::usb_serial_jtag::UsbSerialJtag;
+use esp32p4_hal::efuse::Efuse;
+use esp32p4_hal::main;
+use esp32p4_hal::mmu::Region;
+use esp32p4_hal::pac::Peripherals;
+use esp32p4_hal::psram::{Psram, PsramConfig, PsramSize};
+use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
 
 /// Keep the default PSRAM mapping below entry 512.
 const MAPPED_PSRAM: usize = 16 * 1024 * 1024;
@@ -53,7 +53,7 @@ fn main() -> ! {
     // the value even if it bypasses the cache.
     // SAFETY: the window is mapped and at least four bytes long.
     unsafe { core::ptr::write_volatile(psram.base() as *mut u32, PATTERN) };
-    esp32p4::cache::writeback(psram.base().cast(), 4);
+    esp32p4_hal::cache::writeback(psram.base().cast(), 4);
 
     let alias = Region::map(0, ALIAS_ENTRY, 1).expect("MMU entry 512 must be free");
     defmt::info!(

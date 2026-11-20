@@ -47,7 +47,7 @@
 //!
 //! ```ignore
 //! use core::fmt::Write;
-//! use esp32p4::usb_serial_jtag::UsbSerialJtag;
+//! use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
 //!
 //! let mut serial =
 //!     UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);

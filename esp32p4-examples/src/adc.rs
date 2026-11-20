@@ -15,13 +15,13 @@
 #[cfg(feature = "defmt-rtt")]
 use defmt_rtt as _;
 #[cfg(feature = "defmt")]
-defmt::timestamp!("{=u64:us}", esp32p4::delay::micros());
+defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
-use esp32p4::adc::{Adc, AdcInput, Attenuation};
-use esp32p4::gpio::{PinOps, Pins};
-use esp32p4::main;
-use esp32p4::pac::Peripherals;
-use esp32p4::usb_serial_jtag::UsbSerialJtag;
+use esp32p4_hal::adc::{Adc, AdcInput, Attenuation};
+use esp32p4_hal::gpio::{PinOps, Pins};
+use esp32p4_hal::main;
+use esp32p4_hal::pac::Peripherals;
+use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
 
 #[main]
 fn main() -> ! {
@@ -56,7 +56,7 @@ fn main() -> ! {
 
     defmt::info!("done");
     loop {
-        esp32p4::delay::sleep_ms(1000);
+        esp32p4_hal::delay::sleep_ms(1000);
     }
 }
 

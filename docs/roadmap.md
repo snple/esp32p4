@@ -14,25 +14,25 @@
 
 | 模块 | 文件 | 说明 |
 |------|------|------|
-| `time` / `delay` | [time.rs](../esp32p4/src/time.rs) / [delay.rs](../esp32p4/src/delay.rs) | SYSTIMER 单调时钟、阻塞延时与比较器闹钟 |
-| `clock` | [clock.rs](../esp32p4/src/clock.rs) | ROOT_CLK 选源、CPU/MEM/SYS/APB 分频、PLL_FxxM、LP 时钟、CPU 变频 |
-| `reset` | [reset.rs](../esp32p4/src/reset.rs) | `HP_RST_EN0/1/2` 上的外设复位 |
-| `timer` | [timer/mod.rs](../esp32p4/src/timer/mod.rs) | TIMG0/1 四路计数器与两个 MWDT，中断归 group |
-| `systimer` | [systimer.rs](../esp32p4/src/systimer.rs) | COMP1/COMP2 闹钟，COMP0 归 `Delay` |
-| `gpio` | [gpio/](../esp32p4/src/gpio) | 引脚电气配置、GPIO 读写、四路中断、完整的 HP GPIO 交换矩阵信号路由，以及每个焊盘的直接 IO MUX 功能表（`pins`） |
-| `uart` | [uart.rs](../esp32p4/src/uart.rs) | UART0–4：轮询收发、帧格式、流控、按源中断、GPIO 矩阵引脚路由 |
-| `i2c` | [i2c.rs](../esp32p4/src/i2c.rs) | I2C0/1 主机：任意 SCL、7 位地址、写/读/写读、总线恢复、按源中断 |
-| `spin` | [spin.rs](../esp32p4/src/spin.rs) | 有界自旋助手（`spin_wait` / `try_spin_wait`），驱动轮询的统一上界 |
-| `interrupt` | [interrupt.rs](../esp32p4/src/interrupt.rs) | CLIC 线与矩阵、`claim`/`InterruptHandler` |
-| `emac` / `net` | [emac/](../esp32p4/src/emac) / [net.rs](../esp32p4/src/net.rs) | RMII + MDIO + DMA，smoltcp 同步栈 |
-| `psram` | [psram/](../esp32p4/src/psram) | MPLL、MSPI、MMU 映射、分配器 |
+| `time` / `delay` | [time.rs](../esp32p4-hal/src/time.rs) / [delay.rs](../esp32p4-hal/src/delay.rs) | SYSTIMER 单调时钟、阻塞延时与比较器闹钟 |
+| `clock` | [clock.rs](../esp32p4-hal/src/clock.rs) | ROOT_CLK 选源、CPU/MEM/SYS/APB 分频、PLL_FxxM、LP 时钟、CPU 变频 |
+| `reset` | [reset.rs](../esp32p4-hal/src/reset.rs) | `HP_RST_EN0/1/2` 上的外设复位 |
+| `timer` | [timer/mod.rs](../esp32p4-hal/src/timer/mod.rs) | TIMG0/1 四路计数器与两个 MWDT，中断归 group |
+| `systimer` | [systimer.rs](../esp32p4-hal/src/systimer.rs) | COMP1/COMP2 闹钟，COMP0 归 `Delay` |
+| `gpio` | [gpio/](../esp32p4-hal/src/gpio) | 引脚电气配置、GPIO 读写、四路中断、完整的 HP GPIO 交换矩阵信号路由，以及每个焊盘的直接 IO MUX 功能表（`pins`） |
+| `uart` | [uart.rs](../esp32p4-hal/src/uart.rs) | UART0–4：轮询收发、帧格式、流控、按源中断、GPIO 矩阵引脚路由 |
+| `i2c` | [i2c.rs](../esp32p4-hal/src/i2c.rs) | I2C0/1 主机：任意 SCL、7 位地址、写/读/写读、总线恢复、按源中断 |
+| `spin` | [spin.rs](../esp32p4-hal/src/spin.rs) | 有界自旋助手（`spin_wait` / `try_spin_wait`），驱动轮询的统一上界 |
+| `interrupt` | [interrupt.rs](../esp32p4-hal/src/interrupt.rs) | CLIC 线与矩阵、`claim`/`InterruptHandler` |
+| `emac` / `net` | [emac/](../esp32p4-hal/src/emac) / [net.rs](../esp32p4-hal/src/net.rs) | RMII + MDIO + DMA，smoltcp 同步栈 |
+| `psram` | [psram/](../esp32p4-hal/src/psram) | MPLL、MSPI、MMU 映射、分配器 |
 | `usb` | [esp32p4-usb](../esp32p4-usb/) | USB OTG **设备（slave）** 侧：CDC-ACM 等 |
-| `usb_serial_jtag` | [usb_serial_jtag.rs](../esp32p4/src/usb_serial_jtag.rs) | USB Serial/JTAG 控制台 |
-| `system` / `startup` | [system.rs](../esp32p4/src/system.rs) / [startup.rs](../esp32p4/src/startup.rs) | 软复位、复位原因、看门狗与核 1 的启动清理 |
-| `cache` | [cache.rs](../esp32p4/src/cache.rs) | writeback / invalidate / writeback_invalidate，L1 I/D + L2 挂起与恢复 |
-| `efuse` | [efuse.rs](../esp32p4/src/efuse.rs) | 芯片/块版本、MAC、Flash/PSRAM 参数的只读访问 |
-| `mmu` | [mmu.rs](../esp32p4/src/mmu.rs) | 外部内存页的 map/unmap、cached/uncached 窗口与占用位图 |
-| `tcm` | [tcm.rs](../esp32p4/src/tcm.rs) | 8 KB HP SPM（寄存器里叫 HP TCM）：`#[ramfunc]` / `#[tcmfunc]` / `#[tcmdata]` 放置、范围查询、奇偶校验初始化 |
+| `usb_serial_jtag` | [usb_serial_jtag.rs](../esp32p4-hal/src/usb_serial_jtag.rs) | USB Serial/JTAG 控制台 |
+| `system` / `startup` | [system.rs](../esp32p4-hal/src/system.rs) / [startup.rs](../esp32p4-hal/src/startup.rs) | 软复位、复位原因、看门狗与核 1 的启动清理 |
+| `cache` | [cache.rs](../esp32p4-hal/src/cache.rs) | writeback / invalidate / writeback_invalidate，L1 I/D + L2 挂起与恢复 |
+| `efuse` | [efuse.rs](../esp32p4-hal/src/efuse.rs) | 芯片/块版本、MAC、Flash/PSRAM 参数的只读访问 |
+| `mmu` | [mmu.rs](../esp32p4-hal/src/mmu.rs) | 外部内存页的 map/unmap、cached/uncached 窗口与占用位图 |
+| `tcm` | [tcm.rs](../esp32p4-hal/src/tcm.rs) | 8 KB HP SPM（寄存器里叫 HP TCM）：`#[ramfunc]` / `#[tcmfunc]` / `#[tcmdata]` 放置、范围查询、奇偶校验初始化 |
 
 ## 2. 第 0 层：现有模块的缺口（已完成）
 
@@ -107,7 +107,7 @@ I3C、UHCI、SOC_ETM（事件矩阵）、APM/访问权限、eFuse 编程、运�
 - **所有权与子句柄**（第 4 节）：`init`/`release`、`Deref` 到寄存器块（如 `ClockTree`）。
 - **错误处理**（第 6 节）：`try_*` 返回 `Result`，无法恢复的配置错误用 `panic`。
 - **验证**（第 11 节）：`cargo check --workspace`、`cargo clippy --workspace`、
-  `cargo doc -p esp32p4 --no-deps`（无新断链）、`rustfmt --check` 全绿。
+  `cargo doc -p esp32p4-hal --no-deps`（无新断链）、`rustfmt --check` 全绿。
 - **交付物**（第 13 节）：`src/<name>.rs` + `lib.rs` 注册 + 至少一个
   `esp32p4-examples` 示例 + README 对应小节。
 

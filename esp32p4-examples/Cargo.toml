@@ -14,7 +14,7 @@ default = ["defmt-usb", "net"]
 # Turns on the `defmt` log statements in the HAL and the examples. The default
 # build uses the `defmt-usb` transport; exactly one of `defmt-rtt` and
 # `defmt-usb` may be enabled.
-defmt = ["esp32p4/defmt", "esp32p4-usb/defmt", "dep:defmt"]
+defmt = ["esp32p4-hal/defmt", "esp32p4-usb/defmt", "dep:defmt"]
 # Installs the `defmt-rtt` logger. Frames land in an RTT buffer in RAM, so only
 # a debug probe sees them: `probe-rs run --chip esp32p4 <elf>`. Used by the
 # `defmt_log` example, which is built with
@@ -24,14 +24,14 @@ defmt-rtt = ["defmt", "dep:defmt-rtt"]
 # Installs the USB Serial/JTAG logger. This is the default transport:
 # `espflash monitor` decodes the frames, so the flashing cable is all it takes.
 # Mutually exclusive with `defmt-rtt`.
-defmt-usb = ["defmt", "esp32p4/defmt-usb"]
+defmt-usb = ["defmt", "esp32p4-hal/defmt-usb"]
 # Synchronous TCP/IP over the EMAC (smoltcp), heap-free.
-net = ["esp32p4/net"]
+net = ["esp32p4-hal/net"]
 # Same, but with the socket table allocated from the global allocator.
-net-alloc = ["esp32p4/net-alloc", "net"]
+net-alloc = ["esp32p4-hal/net-alloc", "net"]
 
 [dependencies]
-esp32p4.workspace = true
+esp32p4-hal.workspace = true
 esp32p4-usb.workspace = true
 esp32p4-pac.workspace = true
 esp32p4-rt.workspace = true

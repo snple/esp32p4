@@ -20,11 +20,11 @@
 #[cfg(feature = "defmt-rtt")]
 use defmt_rtt as _;
 
-defmt::timestamp!("{=u64:us}", esp32p4::delay::micros());
+defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
-use esp32p4::delay::Delay;
-use esp32p4::main;
-use esp32p4::pac::Peripherals;
+use esp32p4_hal::delay::Delay;
+use esp32p4_hal::main;
+use esp32p4_hal::pac::Peripherals;
 
 #[main]
 fn main() -> ! {

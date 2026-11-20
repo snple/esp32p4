@@ -17,13 +17,13 @@
 #[cfg(feature = "defmt-rtt")]
 use defmt_rtt as _;
 #[cfg(feature = "defmt")]
-defmt::timestamp!("{=u64:us}", esp32p4::delay::micros());
+defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
-use esp32p4::gpio::pins::pads_with;
-use esp32p4::gpio::{AnalogFunction, MuxFunction, PinOps, Pins};
-use esp32p4::main;
-use esp32p4::pac::Peripherals;
-use esp32p4::usb_serial_jtag::UsbSerialJtag;
+use esp32p4_hal::gpio::pins::pads_with;
+use esp32p4_hal::gpio::{AnalogFunction, MuxFunction, PinOps, Pins};
+use esp32p4_hal::main;
+use esp32p4_hal::pac::Peripherals;
+use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
 
 const LED_PIN: u32 = 2;
 
@@ -111,7 +111,7 @@ fn main() -> ! {
     led.into_output();
     defmt::info!("LED pad function: {}", led.mux_function().map(|f| f.name()));
 
-    let delay = esp32p4::delay::Delay::init(dp.SYSTIMER);
+    let delay = esp32p4_hal::delay::Delay::init(dp.SYSTIMER);
     loop {
         led.toggle();
         delay.delay_ms(500);

@@ -23,7 +23,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use esp32p4::mmu::Region;
+//! use esp32p4_hal::mmu::Region;
 //!
 //! // Alias physical page 0 at entry 512 (offset 32 MB into the window).
 //! let alias = Region::map(0, 512, 1).unwrap();

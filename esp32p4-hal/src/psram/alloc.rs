@@ -3,7 +3,7 @@
 //! Two ways to use it:
 //!
 //! ```ignore
-//! use esp32p4::psram::{Psram, PsramAllocator, PsramConfig};
+//! use esp32p4_hal::psram::{Psram, PsramAllocator, PsramConfig};
 //!
 //! #[global_allocator]
 //! static HEAP: PsramAllocator = PsramAllocator::empty();

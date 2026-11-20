@@ -23,8 +23,8 @@
 //! # Example
 //!
 //! ```ignore
-//! use esp32p4::efuse::Efuse;
-//! use esp32p4::psram::{Psram, PsramConfig};
+//! use esp32p4_hal::efuse::Efuse;
+//! use esp32p4_hal::psram::{Psram, PsramConfig};
 //!
 //! let efuse = Efuse::init(dp.EFUSE);
 //! let psram = Psram::init(PsramConfig::from_efuse(&efuse)).unwrap();

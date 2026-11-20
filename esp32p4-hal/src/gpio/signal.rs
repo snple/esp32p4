@@ -11,7 +11,7 @@
 //! not listed here; see the TRM for the LP matrix.
 //!
 //! ```ignore
-//! use esp32p4::gpio::signal::{InputSignal, OutputSignal};
+//! use esp32p4_hal::gpio::signal::{InputSignal, OutputSignal};
 //!
 //! pin.set_output_signal(OutputSignal::UART0_TXD_PAD_OUT);
 //! pin.set_input_signal(InputSignal::UART0_RXD_PAD_IN);

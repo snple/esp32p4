@@ -3,7 +3,7 @@
 本文件整理本仓库的设计约定，目标是「每个新模块都长得和既有模块一样」：
 一致的骨架、一致的所有权模型、一致的错误处理，以及一致的验证流程。
 
-本仓库位于 `/home/danc/code/esp32/esp32p4`，HAL crate 名为 `esp32p4`，
+本仓库位于 `/home/danc/code/esp32/esp32p4`，HAL crate 名为 `esp32p4-hal`，
 CPU 是 RISC-V RV32IMAFC（stable 目标使用 `riscv32imafc-unknown-none-elf`）。
 
 ---
@@ -12,7 +12,7 @@ CPU 是 RISC-V RV32IMAFC（stable 目标使用 `riscv32imafc-unknown-none-elf`�
 
 ```
 esp32p4/                 # 工作区根
-├── esp32p4/             # HAL：本指南的主角（手写，面向用户）
+├── esp32p4-hal/         # HAL：本指南的主角（手写，面向用户）
 ├── esp32p4-pac/         # 由 SVD 生成的 PAC（勿手改 src/generated）
 ├── esp32p4-rt/          # 运行时：_start、trap、link.x、CSR/asm
 ├── esp32p4-macro/       # 过程宏：#[main]
@@ -146,7 +146,7 @@ HAL **不内置** `I2cBus` / `SpiBus` / `UartBus` 等抽象 trait：需要抽象
 ## 6. 错误处理约定
 
 - **每个模块定义自己的 `Error` 枚举**，只列本模块真正返回的错误。
-- **阻塞方法在超时时 `panic`**：用 [`spin`](../esp32p4/src/spin.rs) 的有界自旋。
+- **阻塞方法在超时时 `panic`**：用 [`spin`](../esp32p4-hal/src/spin.rs) 的有界自旋。
 - **`try_*` 方法返回 `Result<_, Error>`**。
 - `spin` 模块提供三个助手：
   - `spin_wait(what, cond)` — 有界自旋，超时 panic（hang-guard）。
@@ -200,7 +200,7 @@ MEMORY
 
 ### 启动初始化（`startup::init`）
 
-`#[main]` 在用户函数体前注入 `esp32p4::startup::init()`，处理 bootloader 留下的状态：
+`#[main]` 在用户函数体前注入 `esp32p4_hal::startup::init()`，处理 bootloader 留下的状态：
 
 - **RTC 看门狗**：bootloader 默认 `CONFIG_BOOTLOADER_WDT_ENABLE=y`，以 9 s 超时启动后
   直接交给应用；ESP-IDF 应用在 `esp_system` 启动时关闭它，裸机必须自己做，否则周期性复位。
@@ -266,8 +266,8 @@ bootloader 的具体版本。新增外设时，如果它有自己的时钟门控
 
 ```bash
 cargo check -p esp32p4-pac --target riscv32imafc-unknown-none-elf
-cargo check -p esp32p4 --target riscv32imafc-unknown-none-elf
-cargo clippy -p esp32p4 -p esp32p4-rt -p esp32p4-macro -p esp32p4-examples \
+cargo check -p esp32p4-hal --target riscv32imafc-unknown-none-elf
+cargo clippy -p esp32p4-hal -p esp32p4-rt -p esp32p4-macro -p esp32p4-examples \
   --target riscv32imafc-unknown-none-elf -- -D warnings
 cargo fmt --all -- --check
 ```

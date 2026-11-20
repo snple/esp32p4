@@ -10,7 +10,7 @@
 //! comparator 0 to sleep.
 //!
 //! ```ignore
-//! use esp32p4::time::{Duration, Instant};
+//! use esp32p4_hal::time::{Duration, Instant};
 //!
 //! let start = Instant::now();
 //! // ...

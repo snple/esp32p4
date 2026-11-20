@@ -47,8 +47,8 @@
 //! # Example
 //!
 //! ```ignore
-//! use esp32p4::adc::{Adc, AdcInput, Attenuation};
-//! use esp32p4::gpio::Pins;
+//! use esp32p4_hal::adc::{Adc, AdcInput, Attenuation};
+//! use esp32p4_hal::gpio::Pins;
 //!
 //! let dp = Peripherals::take().unwrap();
 //! let mut pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);

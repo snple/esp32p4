@@ -33,7 +33,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use esp32p4::net::{Net, SocketStorage, smoltcp};
+//! use esp32p4_hal::net::{Net, SocketStorage, smoltcp};
 //!
 //! static mut SOCKET_STORAGE: [SocketStorage<'static>; 4] =
 //!     [SocketStorage::EMPTY; 4];

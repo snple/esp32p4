@@ -19,7 +19,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use esp32p4::efuse::Efuse;
+//! use esp32p4_hal::efuse::Efuse;
 //!
 //! let dp = Peripherals::take().unwrap();
 //! let efuse = Efuse::init(dp.EFUSE);

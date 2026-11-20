@@ -17,19 +17,19 @@
 #[cfg(feature = "defmt-rtt")]
 use defmt_rtt as _;
 #[cfg(feature = "defmt")]
-use esp32p4::time::Instant;
+use esp32p4_hal::time::Instant;
 #[cfg(feature = "defmt")]
-defmt::timestamp!("{=u64:us}", esp32p4::delay::micros());
+defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use esp32p4::gpio::Pins;
-use esp32p4::interrupt::{self, CpuInterrupt};
-use esp32p4::main;
-use esp32p4::pac::Peripherals;
-use esp32p4::time::Duration;
-use esp32p4::timer::{Direction, Timer00, TimerGroup0};
-use esp32p4::usb_serial_jtag::UsbSerialJtag;
+use esp32p4_hal::gpio::Pins;
+use esp32p4_hal::interrupt::{self, CpuInterrupt};
+use esp32p4_hal::main;
+use esp32p4_hal::pac::Peripherals;
+use esp32p4_hal::time::Duration;
+use esp32p4_hal::timer::{Direction, Timer00, TimerGroup0};
+use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
 
 const LED_PIN: u32 = 2;
 /// CPU lines this example borrows out of the 32 the CLIC has.

@@ -21,7 +21,7 @@
 //!
 //! By default the OTG FS core uses PHY 2 (GPIO26/27) while the USB Serial/JTAG
 //! controller uses PHY 1 (GPIO24/25). If an application uses both ports it can
-//! swap them with `esp32p4::usb_serial_jtag::UsbSerialJtag::select_phy`; this
+//! swap them with `esp32p4_hal::usb_serial_jtag::UsbSerialJtag::select_phy`; this
 //! driver follows whichever PHY the swap logic assigns, it does not touch it.
 //!
 //! # High-speed port

@@ -24,9 +24,9 @@
 //! counter, then call [`Timer00::start`].
 //!
 //! ```ignore
-//! use esp32p4::interrupt::{self, CpuInterrupt};
-//! use esp32p4::time::Duration;
-//! use esp32p4::timer::TimerGroup0;
+//! use esp32p4_hal::interrupt::{self, CpuInterrupt};
+//! use esp32p4_hal::time::Duration;
+//! use esp32p4_hal::timer::TimerGroup0;
 //!
 //! fn tick() {
 //!     // Runs in interrupt context: keep it short.

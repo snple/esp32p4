@@ -117,8 +117,8 @@
 //! ## Button interrupt
 //!
 //! ```ignore
-//! use esp32p4::gpio::{InterruptLine, InterruptType, Pin};
-//! use esp32p4::interrupt::{self, CpuInterrupt, Level};
+//! use esp32p4_hal::gpio::{InterruptLine, InterruptType, Pin};
+//! use esp32p4_hal::interrupt::{self, CpuInterrupt, Level};
 //!
 //! fn isr() {
 //!     // SAFETY: `Pins::init` has run and nobody reconfigures the pin.
@@ -149,7 +149,7 @@
 //! ## Route a UART to two pins
 //!
 //! ```ignore
-//! use esp32p4::gpio::signal::{InputSignal, OutputSignal};
+//! use esp32p4_hal::gpio::signal::{InputSignal, OutputSignal};
 //!
 //! tx.set_output_signal(OutputSignal::UART0_TXD_PAD_OUT);
 //! rx.set_input_signal(InputSignal::UART0_RXD_PAD_IN);

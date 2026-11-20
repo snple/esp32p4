@@ -1,4 +1,4 @@
-//! # esp32p4
+//! # esp32p4-hal
 //!
 //! Hardware Abstraction Layer for the ESP32-P4 RISC-V microcontroller.
 //!
@@ -37,9 +37,9 @@
 //! #![no_std]
 //! #![no_main]
 //!
-//! use esp32p4::gpio::Pins;
-//! use esp32p4::main;
-//! use esp32p4::pac::Peripherals;
+//! use esp32p4_hal::gpio::Pins;
+//! use esp32p4_hal::main;
+//! use esp32p4_hal::pac::Peripherals;
 //!
 //! #[main]
 //! fn main() -> ! {

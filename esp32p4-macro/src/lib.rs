@@ -17,14 +17,14 @@ use syn::{ItemFn, ReturnType, Type, parse_macro_input, parse_quote};
 /// Marks the application entry point.
 ///
 /// ```ignore
-/// #[esp32p4::main]
+/// #[esp32p4_hal::main]
 /// fn main() -> ! {
 ///     loop {}
 /// }
 /// ```
 ///
 /// Expands to a `#[unsafe(no_mangle)] extern "C" fn main()` that first calls
-/// [`esp32p4::startup::init`] (watchdogs, core 1, branch predictor) and then
+/// [`esp32p4_hal::startup::init`] (watchdogs, core 1, branch predictor) and then
 /// runs the function body.
 ///
 /// The function must take no arguments and return `!`.
@@ -57,7 +57,7 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     function
         .block
         .stmts
-        .insert(0, parse_quote!(::esp32p4::startup::init();));
+        .insert(0, parse_quote!(::esp32p4_hal::startup::init();));
 
     quote!(#function).into()
 }
@@ -65,7 +65,7 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// Places a function in SRAM instead of flash.
 ///
 /// ```ignore
-/// #[esp32p4::ramfunc]
+/// #[esp32p4_hal::ramfunc]
 /// fn spin(micros: u32) {
 ///     // Runs with the flash cache suspended.
 /// }
@@ -88,7 +88,7 @@ pub fn ramfunc(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// Places a function in the 8 KB HP scratchpad, i.e. the TCM.
 ///
 /// ```ignore
-/// #[esp32p4::tcmfunc]
+/// #[esp32p4_hal::tcmfunc]
 /// fn sample() -> u32 {
 ///     // Runs from 0x3010_0000, two cycles per access, no cache involved.
 /// }
@@ -109,7 +109,7 @@ pub fn tcmfunc(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// Places a static in the 8 KB HP scratchpad, i.e. the TCM.
 ///
 /// ```ignore
-/// #[esp32p4::tcmdata]
+/// #[esp32p4_hal::tcmdata]
 /// static SAMPLES: [u32; 64] = [0; 64];
 /// ```
 ///

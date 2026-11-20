@@ -32,8 +32,8 @@
 //! # Example
 //!
 //! ```ignore
-//! use esp32p4::gpio::Pins;
-//! use esp32p4::uart::{Uart1, UartConfig};
+//! use esp32p4_hal::gpio::Pins;
+//! use esp32p4_hal::uart::{Uart1, UartConfig};
 //!
 //! let dp = Peripherals::take().unwrap();
 //! let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);

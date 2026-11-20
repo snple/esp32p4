@@ -40,8 +40,8 @@
 //! # Example
 //!
 //! ```ignore
-//! use esp32p4::gpio::Pins;
-//! use esp32p4::i2c::{I2c0, I2cConfig};
+//! use esp32p4_hal::gpio::Pins;
+//! use esp32p4_hal::i2c::{I2c0, I2cConfig};
 //!
 //! let dp = Peripherals::take().unwrap();
 //! let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);

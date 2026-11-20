@@ -31,9 +31,9 @@
 //! # Example
 //!
 //! ```ignore
-//! use esp32p4::interrupt::{self, CpuInterrupt};
-//! use esp32p4::systimer::Systimer;
-//! use esp32p4::time::{Duration, Instant};
+//! use esp32p4_hal::interrupt::{self, CpuInterrupt};
+//! use esp32p4_hal::systimer::Systimer;
+//! use esp32p4_hal::time::{Duration, Instant};
 //!
 //! fn tick() {
 //!     // Runs in interrupt context: keep it short.
