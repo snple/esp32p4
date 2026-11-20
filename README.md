@@ -15,7 +15,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | [`esp32p4-macro`](esp32p4-macro/) | **过程宏**：`#[main]` |
 | [`esp32p4-hal`](esp32p4-hal/) | **HAL**：时钟树、GPIO / IO MUX、UART、I2C 主机、SPI 主机/从机（GPSPI2/3）、SD 卡主机（SDHOST）、ADC、温度传感器、GDMA（GDMA-AHB）与描述符链、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
 | [`esp32p4-usb`](esp32p4-usb/) | **USB 栈**：DWC OTG 全速/高速控制器的设备模式与主机模式驱动（slave 模式、轮询）；协议层全部在跨仓库共享的 [`usb-stack`](../../rp2350/usb-stack)（设备状态机、标准请求、class、主机枚举与控制/bulk/interrupt 传输、HID 键盘） |
-| [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、UART 回环、I2C 扫描、SPI 主机/从机自检、SD 卡读写、ADC 采样、GDMA 存储到存储拷贝、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC、USB HID 主机 |
+| [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、UART 回环、I2C 扫描、SPI 主机/从机自检、SD 卡读写、ADC 单次与扫描采样、GDMA 存储到存储拷贝、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC、USB HID 主机 |
 | [`xtask`](xtask/) | 构建辅助：`cargo xtask gen-pac` |
 
 依赖方向是单向的：`macro` / `rt` → `pac` → `esp32p4` / `esp32p4-usb` → `examples`。
@@ -50,6 +50,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `dma_mem2mem` | GDMA-AHB 的存储到存储拷贝：单描述符 64 B 与四描述符 16 KB 两种链路，逐字节校验并打印吞吐 |
 | `spi` | GP-SPI2 主机对 GP-SPI3 从机（四根飞线）：时钟模式 0–3 × 1/4/32/64 字节双向校验 |
 | `sd` | SDHOST 上的 SD 卡：识别、读 CID/CSD 与容量、读第 0 块、双块写入后回读比对 |
+| `adc_scan` | ADC1 样式表扫描：两个通道经 GDMA-AHB 交替采样 32 个样本，打印样本数与读数 |
 | `tsens` | 温度传感器：每秒打印一次芯片温度，自动选择测量档位 |
 
 ## 快速开始
@@ -741,8 +742,8 @@ i2c.write_read(0x48, &[0x0f], &mut value).unwrap();
 
 ## ADC
 
-[`adc`](esp32p4-hal/src/adc.rs) 是两路 12 位 SAR ADC 的 one-shot 驱动（RTC/LP 控制器；
-HP 数字控制器 + DMA 的连续采样模式还没做）：
+[`adc`](esp32p4-hal/src/adc.rs) 是两路 12 位 SAR ADC 的驱动，两种采法都在：RTC/LP 控制器
+的单次转换，以及 HP 数字控制器的样式表扫描（数据经 GDMA-AHB 直接落内存）：
 
 - `ADC1` 八通道（GPIO16–23）、`ADC2` 六通道（GPIO49–54）；ADC 通道不是 GPIO 矩阵信号，
   `AdcInput::new` 从焊盘功能表（[`gpio::pins`](esp32p4-hal/src/gpio/pins.rs)）反查通道号，
@@ -764,6 +765,34 @@ let millivolts = adc.read_millivolts(&input);
 示例 [`adc`](esp32p4-examples/src/adc.rs) 先报告校准是否可用，再把 13 个 ADC 焊盘在四档
 衰减下各采两次。实测同一浮空焊盘在四档衰减下换算出的电压互相吻合（例如 743/716/668/606
 mV，差异来自采样把焊盘电容一点点放掉），说明衰减与校准系数是对得上的。
+
+### 多通道扫描
+
+`Adc::scan` 走 HP 数字控制器：把 `Pattern` 列表写进样式表，控制器按 `timer_cycles` 的
+周期逐项采样、循环，每一路转换结果由 GDMA-AHB 写成 4 字节样本（`Sample`：低 12 位是结果，
+bit 13–15 是通道号），采满帧后自动停下。
+
+```rust
+let patterns = [
+    Pattern::new(input_a.channel(), Attenuation::_12dB),
+    Pattern::new(input_b.channel(), Attenuation::_12dB),
+];
+let mut buffer = [Sample::ZERO; 32];
+let mut descriptors = [const { Descriptor::new() }; 1];
+adc.scan(Unit::Adc1, &patterns, &dma.rx_channel::<1>(), &mut buffer, &mut descriptors, 4_000)?;
+```
+
+示例 [`adc_scan`](esp32p4-examples/src/adc_scan.rs) 每轮采 32 个样本、两个通道交替，
+打印各自样本数与最后一次读数。四个只在硬件上才暴露的点：
+
+- **`SAR1_DONE`/`SAR2_DONE` 每转换一次就置位**：拿它判断「整帧采完」会立刻返回，
+  缓冲区还是旧内容。整帧结束要看 GDMA 的 `SucEof`（描述符上的 EOF 标志）；
+- **停下来的次数由 `CTRL2.MAX_MEAS_NUM` + `MEAS_NUM_LIMIT` 决定**（8 位，所以一次扫描
+  最多 256 个样本）；`DMA_CONF.APB_ADC_EOF_NUM` 是给 GDMA 的帧长，不是停止条件；
+- **ADC2 接管给数字控制器的极性和 ADC1 相反**：ADC1 是 `SAR1_DIG_FORCE=1`，ADC2 是
+  `SAR2_RTC_FORCE=0`；
+- **让 FSM 自己管电源**：`XPD_SARn_FORCE=0`，否则 one-shot 留下的「软件强制上电」会让
+  FSM 的上下电时序失效。
 
 ## GDMA
 

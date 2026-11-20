@@ -393,8 +393,66 @@ macro_rules! impl_rx_channel {
                     Self::regs().[<in_int_clr_ch $n>].write_bits(u32::MAX);
                 }
             }
+
+            impl ReceiveChannel for RxChannel<$n> {
+                fn connect_to(&self, peripheral: Peripheral) {
+                    self.connect(peripheral);
+                }
+
+                fn reset_channel(&self) {
+                    self.reset();
+                }
+
+                fn start_chain(&self, first: &Descriptor) {
+                    self.start(first);
+                }
+
+                fn detach(&self) {
+                    self.disconnect();
+                }
+
+                fn idle(&self) -> bool {
+                    self.is_idle()
+                }
+
+                fn interrupt_pending(&self, interrupt: RxInterrupt) -> bool {
+                    RxChannel::<$n>::interrupt_pending(self, interrupt)
+                }
+
+                fn clear_interrupt(&self, interrupt: RxInterrupt) {
+                    RxChannel::<$n>::clear_interrupt(self, interrupt);
+                }
+            }
         }
     };
+}
+
+/// Operations a peripheral driver needs on a receive channel.
+///
+/// [`RxChannel`] is generated per channel number, so a driver that accepts any
+/// channel (the ADC's pattern scan, for instance) goes through this trait
+/// instead of naming one.
+pub trait ReceiveChannel {
+    /// Connects the channel to a peripheral's receive handshake.
+    fn connect_to(&self, peripheral: Peripheral);
+
+    /// Resets the channel's engine state.
+    fn reset_channel(&self);
+
+    /// Starts the descriptor chain at `first`.
+    fn start_chain(&self, first: &Descriptor);
+
+    /// Disconnects the channel from every peripheral.
+    fn detach(&self);
+
+    /// Whether the engine has no descriptor left to process.
+    fn idle(&self) -> bool;
+
+    /// Whether `interrupt` is latched.
+    fn interrupt_pending(&self, interrupt: RxInterrupt) -> bool;
+
+    /// Acknowledges `interrupt`.
+    fn clear_interrupt(&self, interrupt: RxInterrupt);
 }
 
 /// Generates the register-level body of one transmit channel.

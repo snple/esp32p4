@@ -93,6 +93,10 @@ const SAR_POWER_ON: u32 = 3;
 /// silicon-tested value.
 const SAR_POWER_ON_HP: u32 = 3;
 
+/// `ADC_XPD_SARn_FORCE`: the FSM owns the SAR, which is what a pattern scan
+/// needs (it powers the SAR per trigger).
+const SAR_POWER_BY_FSM: u32 = 0;
+
 /// `ADC_SARn_DREF`: the reference the offset code is expressed in.
 const SAR_DREF: u8 = 4;
 
@@ -714,5 +718,269 @@ impl Adc {
         dref.field(6, 4).write(SAR_DREF);
         low.write(code as u8);
         high.field(3, 0).write((code >> 8) as u8);
+    }
+}
+
+// ============================================================================
+// HP ADC digital controller: pattern scan into GDMA
+// ============================================================================
+
+/// Longest pattern table the HP digital controller holds.
+pub const MAX_PATTERN: usize = 16;
+
+/// Most samples one scan can take: the controller's conversion counter is
+/// eight bits wide.
+pub const MAX_SAMPLES: usize = 256;
+
+/// Digital-controller clock divider used for scans: `ADC_CLK / (divider + 1)`.
+const SCAN_CLK_DIV: u32 = 1;
+
+/// SAR clock divider used for scans, matching the one-shot path.
+const SCAN_SAR_CLK_DIV: u32 = 1;
+
+/// One entry of the scan pattern table.
+///
+/// A scan walks the table once per trigger, sampling `channel` with
+/// `attenuation`; the table repeats until the requested number of samples has
+/// been collected.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct Pattern {
+    /// Channel within the unit, `0..=7` on ADC1 and `0..=5` on ADC2.
+    pub channel: u8,
+    /// Attenuation for this entry.
+    pub attenuation: Attenuation,
+}
+
+impl Pattern {
+    /// A pattern entry for `channel` at `attenuation`.
+    pub const fn new(channel: u8, attenuation: Attenuation) -> Self {
+        Self {
+            channel,
+            attenuation,
+        }
+    }
+}
+
+/// One raw scan sample, as the digital controller hands it to GDMA.
+///
+/// The controller writes one word per conversion: the 12-bit result in bits
+/// 0-11 and the channel in bits 13-15.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct Sample(u32);
+
+impl Sample {
+    /// An all-zero sample, for filling a buffer before a scan.
+    pub const ZERO: Self = Self(0);
+
+    /// Wraps a word read back from the DMA buffer.
+    pub const fn from_raw(word: u32) -> Self {
+        Self(word)
+    }
+
+    /// The 12-bit conversion result.
+    #[inline]
+    pub const fn value(self) -> u32 {
+        self.0 & MAX_CODE
+    }
+
+    /// Channel the sample came from.
+    #[inline]
+    pub const fn channel(self) -> u8 {
+        ((self.0 >> 13) & 0x7) as u8
+    }
+}
+
+impl Adc {
+    /// Runs one pattern scan and writes the samples into `buffer` through
+    /// GDMA.
+    ///
+    /// The scan stops on its own once `buffer` is full, which is also the
+    /// controller's end-of-frame count: each entry of `patterns` is sampled in
+    /// turn, `timer_cycles` controller clocks apart, and the table repeats
+    /// until the buffer is filled.
+    ///
+    /// `rx` is a GDMA-AHB receive channel; the driver connects, starts and
+    /// disconnects it around the scan, so the channel is free again when this
+    /// returns. Blocking: it returns once the samples are in memory.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `patterns` is empty or longer than [`MAX_PATTERN`], or if
+    /// `descriptors` cannot cover `buffer`.
+    pub fn scan(
+        &self,
+        unit: Unit,
+        patterns: &[Pattern],
+        rx: &impl crate::dma::ReceiveChannel,
+        buffer: &mut [Sample],
+        descriptors: &mut [crate::dma::Descriptor],
+        timer_cycles: u32,
+    ) -> Result<(), crate::dma::Error> {
+        assert!(
+            !patterns.is_empty() && patterns.len() <= MAX_PATTERN,
+            "a scan needs 1 to {MAX_PATTERN} pattern entries"
+        );
+        assert!(
+            !buffer.is_empty() && buffer.len() <= MAX_SAMPLES,
+            "a scan takes 1 to {MAX_SAMPLES} samples"
+        );
+
+        let bytes = core::mem::size_of_val(buffer);
+        self.setup_scan(unit, patterns, buffer.len(), timer_cycles);
+
+        // The engine owns the buffer for the duration of the scan, so drop any
+        // cached copy first; the CPU reads the fresh contents back afterwards.
+        let start = buffer.as_mut_ptr() as *mut u8;
+        crate::cache::writeback_invalidate(start as *const _, bytes);
+
+        // One descriptor chain over the whole buffer, ending in an EOF that
+        // tells the engine the frame is complete.
+        let chain = crate::dma::Chain::new(descriptors);
+        chain.mount_eof(start, bytes)?;
+
+        rx.connect_to(crate::dma::Peripheral::Adc);
+        rx.reset_channel();
+        rx.start_chain(chain.head());
+
+        // Samples arrive `timer_cycles` controller clocks apart; allow twice
+        // that plus a fixed grace period before giving up on the controller.
+        let controller_hz = 40_000_000 / (SCAN_CLK_DIV + 1);
+        let expected_us =
+            (buffer.len() as u64 * u64::from(timer_cycles) * 1_000_000) / u64::from(controller_hz);
+        let budget_us = expected_us * 2 + 20_000;
+        let _ = crate::delay::Delay::init(unsafe { esp32p4_pac::SYSTIMER::steal() });
+
+        self.start_scan_timer();
+        let deadline = crate::delay::micros() + budget_us;
+        let scanned = self.wait_scan_done(rx, deadline);
+        self.stop_scan(unit);
+        rx.clear_interrupt(crate::dma::RxInterrupt::SucEof);
+        rx.detach();
+        crate::cache::invalidate(start as *const _, bytes);
+        scanned
+    }
+
+    /// Programs the pattern table, the DMA frame size and the scan clock.
+    fn setup_scan(&self, unit: Unit, patterns: &[Pattern], samples: usize, timer_cycles: u32) {
+        let r = self.regs();
+        // A stale FSM would keep its table pointer and its end-of-frame count.
+        r.dma_conf.set_apb_adc_reset_fsm();
+        r.dma_conf.clr_apb_adc_reset_fsm();
+
+        // The table is six bits per entry, four entries per register, most
+        // significant entry first.
+        let mut table = [0u32; 4];
+        for (index, pattern) in patterns.iter().enumerate() {
+            let channel = match unit {
+                Unit::Adc1 => pattern.channel,
+                // ADC2's channels are the internal channels 2-7.
+                Unit::Adc2 => pattern.channel + 2,
+            };
+            let entry = (pattern.attenuation as u32 & 0x3) | (u32::from(channel) << 2);
+            let shift = 18 - (index % 4) * 6;
+            table[index / 4] |= (entry & 0x3f) << shift;
+        }
+        match unit {
+            Unit::Adc1 => {
+                r.sar1_patt_tab1.write_bits(table[0]);
+                r.sar1_patt_tab2.write_bits(table[1]);
+                r.sar1_patt_tab3.write_bits(table[2]);
+                r.sar1_patt_tab4.write_bits(table[3]);
+            }
+            Unit::Adc2 => {
+                r.sar2_patt_tab1.write_bits(table[0]);
+                r.sar2_patt_tab2.write_bits(table[1]);
+                r.sar2_patt_tab3.write_bits(table[2]);
+                r.sar2_patt_tab4.write_bits(table[3]);
+            }
+        }
+
+        match unit {
+            Unit::Adc1 => {
+                r.ctrl.write_sar1_patt_len(patterns.len() as u32 - 1);
+                r.ctrl.clr_sar_sel();
+                r.ctrl.write_xpd_sar1_force(SAR_POWER_BY_FSM);
+                self.lp_adc
+                    .reader1_ctrl
+                    .write_sar1_clk_div(SCAN_SAR_CLK_DIV);
+                self.lp_adc.meas1_mux.set_sar1_dig_force();
+            }
+            Unit::Adc2 => {
+                r.ctrl.write_sar2_patt_len(patterns.len() as u32 - 1);
+                r.ctrl.set_sar_sel();
+                r.ctrl.write_xpd_sar2_force(SAR_POWER_BY_FSM);
+                self.lp_adc
+                    .reader2_ctrl
+                    .write_sar2_clk_div(SCAN_SAR_CLK_DIV);
+                // ADC2 selects the digital controller by clearing the RTC
+                // force bit, the opposite polarity of ADC1's.
+                self.lp_adc.meas2_mux.clr_sar2_rtc_force();
+            }
+        }
+
+        // One unit at a time, and the data path goes to GDMA rather than I2S.
+        r.ctrl.write_work_mode(0);
+        r.ctrl.set_data_sar_sel();
+        r.ctrl.clr_data_to_i2s();
+        r.ctrl.set_sar_clk_gated();
+        r.ctrl.write_sar_clk_div(SCAN_CLK_DIV);
+
+        r.dma_conf.write_apb_adc_eof_num(samples as u32);
+        r.dma_conf.set_apb_adc_trans();
+        // Stop after exactly one frame: without the counter the FSM converts
+        // until software stops the timer.
+        r.ctrl2.write_max_meas_num(samples as u32 - 1);
+        r.ctrl2.set_meas_num_limit();
+        r.ctrl2.write_timer_target(timer_cycles);
+    }
+
+    /// Starts the trigger timer that drives the FSM.
+    fn start_scan_timer(&self) {
+        let r = self.regs();
+        r.int_clr.trigger_apb_saradc1_done_int_clr();
+        r.int_clr.trigger_apb_saradc2_done_int_clr();
+        r.ctrl2.set_timer_sel();
+        r.ctrl2.set_timer_en();
+    }
+
+    /// Waits until GDMA has written the whole frame into the buffer.
+    ///
+    /// The controller's own done interrupt fires after *every* conversion, so
+    /// the end of a scan is the DMA channel's end-of-frame instead.
+    fn wait_scan_done(
+        &self,
+        rx: &impl crate::dma::ReceiveChannel,
+        deadline_us: u64,
+    ) -> Result<(), crate::dma::Error> {
+        loop {
+            if rx.interrupt_pending(crate::dma::RxInterrupt::SucEof) {
+                return Ok(());
+            }
+            if crate::delay::micros() >= deadline_us {
+                return Err(crate::dma::Error::Timeout);
+            }
+            core::hint::spin_loop();
+        }
+    }
+
+    /// Stops the scan and gives the SAR back to the one-shot controller.
+    fn stop_scan(&self, unit: Unit) {
+        let r = self.regs();
+        r.ctrl2.clr_timer_en();
+        r.dma_conf.clr_apb_adc_trans();
+        r.dma_conf.set_apb_adc_reset_fsm();
+        r.dma_conf.clr_apb_adc_reset_fsm();
+        match unit {
+            Unit::Adc1 => {
+                r.int_clr.trigger_apb_saradc1_done_int_clr();
+                self.lp_adc.meas1_mux.clr_sar1_dig_force();
+            }
+            Unit::Adc2 => {
+                r.int_clr.trigger_apb_saradc2_done_int_clr();
+                self.lp_adc.meas2_mux.set_sar2_rtc_force();
+            }
+        }
     }
 }

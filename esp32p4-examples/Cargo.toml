@@ -159,6 +159,11 @@ path = "src/sd.rs"
 required-features = ["defmt"]
 
 [[bin]]
+name = "adc_scan"
+path = "src/adc_scan.rs"
+required-features = ["defmt"]
+
+[[bin]]
 name = "tsens"
 path = "src/tsens.rs"
 required-features = ["defmt"]
