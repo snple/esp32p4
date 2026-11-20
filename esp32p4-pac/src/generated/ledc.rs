@@ -21201,6 +21201,2566 @@ impl Date {
     }
 }
 
+/// CH0_GAMMA_MEM[0] Register
+///
+/// Gamma fade range 0 of channel 0
+///
+/// Address offset: 0x0400
+#[repr(transparent)]
+pub struct Ch0GammaMem0 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch0GammaMem0 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch0GammaMem0 {}
+
+/// CH0_GAMMA_MEM[1] Register
+///
+/// Gamma fade range 1 of channel 0
+///
+/// Address offset: 0x0404
+#[repr(transparent)]
+pub struct Ch0GammaMem1 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch0GammaMem1 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch0GammaMem1 {}
+
+/// CH0_GAMMA_MEM[2] Register
+///
+/// Gamma fade range 2 of channel 0
+///
+/// Address offset: 0x0408
+#[repr(transparent)]
+pub struct Ch0GammaMem2 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch0GammaMem2 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch0GammaMem2 {}
+
+/// CH0_GAMMA_MEM[3] Register
+///
+/// Gamma fade range 3 of channel 0
+///
+/// Address offset: 0x040c
+#[repr(transparent)]
+pub struct Ch0GammaMem3 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch0GammaMem3 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch0GammaMem3 {}
+
+/// CH0_GAMMA_MEM[4] Register
+///
+/// Gamma fade range 4 of channel 0
+///
+/// Address offset: 0x0410
+#[repr(transparent)]
+pub struct Ch0GammaMem4 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch0GammaMem4 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch0GammaMem4 {}
+
+/// CH0_GAMMA_MEM[5] Register
+///
+/// Gamma fade range 5 of channel 0
+///
+/// Address offset: 0x0414
+#[repr(transparent)]
+pub struct Ch0GammaMem5 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch0GammaMem5 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch0GammaMem5 {}
+
+/// CH0_GAMMA_MEM[6] Register
+///
+/// Gamma fade range 6 of channel 0
+///
+/// Address offset: 0x0418
+#[repr(transparent)]
+pub struct Ch0GammaMem6 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch0GammaMem6 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch0GammaMem6 {}
+
+/// CH0_GAMMA_MEM[7] Register
+///
+/// Gamma fade range 7 of channel 0
+///
+/// Address offset: 0x041c
+#[repr(transparent)]
+pub struct Ch0GammaMem7 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch0GammaMem7 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch0GammaMem7 {}
+
+/// CH0_GAMMA_MEM[8] Register
+///
+/// Gamma fade range 8 of channel 0
+///
+/// Address offset: 0x0420
+#[repr(transparent)]
+pub struct Ch0GammaMem8 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch0GammaMem8 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch0GammaMem8 {}
+
+/// CH0_GAMMA_MEM[9] Register
+///
+/// Gamma fade range 9 of channel 0
+///
+/// Address offset: 0x0424
+#[repr(transparent)]
+pub struct Ch0GammaMem9 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch0GammaMem9 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch0GammaMem9 {}
+
+/// CH0_GAMMA_MEM[10] Register
+///
+/// Gamma fade range 10 of channel 0
+///
+/// Address offset: 0x0428
+#[repr(transparent)]
+pub struct Ch0GammaMem10 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch0GammaMem10 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch0GammaMem10 {}
+
+/// CH0_GAMMA_MEM[11] Register
+///
+/// Gamma fade range 11 of channel 0
+///
+/// Address offset: 0x042c
+#[repr(transparent)]
+pub struct Ch0GammaMem11 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch0GammaMem11 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch0GammaMem11 {}
+
+/// CH0_GAMMA_MEM[12] Register
+///
+/// Gamma fade range 12 of channel 0
+///
+/// Address offset: 0x0430
+#[repr(transparent)]
+pub struct Ch0GammaMem12 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch0GammaMem12 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch0GammaMem12 {}
+
+/// CH0_GAMMA_MEM[13] Register
+///
+/// Gamma fade range 13 of channel 0
+///
+/// Address offset: 0x0434
+#[repr(transparent)]
+pub struct Ch0GammaMem13 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch0GammaMem13 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch0GammaMem13 {}
+
+/// CH0_GAMMA_MEM[14] Register
+///
+/// Gamma fade range 14 of channel 0
+///
+/// Address offset: 0x0438
+#[repr(transparent)]
+pub struct Ch0GammaMem14 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch0GammaMem14 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch0GammaMem14 {}
+
+/// CH0_GAMMA_MEM[15] Register
+///
+/// Gamma fade range 15 of channel 0
+///
+/// Address offset: 0x043c
+#[repr(transparent)]
+pub struct Ch0GammaMem15 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch0GammaMem15 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch0GammaMem15 {}
+
+/// CH1_GAMMA_MEM[0] Register
+///
+/// Gamma fade range 0 of channel 1
+///
+/// Address offset: 0x0440
+#[repr(transparent)]
+pub struct Ch1GammaMem0 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch1GammaMem0 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch1GammaMem0 {}
+
+/// CH1_GAMMA_MEM[1] Register
+///
+/// Gamma fade range 1 of channel 1
+///
+/// Address offset: 0x0444
+#[repr(transparent)]
+pub struct Ch1GammaMem1 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch1GammaMem1 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch1GammaMem1 {}
+
+/// CH1_GAMMA_MEM[2] Register
+///
+/// Gamma fade range 2 of channel 1
+///
+/// Address offset: 0x0448
+#[repr(transparent)]
+pub struct Ch1GammaMem2 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch1GammaMem2 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch1GammaMem2 {}
+
+/// CH1_GAMMA_MEM[3] Register
+///
+/// Gamma fade range 3 of channel 1
+///
+/// Address offset: 0x044c
+#[repr(transparent)]
+pub struct Ch1GammaMem3 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch1GammaMem3 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch1GammaMem3 {}
+
+/// CH1_GAMMA_MEM[4] Register
+///
+/// Gamma fade range 4 of channel 1
+///
+/// Address offset: 0x0450
+#[repr(transparent)]
+pub struct Ch1GammaMem4 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch1GammaMem4 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch1GammaMem4 {}
+
+/// CH1_GAMMA_MEM[5] Register
+///
+/// Gamma fade range 5 of channel 1
+///
+/// Address offset: 0x0454
+#[repr(transparent)]
+pub struct Ch1GammaMem5 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch1GammaMem5 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch1GammaMem5 {}
+
+/// CH1_GAMMA_MEM[6] Register
+///
+/// Gamma fade range 6 of channel 1
+///
+/// Address offset: 0x0458
+#[repr(transparent)]
+pub struct Ch1GammaMem6 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch1GammaMem6 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch1GammaMem6 {}
+
+/// CH1_GAMMA_MEM[7] Register
+///
+/// Gamma fade range 7 of channel 1
+///
+/// Address offset: 0x045c
+#[repr(transparent)]
+pub struct Ch1GammaMem7 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch1GammaMem7 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch1GammaMem7 {}
+
+/// CH1_GAMMA_MEM[8] Register
+///
+/// Gamma fade range 8 of channel 1
+///
+/// Address offset: 0x0460
+#[repr(transparent)]
+pub struct Ch1GammaMem8 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch1GammaMem8 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch1GammaMem8 {}
+
+/// CH1_GAMMA_MEM[9] Register
+///
+/// Gamma fade range 9 of channel 1
+///
+/// Address offset: 0x0464
+#[repr(transparent)]
+pub struct Ch1GammaMem9 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch1GammaMem9 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch1GammaMem9 {}
+
+/// CH1_GAMMA_MEM[10] Register
+///
+/// Gamma fade range 10 of channel 1
+///
+/// Address offset: 0x0468
+#[repr(transparent)]
+pub struct Ch1GammaMem10 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch1GammaMem10 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch1GammaMem10 {}
+
+/// CH1_GAMMA_MEM[11] Register
+///
+/// Gamma fade range 11 of channel 1
+///
+/// Address offset: 0x046c
+#[repr(transparent)]
+pub struct Ch1GammaMem11 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch1GammaMem11 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch1GammaMem11 {}
+
+/// CH1_GAMMA_MEM[12] Register
+///
+/// Gamma fade range 12 of channel 1
+///
+/// Address offset: 0x0470
+#[repr(transparent)]
+pub struct Ch1GammaMem12 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch1GammaMem12 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch1GammaMem12 {}
+
+/// CH1_GAMMA_MEM[13] Register
+///
+/// Gamma fade range 13 of channel 1
+///
+/// Address offset: 0x0474
+#[repr(transparent)]
+pub struct Ch1GammaMem13 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch1GammaMem13 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch1GammaMem13 {}
+
+/// CH1_GAMMA_MEM[14] Register
+///
+/// Gamma fade range 14 of channel 1
+///
+/// Address offset: 0x0478
+#[repr(transparent)]
+pub struct Ch1GammaMem14 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch1GammaMem14 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch1GammaMem14 {}
+
+/// CH1_GAMMA_MEM[15] Register
+///
+/// Gamma fade range 15 of channel 1
+///
+/// Address offset: 0x047c
+#[repr(transparent)]
+pub struct Ch1GammaMem15 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch1GammaMem15 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch1GammaMem15 {}
+
+/// CH2_GAMMA_MEM[0] Register
+///
+/// Gamma fade range 0 of channel 2
+///
+/// Address offset: 0x0480
+#[repr(transparent)]
+pub struct Ch2GammaMem0 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch2GammaMem0 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch2GammaMem0 {}
+
+/// CH2_GAMMA_MEM[1] Register
+///
+/// Gamma fade range 1 of channel 2
+///
+/// Address offset: 0x0484
+#[repr(transparent)]
+pub struct Ch2GammaMem1 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch2GammaMem1 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch2GammaMem1 {}
+
+/// CH2_GAMMA_MEM[2] Register
+///
+/// Gamma fade range 2 of channel 2
+///
+/// Address offset: 0x0488
+#[repr(transparent)]
+pub struct Ch2GammaMem2 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch2GammaMem2 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch2GammaMem2 {}
+
+/// CH2_GAMMA_MEM[3] Register
+///
+/// Gamma fade range 3 of channel 2
+///
+/// Address offset: 0x048c
+#[repr(transparent)]
+pub struct Ch2GammaMem3 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch2GammaMem3 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch2GammaMem3 {}
+
+/// CH2_GAMMA_MEM[4] Register
+///
+/// Gamma fade range 4 of channel 2
+///
+/// Address offset: 0x0490
+#[repr(transparent)]
+pub struct Ch2GammaMem4 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch2GammaMem4 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch2GammaMem4 {}
+
+/// CH2_GAMMA_MEM[5] Register
+///
+/// Gamma fade range 5 of channel 2
+///
+/// Address offset: 0x0494
+#[repr(transparent)]
+pub struct Ch2GammaMem5 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch2GammaMem5 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch2GammaMem5 {}
+
+/// CH2_GAMMA_MEM[6] Register
+///
+/// Gamma fade range 6 of channel 2
+///
+/// Address offset: 0x0498
+#[repr(transparent)]
+pub struct Ch2GammaMem6 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch2GammaMem6 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch2GammaMem6 {}
+
+/// CH2_GAMMA_MEM[7] Register
+///
+/// Gamma fade range 7 of channel 2
+///
+/// Address offset: 0x049c
+#[repr(transparent)]
+pub struct Ch2GammaMem7 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch2GammaMem7 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch2GammaMem7 {}
+
+/// CH2_GAMMA_MEM[8] Register
+///
+/// Gamma fade range 8 of channel 2
+///
+/// Address offset: 0x04a0
+#[repr(transparent)]
+pub struct Ch2GammaMem8 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch2GammaMem8 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch2GammaMem8 {}
+
+/// CH2_GAMMA_MEM[9] Register
+///
+/// Gamma fade range 9 of channel 2
+///
+/// Address offset: 0x04a4
+#[repr(transparent)]
+pub struct Ch2GammaMem9 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch2GammaMem9 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch2GammaMem9 {}
+
+/// CH2_GAMMA_MEM[10] Register
+///
+/// Gamma fade range 10 of channel 2
+///
+/// Address offset: 0x04a8
+#[repr(transparent)]
+pub struct Ch2GammaMem10 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch2GammaMem10 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch2GammaMem10 {}
+
+/// CH2_GAMMA_MEM[11] Register
+///
+/// Gamma fade range 11 of channel 2
+///
+/// Address offset: 0x04ac
+#[repr(transparent)]
+pub struct Ch2GammaMem11 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch2GammaMem11 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch2GammaMem11 {}
+
+/// CH2_GAMMA_MEM[12] Register
+///
+/// Gamma fade range 12 of channel 2
+///
+/// Address offset: 0x04b0
+#[repr(transparent)]
+pub struct Ch2GammaMem12 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch2GammaMem12 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch2GammaMem12 {}
+
+/// CH2_GAMMA_MEM[13] Register
+///
+/// Gamma fade range 13 of channel 2
+///
+/// Address offset: 0x04b4
+#[repr(transparent)]
+pub struct Ch2GammaMem13 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch2GammaMem13 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch2GammaMem13 {}
+
+/// CH2_GAMMA_MEM[14] Register
+///
+/// Gamma fade range 14 of channel 2
+///
+/// Address offset: 0x04b8
+#[repr(transparent)]
+pub struct Ch2GammaMem14 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch2GammaMem14 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch2GammaMem14 {}
+
+/// CH2_GAMMA_MEM[15] Register
+///
+/// Gamma fade range 15 of channel 2
+///
+/// Address offset: 0x04bc
+#[repr(transparent)]
+pub struct Ch2GammaMem15 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch2GammaMem15 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch2GammaMem15 {}
+
+/// CH3_GAMMA_MEM[0] Register
+///
+/// Gamma fade range 0 of channel 3
+///
+/// Address offset: 0x04c0
+#[repr(transparent)]
+pub struct Ch3GammaMem0 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch3GammaMem0 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch3GammaMem0 {}
+
+/// CH3_GAMMA_MEM[1] Register
+///
+/// Gamma fade range 1 of channel 3
+///
+/// Address offset: 0x04c4
+#[repr(transparent)]
+pub struct Ch3GammaMem1 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch3GammaMem1 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch3GammaMem1 {}
+
+/// CH3_GAMMA_MEM[2] Register
+///
+/// Gamma fade range 2 of channel 3
+///
+/// Address offset: 0x04c8
+#[repr(transparent)]
+pub struct Ch3GammaMem2 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch3GammaMem2 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch3GammaMem2 {}
+
+/// CH3_GAMMA_MEM[3] Register
+///
+/// Gamma fade range 3 of channel 3
+///
+/// Address offset: 0x04cc
+#[repr(transparent)]
+pub struct Ch3GammaMem3 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch3GammaMem3 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch3GammaMem3 {}
+
+/// CH3_GAMMA_MEM[4] Register
+///
+/// Gamma fade range 4 of channel 3
+///
+/// Address offset: 0x04d0
+#[repr(transparent)]
+pub struct Ch3GammaMem4 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch3GammaMem4 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch3GammaMem4 {}
+
+/// CH3_GAMMA_MEM[5] Register
+///
+/// Gamma fade range 5 of channel 3
+///
+/// Address offset: 0x04d4
+#[repr(transparent)]
+pub struct Ch3GammaMem5 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch3GammaMem5 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch3GammaMem5 {}
+
+/// CH3_GAMMA_MEM[6] Register
+///
+/// Gamma fade range 6 of channel 3
+///
+/// Address offset: 0x04d8
+#[repr(transparent)]
+pub struct Ch3GammaMem6 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch3GammaMem6 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch3GammaMem6 {}
+
+/// CH3_GAMMA_MEM[7] Register
+///
+/// Gamma fade range 7 of channel 3
+///
+/// Address offset: 0x04dc
+#[repr(transparent)]
+pub struct Ch3GammaMem7 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch3GammaMem7 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch3GammaMem7 {}
+
+/// CH3_GAMMA_MEM[8] Register
+///
+/// Gamma fade range 8 of channel 3
+///
+/// Address offset: 0x04e0
+#[repr(transparent)]
+pub struct Ch3GammaMem8 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch3GammaMem8 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch3GammaMem8 {}
+
+/// CH3_GAMMA_MEM[9] Register
+///
+/// Gamma fade range 9 of channel 3
+///
+/// Address offset: 0x04e4
+#[repr(transparent)]
+pub struct Ch3GammaMem9 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch3GammaMem9 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch3GammaMem9 {}
+
+/// CH3_GAMMA_MEM[10] Register
+///
+/// Gamma fade range 10 of channel 3
+///
+/// Address offset: 0x04e8
+#[repr(transparent)]
+pub struct Ch3GammaMem10 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch3GammaMem10 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch3GammaMem10 {}
+
+/// CH3_GAMMA_MEM[11] Register
+///
+/// Gamma fade range 11 of channel 3
+///
+/// Address offset: 0x04ec
+#[repr(transparent)]
+pub struct Ch3GammaMem11 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch3GammaMem11 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch3GammaMem11 {}
+
+/// CH3_GAMMA_MEM[12] Register
+///
+/// Gamma fade range 12 of channel 3
+///
+/// Address offset: 0x04f0
+#[repr(transparent)]
+pub struct Ch3GammaMem12 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch3GammaMem12 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch3GammaMem12 {}
+
+/// CH3_GAMMA_MEM[13] Register
+///
+/// Gamma fade range 13 of channel 3
+///
+/// Address offset: 0x04f4
+#[repr(transparent)]
+pub struct Ch3GammaMem13 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch3GammaMem13 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch3GammaMem13 {}
+
+/// CH3_GAMMA_MEM[14] Register
+///
+/// Gamma fade range 14 of channel 3
+///
+/// Address offset: 0x04f8
+#[repr(transparent)]
+pub struct Ch3GammaMem14 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch3GammaMem14 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch3GammaMem14 {}
+
+/// CH3_GAMMA_MEM[15] Register
+///
+/// Gamma fade range 15 of channel 3
+///
+/// Address offset: 0x04fc
+#[repr(transparent)]
+pub struct Ch3GammaMem15 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch3GammaMem15 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch3GammaMem15 {}
+
+/// CH4_GAMMA_MEM[0] Register
+///
+/// Gamma fade range 0 of channel 4
+///
+/// Address offset: 0x0500
+#[repr(transparent)]
+pub struct Ch4GammaMem0 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch4GammaMem0 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch4GammaMem0 {}
+
+/// CH4_GAMMA_MEM[1] Register
+///
+/// Gamma fade range 1 of channel 4
+///
+/// Address offset: 0x0504
+#[repr(transparent)]
+pub struct Ch4GammaMem1 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch4GammaMem1 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch4GammaMem1 {}
+
+/// CH4_GAMMA_MEM[2] Register
+///
+/// Gamma fade range 2 of channel 4
+///
+/// Address offset: 0x0508
+#[repr(transparent)]
+pub struct Ch4GammaMem2 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch4GammaMem2 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch4GammaMem2 {}
+
+/// CH4_GAMMA_MEM[3] Register
+///
+/// Gamma fade range 3 of channel 4
+///
+/// Address offset: 0x050c
+#[repr(transparent)]
+pub struct Ch4GammaMem3 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch4GammaMem3 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch4GammaMem3 {}
+
+/// CH4_GAMMA_MEM[4] Register
+///
+/// Gamma fade range 4 of channel 4
+///
+/// Address offset: 0x0510
+#[repr(transparent)]
+pub struct Ch4GammaMem4 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch4GammaMem4 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch4GammaMem4 {}
+
+/// CH4_GAMMA_MEM[5] Register
+///
+/// Gamma fade range 5 of channel 4
+///
+/// Address offset: 0x0514
+#[repr(transparent)]
+pub struct Ch4GammaMem5 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch4GammaMem5 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch4GammaMem5 {}
+
+/// CH4_GAMMA_MEM[6] Register
+///
+/// Gamma fade range 6 of channel 4
+///
+/// Address offset: 0x0518
+#[repr(transparent)]
+pub struct Ch4GammaMem6 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch4GammaMem6 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch4GammaMem6 {}
+
+/// CH4_GAMMA_MEM[7] Register
+///
+/// Gamma fade range 7 of channel 4
+///
+/// Address offset: 0x051c
+#[repr(transparent)]
+pub struct Ch4GammaMem7 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch4GammaMem7 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch4GammaMem7 {}
+
+/// CH4_GAMMA_MEM[8] Register
+///
+/// Gamma fade range 8 of channel 4
+///
+/// Address offset: 0x0520
+#[repr(transparent)]
+pub struct Ch4GammaMem8 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch4GammaMem8 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch4GammaMem8 {}
+
+/// CH4_GAMMA_MEM[9] Register
+///
+/// Gamma fade range 9 of channel 4
+///
+/// Address offset: 0x0524
+#[repr(transparent)]
+pub struct Ch4GammaMem9 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch4GammaMem9 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch4GammaMem9 {}
+
+/// CH4_GAMMA_MEM[10] Register
+///
+/// Gamma fade range 10 of channel 4
+///
+/// Address offset: 0x0528
+#[repr(transparent)]
+pub struct Ch4GammaMem10 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch4GammaMem10 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch4GammaMem10 {}
+
+/// CH4_GAMMA_MEM[11] Register
+///
+/// Gamma fade range 11 of channel 4
+///
+/// Address offset: 0x052c
+#[repr(transparent)]
+pub struct Ch4GammaMem11 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch4GammaMem11 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch4GammaMem11 {}
+
+/// CH4_GAMMA_MEM[12] Register
+///
+/// Gamma fade range 12 of channel 4
+///
+/// Address offset: 0x0530
+#[repr(transparent)]
+pub struct Ch4GammaMem12 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch4GammaMem12 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch4GammaMem12 {}
+
+/// CH4_GAMMA_MEM[13] Register
+///
+/// Gamma fade range 13 of channel 4
+///
+/// Address offset: 0x0534
+#[repr(transparent)]
+pub struct Ch4GammaMem13 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch4GammaMem13 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch4GammaMem13 {}
+
+/// CH4_GAMMA_MEM[14] Register
+///
+/// Gamma fade range 14 of channel 4
+///
+/// Address offset: 0x0538
+#[repr(transparent)]
+pub struct Ch4GammaMem14 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch4GammaMem14 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch4GammaMem14 {}
+
+/// CH4_GAMMA_MEM[15] Register
+///
+/// Gamma fade range 15 of channel 4
+///
+/// Address offset: 0x053c
+#[repr(transparent)]
+pub struct Ch4GammaMem15 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch4GammaMem15 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch4GammaMem15 {}
+
+/// CH5_GAMMA_MEM[0] Register
+///
+/// Gamma fade range 0 of channel 5
+///
+/// Address offset: 0x0540
+#[repr(transparent)]
+pub struct Ch5GammaMem0 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch5GammaMem0 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch5GammaMem0 {}
+
+/// CH5_GAMMA_MEM[1] Register
+///
+/// Gamma fade range 1 of channel 5
+///
+/// Address offset: 0x0544
+#[repr(transparent)]
+pub struct Ch5GammaMem1 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch5GammaMem1 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch5GammaMem1 {}
+
+/// CH5_GAMMA_MEM[2] Register
+///
+/// Gamma fade range 2 of channel 5
+///
+/// Address offset: 0x0548
+#[repr(transparent)]
+pub struct Ch5GammaMem2 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch5GammaMem2 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch5GammaMem2 {}
+
+/// CH5_GAMMA_MEM[3] Register
+///
+/// Gamma fade range 3 of channel 5
+///
+/// Address offset: 0x054c
+#[repr(transparent)]
+pub struct Ch5GammaMem3 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch5GammaMem3 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch5GammaMem3 {}
+
+/// CH5_GAMMA_MEM[4] Register
+///
+/// Gamma fade range 4 of channel 5
+///
+/// Address offset: 0x0550
+#[repr(transparent)]
+pub struct Ch5GammaMem4 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch5GammaMem4 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch5GammaMem4 {}
+
+/// CH5_GAMMA_MEM[5] Register
+///
+/// Gamma fade range 5 of channel 5
+///
+/// Address offset: 0x0554
+#[repr(transparent)]
+pub struct Ch5GammaMem5 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch5GammaMem5 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch5GammaMem5 {}
+
+/// CH5_GAMMA_MEM[6] Register
+///
+/// Gamma fade range 6 of channel 5
+///
+/// Address offset: 0x0558
+#[repr(transparent)]
+pub struct Ch5GammaMem6 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch5GammaMem6 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch5GammaMem6 {}
+
+/// CH5_GAMMA_MEM[7] Register
+///
+/// Gamma fade range 7 of channel 5
+///
+/// Address offset: 0x055c
+#[repr(transparent)]
+pub struct Ch5GammaMem7 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch5GammaMem7 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch5GammaMem7 {}
+
+/// CH5_GAMMA_MEM[8] Register
+///
+/// Gamma fade range 8 of channel 5
+///
+/// Address offset: 0x0560
+#[repr(transparent)]
+pub struct Ch5GammaMem8 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch5GammaMem8 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch5GammaMem8 {}
+
+/// CH5_GAMMA_MEM[9] Register
+///
+/// Gamma fade range 9 of channel 5
+///
+/// Address offset: 0x0564
+#[repr(transparent)]
+pub struct Ch5GammaMem9 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch5GammaMem9 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch5GammaMem9 {}
+
+/// CH5_GAMMA_MEM[10] Register
+///
+/// Gamma fade range 10 of channel 5
+///
+/// Address offset: 0x0568
+#[repr(transparent)]
+pub struct Ch5GammaMem10 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch5GammaMem10 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch5GammaMem10 {}
+
+/// CH5_GAMMA_MEM[11] Register
+///
+/// Gamma fade range 11 of channel 5
+///
+/// Address offset: 0x056c
+#[repr(transparent)]
+pub struct Ch5GammaMem11 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch5GammaMem11 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch5GammaMem11 {}
+
+/// CH5_GAMMA_MEM[12] Register
+///
+/// Gamma fade range 12 of channel 5
+///
+/// Address offset: 0x0570
+#[repr(transparent)]
+pub struct Ch5GammaMem12 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch5GammaMem12 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch5GammaMem12 {}
+
+/// CH5_GAMMA_MEM[13] Register
+///
+/// Gamma fade range 13 of channel 5
+///
+/// Address offset: 0x0574
+#[repr(transparent)]
+pub struct Ch5GammaMem13 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch5GammaMem13 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch5GammaMem13 {}
+
+/// CH5_GAMMA_MEM[14] Register
+///
+/// Gamma fade range 14 of channel 5
+///
+/// Address offset: 0x0578
+#[repr(transparent)]
+pub struct Ch5GammaMem14 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch5GammaMem14 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch5GammaMem14 {}
+
+/// CH5_GAMMA_MEM[15] Register
+///
+/// Gamma fade range 15 of channel 5
+///
+/// Address offset: 0x057c
+#[repr(transparent)]
+pub struct Ch5GammaMem15 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch5GammaMem15 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch5GammaMem15 {}
+
+/// CH6_GAMMA_MEM[0] Register
+///
+/// Gamma fade range 0 of channel 6
+///
+/// Address offset: 0x0580
+#[repr(transparent)]
+pub struct Ch6GammaMem0 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch6GammaMem0 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch6GammaMem0 {}
+
+/// CH6_GAMMA_MEM[1] Register
+///
+/// Gamma fade range 1 of channel 6
+///
+/// Address offset: 0x0584
+#[repr(transparent)]
+pub struct Ch6GammaMem1 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch6GammaMem1 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch6GammaMem1 {}
+
+/// CH6_GAMMA_MEM[2] Register
+///
+/// Gamma fade range 2 of channel 6
+///
+/// Address offset: 0x0588
+#[repr(transparent)]
+pub struct Ch6GammaMem2 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch6GammaMem2 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch6GammaMem2 {}
+
+/// CH6_GAMMA_MEM[3] Register
+///
+/// Gamma fade range 3 of channel 6
+///
+/// Address offset: 0x058c
+#[repr(transparent)]
+pub struct Ch6GammaMem3 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch6GammaMem3 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch6GammaMem3 {}
+
+/// CH6_GAMMA_MEM[4] Register
+///
+/// Gamma fade range 4 of channel 6
+///
+/// Address offset: 0x0590
+#[repr(transparent)]
+pub struct Ch6GammaMem4 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch6GammaMem4 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch6GammaMem4 {}
+
+/// CH6_GAMMA_MEM[5] Register
+///
+/// Gamma fade range 5 of channel 6
+///
+/// Address offset: 0x0594
+#[repr(transparent)]
+pub struct Ch6GammaMem5 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch6GammaMem5 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch6GammaMem5 {}
+
+/// CH6_GAMMA_MEM[6] Register
+///
+/// Gamma fade range 6 of channel 6
+///
+/// Address offset: 0x0598
+#[repr(transparent)]
+pub struct Ch6GammaMem6 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch6GammaMem6 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch6GammaMem6 {}
+
+/// CH6_GAMMA_MEM[7] Register
+///
+/// Gamma fade range 7 of channel 6
+///
+/// Address offset: 0x059c
+#[repr(transparent)]
+pub struct Ch6GammaMem7 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch6GammaMem7 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch6GammaMem7 {}
+
+/// CH6_GAMMA_MEM[8] Register
+///
+/// Gamma fade range 8 of channel 6
+///
+/// Address offset: 0x05a0
+#[repr(transparent)]
+pub struct Ch6GammaMem8 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch6GammaMem8 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch6GammaMem8 {}
+
+/// CH6_GAMMA_MEM[9] Register
+///
+/// Gamma fade range 9 of channel 6
+///
+/// Address offset: 0x05a4
+#[repr(transparent)]
+pub struct Ch6GammaMem9 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch6GammaMem9 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch6GammaMem9 {}
+
+/// CH6_GAMMA_MEM[10] Register
+///
+/// Gamma fade range 10 of channel 6
+///
+/// Address offset: 0x05a8
+#[repr(transparent)]
+pub struct Ch6GammaMem10 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch6GammaMem10 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch6GammaMem10 {}
+
+/// CH6_GAMMA_MEM[11] Register
+///
+/// Gamma fade range 11 of channel 6
+///
+/// Address offset: 0x05ac
+#[repr(transparent)]
+pub struct Ch6GammaMem11 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch6GammaMem11 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch6GammaMem11 {}
+
+/// CH6_GAMMA_MEM[12] Register
+///
+/// Gamma fade range 12 of channel 6
+///
+/// Address offset: 0x05b0
+#[repr(transparent)]
+pub struct Ch6GammaMem12 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch6GammaMem12 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch6GammaMem12 {}
+
+/// CH6_GAMMA_MEM[13] Register
+///
+/// Gamma fade range 13 of channel 6
+///
+/// Address offset: 0x05b4
+#[repr(transparent)]
+pub struct Ch6GammaMem13 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch6GammaMem13 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch6GammaMem13 {}
+
+/// CH6_GAMMA_MEM[14] Register
+///
+/// Gamma fade range 14 of channel 6
+///
+/// Address offset: 0x05b8
+#[repr(transparent)]
+pub struct Ch6GammaMem14 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch6GammaMem14 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch6GammaMem14 {}
+
+/// CH6_GAMMA_MEM[15] Register
+///
+/// Gamma fade range 15 of channel 6
+///
+/// Address offset: 0x05bc
+#[repr(transparent)]
+pub struct Ch6GammaMem15 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch6GammaMem15 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch6GammaMem15 {}
+
+/// CH7_GAMMA_MEM[0] Register
+///
+/// Gamma fade range 0 of channel 7
+///
+/// Address offset: 0x05c0
+#[repr(transparent)]
+pub struct Ch7GammaMem0 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch7GammaMem0 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch7GammaMem0 {}
+
+/// CH7_GAMMA_MEM[1] Register
+///
+/// Gamma fade range 1 of channel 7
+///
+/// Address offset: 0x05c4
+#[repr(transparent)]
+pub struct Ch7GammaMem1 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch7GammaMem1 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch7GammaMem1 {}
+
+/// CH7_GAMMA_MEM[2] Register
+///
+/// Gamma fade range 2 of channel 7
+///
+/// Address offset: 0x05c8
+#[repr(transparent)]
+pub struct Ch7GammaMem2 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch7GammaMem2 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch7GammaMem2 {}
+
+/// CH7_GAMMA_MEM[3] Register
+///
+/// Gamma fade range 3 of channel 7
+///
+/// Address offset: 0x05cc
+#[repr(transparent)]
+pub struct Ch7GammaMem3 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch7GammaMem3 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch7GammaMem3 {}
+
+/// CH7_GAMMA_MEM[4] Register
+///
+/// Gamma fade range 4 of channel 7
+///
+/// Address offset: 0x05d0
+#[repr(transparent)]
+pub struct Ch7GammaMem4 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch7GammaMem4 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch7GammaMem4 {}
+
+/// CH7_GAMMA_MEM[5] Register
+///
+/// Gamma fade range 5 of channel 7
+///
+/// Address offset: 0x05d4
+#[repr(transparent)]
+pub struct Ch7GammaMem5 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch7GammaMem5 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch7GammaMem5 {}
+
+/// CH7_GAMMA_MEM[6] Register
+///
+/// Gamma fade range 6 of channel 7
+///
+/// Address offset: 0x05d8
+#[repr(transparent)]
+pub struct Ch7GammaMem6 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch7GammaMem6 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch7GammaMem6 {}
+
+/// CH7_GAMMA_MEM[7] Register
+///
+/// Gamma fade range 7 of channel 7
+///
+/// Address offset: 0x05dc
+#[repr(transparent)]
+pub struct Ch7GammaMem7 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch7GammaMem7 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch7GammaMem7 {}
+
+/// CH7_GAMMA_MEM[8] Register
+///
+/// Gamma fade range 8 of channel 7
+///
+/// Address offset: 0x05e0
+#[repr(transparent)]
+pub struct Ch7GammaMem8 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch7GammaMem8 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch7GammaMem8 {}
+
+/// CH7_GAMMA_MEM[9] Register
+///
+/// Gamma fade range 9 of channel 7
+///
+/// Address offset: 0x05e4
+#[repr(transparent)]
+pub struct Ch7GammaMem9 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch7GammaMem9 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch7GammaMem9 {}
+
+/// CH7_GAMMA_MEM[10] Register
+///
+/// Gamma fade range 10 of channel 7
+///
+/// Address offset: 0x05e8
+#[repr(transparent)]
+pub struct Ch7GammaMem10 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch7GammaMem10 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch7GammaMem10 {}
+
+/// CH7_GAMMA_MEM[11] Register
+///
+/// Gamma fade range 11 of channel 7
+///
+/// Address offset: 0x05ec
+#[repr(transparent)]
+pub struct Ch7GammaMem11 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch7GammaMem11 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch7GammaMem11 {}
+
+/// CH7_GAMMA_MEM[12] Register
+///
+/// Gamma fade range 12 of channel 7
+///
+/// Address offset: 0x05f0
+#[repr(transparent)]
+pub struct Ch7GammaMem12 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch7GammaMem12 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch7GammaMem12 {}
+
+/// CH7_GAMMA_MEM[13] Register
+///
+/// Gamma fade range 13 of channel 7
+///
+/// Address offset: 0x05f4
+#[repr(transparent)]
+pub struct Ch7GammaMem13 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch7GammaMem13 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch7GammaMem13 {}
+
+/// CH7_GAMMA_MEM[14] Register
+///
+/// Gamma fade range 14 of channel 7
+///
+/// Address offset: 0x05f8
+#[repr(transparent)]
+pub struct Ch7GammaMem14 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch7GammaMem14 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch7GammaMem14 {}
+
+/// CH7_GAMMA_MEM[15] Register
+///
+/// Gamma fade range 15 of channel 7
+///
+/// Address offset: 0x05fc
+#[repr(transparent)]
+pub struct Ch7GammaMem15 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for Ch7GammaMem15 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Ch7GammaMem15 {}
+
 /// Register block
 #[repr(C)]
 pub struct RegisterBlock {
@@ -21426,4 +23986,389 @@ pub struct RegisterBlock {
     /// 0x0174
     /// Version control register
     pub date: Date,
+    _reserved3: [u8; 648],
+    /// 0x0400
+    /// Gamma fade range 0 of channel 0
+    pub ch0_gamma_mem0: Ch0GammaMem0,
+    /// 0x0404
+    /// Gamma fade range 1 of channel 0
+    pub ch0_gamma_mem1: Ch0GammaMem1,
+    /// 0x0408
+    /// Gamma fade range 2 of channel 0
+    pub ch0_gamma_mem2: Ch0GammaMem2,
+    /// 0x040c
+    /// Gamma fade range 3 of channel 0
+    pub ch0_gamma_mem3: Ch0GammaMem3,
+    /// 0x0410
+    /// Gamma fade range 4 of channel 0
+    pub ch0_gamma_mem4: Ch0GammaMem4,
+    /// 0x0414
+    /// Gamma fade range 5 of channel 0
+    pub ch0_gamma_mem5: Ch0GammaMem5,
+    /// 0x0418
+    /// Gamma fade range 6 of channel 0
+    pub ch0_gamma_mem6: Ch0GammaMem6,
+    /// 0x041c
+    /// Gamma fade range 7 of channel 0
+    pub ch0_gamma_mem7: Ch0GammaMem7,
+    /// 0x0420
+    /// Gamma fade range 8 of channel 0
+    pub ch0_gamma_mem8: Ch0GammaMem8,
+    /// 0x0424
+    /// Gamma fade range 9 of channel 0
+    pub ch0_gamma_mem9: Ch0GammaMem9,
+    /// 0x0428
+    /// Gamma fade range 10 of channel 0
+    pub ch0_gamma_mem10: Ch0GammaMem10,
+    /// 0x042c
+    /// Gamma fade range 11 of channel 0
+    pub ch0_gamma_mem11: Ch0GammaMem11,
+    /// 0x0430
+    /// Gamma fade range 12 of channel 0
+    pub ch0_gamma_mem12: Ch0GammaMem12,
+    /// 0x0434
+    /// Gamma fade range 13 of channel 0
+    pub ch0_gamma_mem13: Ch0GammaMem13,
+    /// 0x0438
+    /// Gamma fade range 14 of channel 0
+    pub ch0_gamma_mem14: Ch0GammaMem14,
+    /// 0x043c
+    /// Gamma fade range 15 of channel 0
+    pub ch0_gamma_mem15: Ch0GammaMem15,
+    /// 0x0440
+    /// Gamma fade range 0 of channel 1
+    pub ch1_gamma_mem0: Ch1GammaMem0,
+    /// 0x0444
+    /// Gamma fade range 1 of channel 1
+    pub ch1_gamma_mem1: Ch1GammaMem1,
+    /// 0x0448
+    /// Gamma fade range 2 of channel 1
+    pub ch1_gamma_mem2: Ch1GammaMem2,
+    /// 0x044c
+    /// Gamma fade range 3 of channel 1
+    pub ch1_gamma_mem3: Ch1GammaMem3,
+    /// 0x0450
+    /// Gamma fade range 4 of channel 1
+    pub ch1_gamma_mem4: Ch1GammaMem4,
+    /// 0x0454
+    /// Gamma fade range 5 of channel 1
+    pub ch1_gamma_mem5: Ch1GammaMem5,
+    /// 0x0458
+    /// Gamma fade range 6 of channel 1
+    pub ch1_gamma_mem6: Ch1GammaMem6,
+    /// 0x045c
+    /// Gamma fade range 7 of channel 1
+    pub ch1_gamma_mem7: Ch1GammaMem7,
+    /// 0x0460
+    /// Gamma fade range 8 of channel 1
+    pub ch1_gamma_mem8: Ch1GammaMem8,
+    /// 0x0464
+    /// Gamma fade range 9 of channel 1
+    pub ch1_gamma_mem9: Ch1GammaMem9,
+    /// 0x0468
+    /// Gamma fade range 10 of channel 1
+    pub ch1_gamma_mem10: Ch1GammaMem10,
+    /// 0x046c
+    /// Gamma fade range 11 of channel 1
+    pub ch1_gamma_mem11: Ch1GammaMem11,
+    /// 0x0470
+    /// Gamma fade range 12 of channel 1
+    pub ch1_gamma_mem12: Ch1GammaMem12,
+    /// 0x0474
+    /// Gamma fade range 13 of channel 1
+    pub ch1_gamma_mem13: Ch1GammaMem13,
+    /// 0x0478
+    /// Gamma fade range 14 of channel 1
+    pub ch1_gamma_mem14: Ch1GammaMem14,
+    /// 0x047c
+    /// Gamma fade range 15 of channel 1
+    pub ch1_gamma_mem15: Ch1GammaMem15,
+    /// 0x0480
+    /// Gamma fade range 0 of channel 2
+    pub ch2_gamma_mem0: Ch2GammaMem0,
+    /// 0x0484
+    /// Gamma fade range 1 of channel 2
+    pub ch2_gamma_mem1: Ch2GammaMem1,
+    /// 0x0488
+    /// Gamma fade range 2 of channel 2
+    pub ch2_gamma_mem2: Ch2GammaMem2,
+    /// 0x048c
+    /// Gamma fade range 3 of channel 2
+    pub ch2_gamma_mem3: Ch2GammaMem3,
+    /// 0x0490
+    /// Gamma fade range 4 of channel 2
+    pub ch2_gamma_mem4: Ch2GammaMem4,
+    /// 0x0494
+    /// Gamma fade range 5 of channel 2
+    pub ch2_gamma_mem5: Ch2GammaMem5,
+    /// 0x0498
+    /// Gamma fade range 6 of channel 2
+    pub ch2_gamma_mem6: Ch2GammaMem6,
+    /// 0x049c
+    /// Gamma fade range 7 of channel 2
+    pub ch2_gamma_mem7: Ch2GammaMem7,
+    /// 0x04a0
+    /// Gamma fade range 8 of channel 2
+    pub ch2_gamma_mem8: Ch2GammaMem8,
+    /// 0x04a4
+    /// Gamma fade range 9 of channel 2
+    pub ch2_gamma_mem9: Ch2GammaMem9,
+    /// 0x04a8
+    /// Gamma fade range 10 of channel 2
+    pub ch2_gamma_mem10: Ch2GammaMem10,
+    /// 0x04ac
+    /// Gamma fade range 11 of channel 2
+    pub ch2_gamma_mem11: Ch2GammaMem11,
+    /// 0x04b0
+    /// Gamma fade range 12 of channel 2
+    pub ch2_gamma_mem12: Ch2GammaMem12,
+    /// 0x04b4
+    /// Gamma fade range 13 of channel 2
+    pub ch2_gamma_mem13: Ch2GammaMem13,
+    /// 0x04b8
+    /// Gamma fade range 14 of channel 2
+    pub ch2_gamma_mem14: Ch2GammaMem14,
+    /// 0x04bc
+    /// Gamma fade range 15 of channel 2
+    pub ch2_gamma_mem15: Ch2GammaMem15,
+    /// 0x04c0
+    /// Gamma fade range 0 of channel 3
+    pub ch3_gamma_mem0: Ch3GammaMem0,
+    /// 0x04c4
+    /// Gamma fade range 1 of channel 3
+    pub ch3_gamma_mem1: Ch3GammaMem1,
+    /// 0x04c8
+    /// Gamma fade range 2 of channel 3
+    pub ch3_gamma_mem2: Ch3GammaMem2,
+    /// 0x04cc
+    /// Gamma fade range 3 of channel 3
+    pub ch3_gamma_mem3: Ch3GammaMem3,
+    /// 0x04d0
+    /// Gamma fade range 4 of channel 3
+    pub ch3_gamma_mem4: Ch3GammaMem4,
+    /// 0x04d4
+    /// Gamma fade range 5 of channel 3
+    pub ch3_gamma_mem5: Ch3GammaMem5,
+    /// 0x04d8
+    /// Gamma fade range 6 of channel 3
+    pub ch3_gamma_mem6: Ch3GammaMem6,
+    /// 0x04dc
+    /// Gamma fade range 7 of channel 3
+    pub ch3_gamma_mem7: Ch3GammaMem7,
+    /// 0x04e0
+    /// Gamma fade range 8 of channel 3
+    pub ch3_gamma_mem8: Ch3GammaMem8,
+    /// 0x04e4
+    /// Gamma fade range 9 of channel 3
+    pub ch3_gamma_mem9: Ch3GammaMem9,
+    /// 0x04e8
+    /// Gamma fade range 10 of channel 3
+    pub ch3_gamma_mem10: Ch3GammaMem10,
+    /// 0x04ec
+    /// Gamma fade range 11 of channel 3
+    pub ch3_gamma_mem11: Ch3GammaMem11,
+    /// 0x04f0
+    /// Gamma fade range 12 of channel 3
+    pub ch3_gamma_mem12: Ch3GammaMem12,
+    /// 0x04f4
+    /// Gamma fade range 13 of channel 3
+    pub ch3_gamma_mem13: Ch3GammaMem13,
+    /// 0x04f8
+    /// Gamma fade range 14 of channel 3
+    pub ch3_gamma_mem14: Ch3GammaMem14,
+    /// 0x04fc
+    /// Gamma fade range 15 of channel 3
+    pub ch3_gamma_mem15: Ch3GammaMem15,
+    /// 0x0500
+    /// Gamma fade range 0 of channel 4
+    pub ch4_gamma_mem0: Ch4GammaMem0,
+    /// 0x0504
+    /// Gamma fade range 1 of channel 4
+    pub ch4_gamma_mem1: Ch4GammaMem1,
+    /// 0x0508
+    /// Gamma fade range 2 of channel 4
+    pub ch4_gamma_mem2: Ch4GammaMem2,
+    /// 0x050c
+    /// Gamma fade range 3 of channel 4
+    pub ch4_gamma_mem3: Ch4GammaMem3,
+    /// 0x0510
+    /// Gamma fade range 4 of channel 4
+    pub ch4_gamma_mem4: Ch4GammaMem4,
+    /// 0x0514
+    /// Gamma fade range 5 of channel 4
+    pub ch4_gamma_mem5: Ch4GammaMem5,
+    /// 0x0518
+    /// Gamma fade range 6 of channel 4
+    pub ch4_gamma_mem6: Ch4GammaMem6,
+    /// 0x051c
+    /// Gamma fade range 7 of channel 4
+    pub ch4_gamma_mem7: Ch4GammaMem7,
+    /// 0x0520
+    /// Gamma fade range 8 of channel 4
+    pub ch4_gamma_mem8: Ch4GammaMem8,
+    /// 0x0524
+    /// Gamma fade range 9 of channel 4
+    pub ch4_gamma_mem9: Ch4GammaMem9,
+    /// 0x0528
+    /// Gamma fade range 10 of channel 4
+    pub ch4_gamma_mem10: Ch4GammaMem10,
+    /// 0x052c
+    /// Gamma fade range 11 of channel 4
+    pub ch4_gamma_mem11: Ch4GammaMem11,
+    /// 0x0530
+    /// Gamma fade range 12 of channel 4
+    pub ch4_gamma_mem12: Ch4GammaMem12,
+    /// 0x0534
+    /// Gamma fade range 13 of channel 4
+    pub ch4_gamma_mem13: Ch4GammaMem13,
+    /// 0x0538
+    /// Gamma fade range 14 of channel 4
+    pub ch4_gamma_mem14: Ch4GammaMem14,
+    /// 0x053c
+    /// Gamma fade range 15 of channel 4
+    pub ch4_gamma_mem15: Ch4GammaMem15,
+    /// 0x0540
+    /// Gamma fade range 0 of channel 5
+    pub ch5_gamma_mem0: Ch5GammaMem0,
+    /// 0x0544
+    /// Gamma fade range 1 of channel 5
+    pub ch5_gamma_mem1: Ch5GammaMem1,
+    /// 0x0548
+    /// Gamma fade range 2 of channel 5
+    pub ch5_gamma_mem2: Ch5GammaMem2,
+    /// 0x054c
+    /// Gamma fade range 3 of channel 5
+    pub ch5_gamma_mem3: Ch5GammaMem3,
+    /// 0x0550
+    /// Gamma fade range 4 of channel 5
+    pub ch5_gamma_mem4: Ch5GammaMem4,
+    /// 0x0554
+    /// Gamma fade range 5 of channel 5
+    pub ch5_gamma_mem5: Ch5GammaMem5,
+    /// 0x0558
+    /// Gamma fade range 6 of channel 5
+    pub ch5_gamma_mem6: Ch5GammaMem6,
+    /// 0x055c
+    /// Gamma fade range 7 of channel 5
+    pub ch5_gamma_mem7: Ch5GammaMem7,
+    /// 0x0560
+    /// Gamma fade range 8 of channel 5
+    pub ch5_gamma_mem8: Ch5GammaMem8,
+    /// 0x0564
+    /// Gamma fade range 9 of channel 5
+    pub ch5_gamma_mem9: Ch5GammaMem9,
+    /// 0x0568
+    /// Gamma fade range 10 of channel 5
+    pub ch5_gamma_mem10: Ch5GammaMem10,
+    /// 0x056c
+    /// Gamma fade range 11 of channel 5
+    pub ch5_gamma_mem11: Ch5GammaMem11,
+    /// 0x0570
+    /// Gamma fade range 12 of channel 5
+    pub ch5_gamma_mem12: Ch5GammaMem12,
+    /// 0x0574
+    /// Gamma fade range 13 of channel 5
+    pub ch5_gamma_mem13: Ch5GammaMem13,
+    /// 0x0578
+    /// Gamma fade range 14 of channel 5
+    pub ch5_gamma_mem14: Ch5GammaMem14,
+    /// 0x057c
+    /// Gamma fade range 15 of channel 5
+    pub ch5_gamma_mem15: Ch5GammaMem15,
+    /// 0x0580
+    /// Gamma fade range 0 of channel 6
+    pub ch6_gamma_mem0: Ch6GammaMem0,
+    /// 0x0584
+    /// Gamma fade range 1 of channel 6
+    pub ch6_gamma_mem1: Ch6GammaMem1,
+    /// 0x0588
+    /// Gamma fade range 2 of channel 6
+    pub ch6_gamma_mem2: Ch6GammaMem2,
+    /// 0x058c
+    /// Gamma fade range 3 of channel 6
+    pub ch6_gamma_mem3: Ch6GammaMem3,
+    /// 0x0590
+    /// Gamma fade range 4 of channel 6
+    pub ch6_gamma_mem4: Ch6GammaMem4,
+    /// 0x0594
+    /// Gamma fade range 5 of channel 6
+    pub ch6_gamma_mem5: Ch6GammaMem5,
+    /// 0x0598
+    /// Gamma fade range 6 of channel 6
+    pub ch6_gamma_mem6: Ch6GammaMem6,
+    /// 0x059c
+    /// Gamma fade range 7 of channel 6
+    pub ch6_gamma_mem7: Ch6GammaMem7,
+    /// 0x05a0
+    /// Gamma fade range 8 of channel 6
+    pub ch6_gamma_mem8: Ch6GammaMem8,
+    /// 0x05a4
+    /// Gamma fade range 9 of channel 6
+    pub ch6_gamma_mem9: Ch6GammaMem9,
+    /// 0x05a8
+    /// Gamma fade range 10 of channel 6
+    pub ch6_gamma_mem10: Ch6GammaMem10,
+    /// 0x05ac
+    /// Gamma fade range 11 of channel 6
+    pub ch6_gamma_mem11: Ch6GammaMem11,
+    /// 0x05b0
+    /// Gamma fade range 12 of channel 6
+    pub ch6_gamma_mem12: Ch6GammaMem12,
+    /// 0x05b4
+    /// Gamma fade range 13 of channel 6
+    pub ch6_gamma_mem13: Ch6GammaMem13,
+    /// 0x05b8
+    /// Gamma fade range 14 of channel 6
+    pub ch6_gamma_mem14: Ch6GammaMem14,
+    /// 0x05bc
+    /// Gamma fade range 15 of channel 6
+    pub ch6_gamma_mem15: Ch6GammaMem15,
+    /// 0x05c0
+    /// Gamma fade range 0 of channel 7
+    pub ch7_gamma_mem0: Ch7GammaMem0,
+    /// 0x05c4
+    /// Gamma fade range 1 of channel 7
+    pub ch7_gamma_mem1: Ch7GammaMem1,
+    /// 0x05c8
+    /// Gamma fade range 2 of channel 7
+    pub ch7_gamma_mem2: Ch7GammaMem2,
+    /// 0x05cc
+    /// Gamma fade range 3 of channel 7
+    pub ch7_gamma_mem3: Ch7GammaMem3,
+    /// 0x05d0
+    /// Gamma fade range 4 of channel 7
+    pub ch7_gamma_mem4: Ch7GammaMem4,
+    /// 0x05d4
+    /// Gamma fade range 5 of channel 7
+    pub ch7_gamma_mem5: Ch7GammaMem5,
+    /// 0x05d8
+    /// Gamma fade range 6 of channel 7
+    pub ch7_gamma_mem6: Ch7GammaMem6,
+    /// 0x05dc
+    /// Gamma fade range 7 of channel 7
+    pub ch7_gamma_mem7: Ch7GammaMem7,
+    /// 0x05e0
+    /// Gamma fade range 8 of channel 7
+    pub ch7_gamma_mem8: Ch7GammaMem8,
+    /// 0x05e4
+    /// Gamma fade range 9 of channel 7
+    pub ch7_gamma_mem9: Ch7GammaMem9,
+    /// 0x05e8
+    /// Gamma fade range 10 of channel 7
+    pub ch7_gamma_mem10: Ch7GammaMem10,
+    /// 0x05ec
+    /// Gamma fade range 11 of channel 7
+    pub ch7_gamma_mem11: Ch7GammaMem11,
+    /// 0x05f0
+    /// Gamma fade range 12 of channel 7
+    pub ch7_gamma_mem12: Ch7GammaMem12,
+    /// 0x05f4
+    /// Gamma fade range 13 of channel 7
+    pub ch7_gamma_mem13: Ch7GammaMem13,
+    /// 0x05f8
+    /// Gamma fade range 14 of channel 7
+    pub ch7_gamma_mem14: Ch7GammaMem14,
+    /// 0x05fc
+    /// Gamma fade range 15 of channel 7
+    pub ch7_gamma_mem15: Ch7GammaMem15,
 }

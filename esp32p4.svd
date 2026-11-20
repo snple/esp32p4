@@ -73635,7 +73635,7 @@ The SCL output line will be stretched low when reg_slave_scl_stretch_en is 1 and
       <baseAddress>0x500D3000</baseAddress>
       <addressBlock>
         <offset>0x0</offset>
-        <size>0x124</size>
+        <size>0x600</size>
         <usage>registers</usage>
       </addressBlock>
       <interrupt>
@@ -75230,6 +75230,78 @@ The SCL output line will be stretched low when reg_slave_scl_stretch_en is 1 and
               <access>read-write</access>
             </field>
           </fields>
+        </register>
+        <register>
+          <dim>16</dim>
+          <dimIncrement>4</dimIncrement>
+          <name>CH0_GAMMA_MEM[%s]</name>
+          <description>Gamma fade range %s of channel 0</description>
+          <addressOffset>0x0400</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+        </register>
+        <register>
+          <dim>16</dim>
+          <dimIncrement>4</dimIncrement>
+          <name>CH1_GAMMA_MEM[%s]</name>
+          <description>Gamma fade range %s of channel 1</description>
+          <addressOffset>0x0440</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+        </register>
+        <register>
+          <dim>16</dim>
+          <dimIncrement>4</dimIncrement>
+          <name>CH2_GAMMA_MEM[%s]</name>
+          <description>Gamma fade range %s of channel 2</description>
+          <addressOffset>0x0480</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+        </register>
+        <register>
+          <dim>16</dim>
+          <dimIncrement>4</dimIncrement>
+          <name>CH3_GAMMA_MEM[%s]</name>
+          <description>Gamma fade range %s of channel 3</description>
+          <addressOffset>0x04c0</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+        </register>
+        <register>
+          <dim>16</dim>
+          <dimIncrement>4</dimIncrement>
+          <name>CH4_GAMMA_MEM[%s]</name>
+          <description>Gamma fade range %s of channel 4</description>
+          <addressOffset>0x0500</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+        </register>
+        <register>
+          <dim>16</dim>
+          <dimIncrement>4</dimIncrement>
+          <name>CH5_GAMMA_MEM[%s]</name>
+          <description>Gamma fade range %s of channel 5</description>
+          <addressOffset>0x0540</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+        </register>
+        <register>
+          <dim>16</dim>
+          <dimIncrement>4</dimIncrement>
+          <name>CH6_GAMMA_MEM[%s]</name>
+          <description>Gamma fade range %s of channel 6</description>
+          <addressOffset>0x0580</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+        </register>
+        <register>
+          <dim>16</dim>
+          <dimIncrement>4</dimIncrement>
+          <name>CH7_GAMMA_MEM[%s]</name>
+          <description>Gamma fade range %s of channel 7</description>
+          <addressOffset>0x05c0</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
         </register>
       </registers>
     </peripheral>

@@ -191,6 +191,7 @@ pub mod emac;
 pub mod gpio;
 pub mod i2c;
 pub mod interrupt;
+pub mod ledc;
 pub mod mmu;
 #[cfg(feature = "net")]
 pub mod net;
