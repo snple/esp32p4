@@ -13,9 +13,9 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | [`esp32p4-pac`](esp32p4-pac/) | **PAC**：由 `esp32p4.svd` 生成，提供寄存器块、字段常量和访问器。勿手改 |
 | [`esp32p4-rt`](esp32p4-rt/) | **运行时**：`_start`、trap 入口、`link.x`、CSR/汇编封装 |
 | [`esp32p4-macro`](esp32p4-macro/) | **过程宏**：`#[main]` |
-| [`esp32p4-hal`](esp32p4-hal/) | **HAL**：时钟树、GPIO / IO MUX、UART、I2C 主机、ADC、GDMA（GDMA-AHB）与描述符链、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
+| [`esp32p4-hal`](esp32p4-hal/) | **HAL**：时钟树、GPIO / IO MUX、UART、I2C 主机、SPI 主机/从机（GPSPI2/3）、ADC、GDMA（GDMA-AHB）与描述符链、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
 | [`esp32p4-usb`](esp32p4-usb/) | **USB 栈**：DWC OTG 全速/高速控制器的设备模式与主机模式驱动（slave 模式、轮询）；协议层全部在跨仓库共享的 [`usb-stack`](../../rp2350/usb-stack)（设备状态机、标准请求、class、主机枚举与控制/bulk/interrupt 传输、HID 键盘） |
-| [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、UART 回环、I2C 扫描、ADC 采样、GDMA 存储到存储拷贝、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC、USB HID 主机 |
+| [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、UART 回环、I2C 扫描、SPI 主机/从机自检、ADC 采样、GDMA 存储到存储拷贝、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC、USB HID 主机 |
 | [`xtask`](xtask/) | 构建辅助：`cargo xtask gen-pac` |
 
 依赖方向是单向的：`macro` / `rt` → `pac` → `esp32p4` / `esp32p4-usb` → `examples`。
@@ -48,6 +48,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `i2c_scan` | `I2C0` 扫描 7 位地址空间，逐个探测并打印应答的从机 |
 | `adc` | 报告 eFuse 校准是否可用，并在四档衰减下采样 13 个 ADC 焊盘 |
 | `dma_mem2mem` | GDMA-AHB 的存储到存储拷贝：单描述符 64 B 与四描述符 16 KB 两种链路，逐字节校验并打印吞吐 |
+| `spi` | GP-SPI2 主机对 GP-SPI3 从机（四根飞线）：时钟模式 0–3 × 1/4/32/64 字节双向校验 |
 
 ## 快速开始
 
@@ -803,6 +804,48 @@ dma.copy(MemChannel::Ch1, &src, &mut dst, &descriptors).unwrap();
   引擎会拒绝，所以 DMA 缓冲区放片内 SRAM 或 cached PSRAM 窗口。片内 SRAM 的读写
   `copy` 已经处理好 cache；cached PSRAM 虽然引擎能写对，但本仓库的 `cache` 维护还回读不到
   引擎写的数据（见 [roadmap](docs/roadmap.md)），暂按片内 SRAM 使用。
+
+## SPI
+
+[`spi`](esp32p4-hal/src/spi.rs) 覆盖 GP-SPI2 与 GP-SPI3 的 **CPU 传输**：CPU 填/读控制器
+里 64 字节的数据缓冲（`SPI_W0..W15`），自己触发每次事务。没有任何 DMA 依赖
+（SPI2/3 的 DMA 走 GDMA-AXI，见 [roadmap](docs/roadmap.md)），所以它也是本仓库里唯一
+不碰描述符的高速外设。
+
+- 主机 `Spi2`/`Spi3`：`init` 里配好时钟分频（源为 XTAL 40 MHz）、时钟模式 0–3、位序、
+  CS 建立/保持时间；`transfer` 做全双工，`write`/`read` 是它的两个退化情形
+  （读的时候 MOSI 输出 `0xFF`，因为时钟只在有数据可发时才转）；
+- 从机 `SpiSlave2`/`SpiSlave3`：`start` 先武装（填 TX、设长度），`finish` 等主机把时钟
+  打完后取回数据，并回报主机实际打了多少位；
+- 引脚全部经 GPIO 矩阵，任意焊盘都能当 SCK/MOSI/MISO/CS；`set_cs` 可选，用硬件 CS 时
+  一次传输的多段 64 字节之间 CS 保持低电平。
+
+```rust
+let spi = Spi2::init(
+    dp.SPI2,
+    &Config::default().frequency(1_000_000).mode(Mode::_0),
+    &dp.HP_SYS_CLKRST,
+);
+spi.set_pins(pins.pin::<20>(), pins.pin::<21>(), pins.pin::<22>());
+spi.set_cs(pins.pin::<23>());
+
+let mut id = [0u8; 3];
+spi.transfer(&[0x9f, 0x00, 0x00], &mut id);
+```
+
+示例 [`spi`](esp32p4-examples/src/spi.rs) 把 SPI2 主机和 SPI3 从机用四根线连起来
+（`SCK 20↔16`、`MOSI 21↔17`、`MISO 22↔18`、`CS 23↔19`），跑 4 种时钟模式 × 4 种长度，
+两个方向各自校验，上板全部通过。
+
+三个只在硬件上才暴露的点：
+
+- **每次传输前必须写 `SPI_CMD.SPI_UPDATE`**：`SPI_MS_DLEN` 等寄存器有影子副本，不触发
+  更新的话从机只收到 1 bit；写完要等 `SPI_UPDATE` 自己清零；
+- **数据缓冲是 AFIFO，指针跨事务保留**：`SPI_DMA_CONF.SPI_BUF_AFIFO_RST`（CPU 发送）与
+  `SPI_RX_AFIFO_RST`（接收）必须在每次事务前各打一拍。否则第二次事务的读写指针停在上一次
+  结束的位置 —— 表现是主机读回自己的 TX（RX 落到了下一个字），从机干脆不再驱动 MISO；
+- **`SPI_USR_MOSI` 同时管发送和时钟**：只置 `SPI_USR_MISO` 的话 SCK 不动，读操作也必须
+  把 `SPI_USR_MOSI` 打开（用 `0xFF` 填充）。
 
 ## eFuse 与芯片版本
 

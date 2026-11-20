@@ -197,6 +197,7 @@ pub mod net;
 pub mod psram;
 pub mod regi2c;
 pub mod reset;
+pub mod spi;
 pub mod spin;
 pub mod startup;
 pub mod system;

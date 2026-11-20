@@ -22,6 +22,7 @@
 | `gpio` | [gpio/](../esp32p4-hal/src/gpio) | 引脚电气配置、GPIO 读写、四路中断、完整的 HP GPIO 交换矩阵信号路由，以及每个焊盘的直接 IO MUX 功能表（`pins`） |
 | `uart` | [uart.rs](../esp32p4-hal/src/uart.rs) | UART0–4：轮询收发、帧格式、流控、按源中断、GPIO 矩阵引脚路由 |
 | `i2c` | [i2c.rs](../esp32p4-hal/src/i2c.rs) | I2C0/1 主机：任意 SCL、7 位地址、写/读/写读、总线恢复、按源中断 |
+| `spi` | [spi.rs](../esp32p4-hal/src/spi.rs) | GP-SPI2/3 主机与从机：CPU 传输（64 B 缓冲）、时钟模式 0–3、位序、硬件 CS 时序、任意引脚路由 |
 | `dma` | [dma/](../esp32p4-hal/src/dma) | GDMA-AHB：3 组收发通道、描述符链/环、外设选择、存储到存储拷贝、按源中断、优先级与突发 |
 | `spin` | [spin.rs](../esp32p4-hal/src/spin.rs) | 有界自旋助手（`spin_wait` / `try_spin_wait`），驱动轮询的统一上界 |
 | `interrupt` | [interrupt.rs](../esp32p4-hal/src/interrupt.rs) | CLIC 线与矩阵、`claim`/`InterruptHandler` |
@@ -65,7 +66,14 @@
      通道与 `Peripheral` 选择已经就位，缺的是这些外设自己的驱动；
    - **cached PSRAM 缓冲区**：引擎能写对，但 `cache` 侧的失效目前对 PSRAM 窗口无效，
      CPU 回读取不到 DMA 写入的数据（片内 SRAM 没有这个问题）。
-4. **GPSPI2/3（SPI master/slave）+ SDHOST**：SD 卡、传感器、外部模块。
+4. ~~**GPSPI2/3（SPI master/slave）**~~：已完成 `Spi2`/`Spi3` 主机与 `SpiSlave2`/`SpiSlave3`
+   从机（CPU 传输、64 字节缓冲、时钟模式 0–3、位序、硬件 CS 时序），上板 4 种模式 ×
+   4 种长度双向校验通过。剩下：
+   - **DMA 传输**：SPI2/3 挂在 GDMA-AXI 上，需要先实现 `AXI_DMA`；
+   - **2/4/8 线模式、半双工（`SPI_DOUTDIN=0`）、SCT 分段传输**；
+   - **从机 HD 模式**（`SPI_SLAVE_HD_VER2`，DMA + 分段）。
+
+   **SDHOST**（`SDHOST`，TRM 第 57 章，Synopsys DesignWare Mobile Storage Host）：未开始。
 5. ~~**ADC**：电压/电池采样。~~ 已完成 `ADC1`/`ADC2` 的 one-shot 读取（每通道衰减、
    eFuse 工厂校准与毫伏换算）；HP 数字控制器（pattern 表 + DMA）与 LP 核侧的 LP ADC 待补。
    **TSENS**（`LP_TSENS`，独立的温度传感器）仍未实现。

@@ -147,3 +147,8 @@ required-features = ["defmt"]
 name = "dma_mem2mem"
 path = "src/dma_mem2mem.rs"
 required-features = ["defmt"]
+
+[[bin]]
+name = "spi"
+path = "src/spi.rs"
+required-features = ["defmt"]
