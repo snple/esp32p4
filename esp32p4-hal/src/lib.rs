@@ -192,6 +192,7 @@ pub mod gpio;
 pub mod i2c;
 pub mod interrupt;
 pub mod ledc;
+pub mod mcpwm;
 pub mod mmu;
 #[cfg(feature = "net")]
 pub mod net;

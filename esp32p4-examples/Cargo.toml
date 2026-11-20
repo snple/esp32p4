@@ -179,6 +179,11 @@ path = "src/pcnt.rs"
 required-features = ["defmt"]
 
 [[bin]]
+name = "mcpwm"
+path = "src/mcpwm.rs"
+required-features = ["defmt"]
+
+[[bin]]
 name = "tsens"
 path = "src/tsens.rs"
 required-features = ["defmt"]
