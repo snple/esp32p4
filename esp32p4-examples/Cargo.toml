@@ -152,3 +152,8 @@ required-features = ["defmt"]
 name = "spi"
 path = "src/spi.rs"
 required-features = ["defmt"]
+
+[[bin]]
+name = "sd"
+path = "src/sd.rs"
+required-features = ["defmt"]

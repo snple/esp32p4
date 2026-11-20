@@ -106988,6 +106988,13 @@ Note: FIFO pointers will be out of reset after 2 cycles of system clocks in addi
               <access>read-write</access>
             </field>
             <field>
+              <name>DMA_ENABLE</name>
+              <description>Enable the internal DMA (IDMAC) to move the data FIFO. 0: CPU reads and writes SDHOST_BUFFIFO_REG itself.</description>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
               <name>READ_WAIT</name>
               <description>For sending read-wait to SDIO cards.</description>
               <bitOffset>6</bitOffset>
@@ -107027,6 +107034,13 @@ NOTE: Once the SDHOST_SEND_CCSD bit is set, it takes two card clock cycles to dr
               <name>CEATA_DEVICE_INTERRUPT_STATUS</name>
               <description>Software should appropriately write to this bit after the power-on reset or any other reset to the CE-ATA device. After reset, the CE-ATA device's interrupt is usually disabled (nIEN = 1). If the host enables the CE-ATA device's interrupt, then software should set this bit.</description>
               <bitOffset>11</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>USE_INTERNAL_DMA</name>
+              <description>0: the data FIFO is accessed through the APB interface. 1: the internal DMA engine moves the FIFO.</description>
+              <bitOffset>25</bitOffset>
               <bitWidth>1</bitWidth>
               <access>read-write</access>
             </field>

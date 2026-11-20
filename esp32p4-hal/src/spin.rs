@@ -47,10 +47,13 @@ pub fn spin_wait_max(max: u32, what: &str, mut cond: impl FnMut() -> bool) {
     }
 }
 
-/// Polls `cond` until it returns `true` or [`SPIN_TIMEOUT`] iterations expire.
+/// [`try_spin_wait`] with an explicit iteration bound.
+///
+/// For waits that are legitimately slower than a peripheral handshake, such as
+/// a card holding DAT0 busy while it programs a block.
 #[inline]
-pub fn try_spin_wait(mut cond: impl FnMut() -> bool) -> bool {
-    let mut remaining = SPIN_TIMEOUT;
+pub fn try_spin_wait_max(max: u32, mut cond: impl FnMut() -> bool) -> bool {
+    let mut remaining = max;
     loop {
         if cond() {
             return true;
@@ -61,4 +64,10 @@ pub fn try_spin_wait(mut cond: impl FnMut() -> bool) -> bool {
         remaining -= 1;
         core::hint::spin_loop();
     }
+}
+
+/// Polls `cond` until it returns `true` or [`SPIN_TIMEOUT`] iterations expire.
+#[inline]
+pub fn try_spin_wait(cond: impl FnMut() -> bool) -> bool {
+    try_spin_wait_max(SPIN_TIMEOUT, cond)
 }

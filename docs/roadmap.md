@@ -22,6 +22,7 @@
 | `gpio` | [gpio/](../esp32p4-hal/src/gpio) | 引脚电气配置、GPIO 读写、四路中断、完整的 HP GPIO 交换矩阵信号路由，以及每个焊盘的直接 IO MUX 功能表（`pins`） |
 | `uart` | [uart.rs](../esp32p4-hal/src/uart.rs) | UART0–4：轮询收发、帧格式、流控、按源中断、GPIO 矩阵引脚路由 |
 | `i2c` | [i2c.rs](../esp32p4-hal/src/i2c.rs) | I2C0/1 主机：任意 SCL、7 位地址、写/读/写读、总线恢复、按源中断 |
+| `sdhost` | [sdhost.rs](../esp32p4-hal/src/sdhost.rs) | SD 卡主机（`SDHOST`）：识别（CMD0/8/2/3/9/7、ACMD41/6）、CSD 容量解码、1/4 位总线、内部 DMA 的块读写 |
 | `spi` | [spi.rs](../esp32p4-hal/src/spi.rs) | GP-SPI2/3 主机与从机：CPU 传输（64 B 缓冲）、时钟模式 0–3、位序、硬件 CS 时序、任意引脚路由 |
 | `dma` | [dma/](../esp32p4-hal/src/dma) | GDMA-AHB：3 组收发通道、描述符链/环、外设选择、存储到存储拷贝、按源中断、优先级与突发 |
 | `spin` | [spin.rs](../esp32p4-hal/src/spin.rs) | 有界自旋助手（`spin_wait` / `try_spin_wait`），驱动轮询的统一上界 |
@@ -73,12 +74,19 @@
    - **2/4/8 线模式、半双工（`SPI_DOUTDIN=0`）、SCT 分段传输**；
    - **从机 HD 模式**（`SPI_SLAVE_HD_VER2`，DMA + 分段）。
 
-   **SDHOST**（`SDHOST`，TRM 第 57 章，Synopsys DesignWare Mobile Storage Host）：未开始。
-5. ~~**ADC**：电压/电池采样。~~ 已完成 `ADC1`/`ADC2` 的 one-shot 读取（每通道衰减、
+5. ~~**SDHOST（SD 卡主机，Synopsys DesignWare MSHC，TRM 第 57 章）**~~：已完成
+   `SdHost` + `SdCard`（识别、CSD 容量解码、1/4 位总线、内部 DMA 的块读写、多块
+   传输手发 CMD12），上板在 32 GB SDHC 上读第 0 块并写两块回读、逐字节校验通过。
+   剩下：
+   - **SDIO 功能访问**（CMD52/53）与卡中断；
+   - **UHS-I（1.8 V 切换、SDR50/104、DLL 调相）**与高速/DDR 模式；
+   - **MMC 8 位总线**（P4 封装只引出 4 根数据线）；
+   - **卡检测/写保护引脚**（矩阵信号已就位，驱动侧未接）。
+6. ~~**ADC**：电压/电池采样。~~ 已完成 `ADC1`/`ADC2` 的 one-shot 读取（每通道衰减、
    eFuse 工厂校准与毫伏换算）；HP 数字控制器（pattern 表 + DMA）与 LP 核侧的 LP ADC 待补。
    **TSENS**（`LP_TSENS`，独立的温度传感器）仍未实现。
-6. **PWM 家族：LEDC、MCPWM、RMT、PCNT**：调光、电机、WS2812/红外、编码器。
-7. **TWAI（CAN-FD ×3）、I2S0/1/2（音频）、SDIO slave**。
+7. **PWM 家族：LEDC、MCPWM、RMT、PCNT**：调光、电机、WS2812/红外、编码器。
+8. **TWAI（CAN-FD ×3）、I2S0/1/2（音频）、SDIO slave**。
    ~~USB OTG host~~ 已完成：`esp32p4-usb` 的 `host` 模块（枚举、控制/bulk/interrupt
    传输、HID boot 键盘、HUB）加 `esp32p4-usb` 的 DWC 主机模式驱动；高速 HUB
    后面的 FS/LS 拆分事务（TT）与等时传输仍是缺口，可用 `UsbHostHs::new_fsls_only`

@@ -13,6 +13,10 @@ pub const BASE: u32 = 0x50083000;
 ///
 /// ## Fields
 ///
+/// - **USE_INTERNAL_DMA** `[25]` (RW)
+///
+///   0: the data FIFO is accessed through the APB interface. 1: the internal DMA engine moves the FIFO.
+///
 /// - **CEATA_DEVICE_INTERRUPT_STATUS** `[11]` (RW)
 ///
 ///   Software should appropriately write to this bit after the power-on reset or any other reset to the CE-ATA device. After reset, the CE-ATA device's interrupt is usually disabled (nIEN = 1). If the host enables the CE-ATA device's interrupt, then software should set this bit.
@@ -37,6 +41,10 @@ pub const BASE: u32 = 0x50083000;
 /// - **READ_WAIT** `[6]` (RW)
 ///
 ///   For sending read-wait to SDIO cards.
+///
+/// - **DMA_ENABLE** `[5]` (RW)
+///
+///   Enable the internal DMA (IDMAC) to move the data FIFO. 0: CPU reads and writes SDHOST_BUFFIFO_REG itself.
 ///
 /// - **INT_ENABLE** `[4]` (RW)
 ///
@@ -69,6 +77,15 @@ impl core::ops::Deref for Ctrl {
 
 impl Ctrl {
     // ======== Field Constants ========
+
+    /// **USE_INTERNAL_DMA**
+    ///
+    /// 0: the data FIFO is accessed through the APB interface. 1: the internal DMA engine moves the FIFO.
+    ///
+    /// Bits `[25:25]`, mask `0x02000000`
+    pub const USE_INTERNAL_DMA_OFFSET: u32 = 25;
+    pub const USE_INTERNAL_DMA_MASK: u32 = 0x02000000;
+    pub const USE_INTERNAL_DMA: u32 = 1 << 25;
 
     /// **CEATA_DEVICE_INTERRUPT_STATUS**
     ///
@@ -125,6 +142,15 @@ impl Ctrl {
     pub const READ_WAIT_MASK: u32 = 0x00000040;
     pub const READ_WAIT: u32 = 1 << 6;
 
+    /// **DMA_ENABLE**
+    ///
+    /// Enable the internal DMA (IDMAC) to move the data FIFO. 0: CPU reads and writes SDHOST_BUFFIFO_REG itself.
+    ///
+    /// Bits `[5:5]`, mask `0x00000020`
+    pub const DMA_ENABLE_OFFSET: u32 = 5;
+    pub const DMA_ENABLE_MASK: u32 = 0x00000020;
+    pub const DMA_ENABLE: u32 = 1 << 5;
+
     /// **INT_ENABLE**
     ///
     /// Global interrupt enable/disable bit. 0: Disable; 1: Enable.
@@ -163,6 +189,26 @@ impl Ctrl {
     pub const CONTROLLER_RESET: u32 = 1 << 0;
 
     // ======== Field Accessors ========
+
+    /// **USE_INTERNAL_DMA** `[25]` (RW)
+    ///
+    /// 0: the data FIFO is accessed through the APB interface. 1: the internal DMA engine moves the FIFO.
+    #[inline(always)]
+    pub fn use_internal_dma(&self) -> bool {
+        (self.value.read_bits() & Self::USE_INTERNAL_DMA_MASK) != 0
+    }
+
+    /// Set USE_INTERNAL_DMA bit (RW) - NOT atomic
+    #[inline(always)]
+    pub fn set_use_internal_dma(&self) {
+        self.value.modify_bits(|r| r | Self::USE_INTERNAL_DMA_MASK);
+    }
+
+    /// Clear USE_INTERNAL_DMA bit (RW) - NOT atomic
+    #[inline(always)]
+    pub fn clr_use_internal_dma(&self) {
+        self.value.modify_bits(|r| r & !Self::USE_INTERNAL_DMA_MASK);
+    }
 
     /// **CEATA_DEVICE_INTERRUPT_STATUS** `[11]` (RW)
     ///
@@ -290,6 +336,26 @@ impl Ctrl {
         self.value.modify_bits(|r| r & !Self::READ_WAIT_MASK);
     }
 
+    /// **DMA_ENABLE** `[5]` (RW)
+    ///
+    /// Enable the internal DMA (IDMAC) to move the data FIFO. 0: CPU reads and writes SDHOST_BUFFIFO_REG itself.
+    #[inline(always)]
+    pub fn dma_enable(&self) -> bool {
+        (self.value.read_bits() & Self::DMA_ENABLE_MASK) != 0
+    }
+
+    /// Set DMA_ENABLE bit (RW) - NOT atomic
+    #[inline(always)]
+    pub fn set_dma_enable(&self) {
+        self.value.modify_bits(|r| r | Self::DMA_ENABLE_MASK);
+    }
+
+    /// Clear DMA_ENABLE bit (RW) - NOT atomic
+    #[inline(always)]
+    pub fn clr_dma_enable(&self) {
+        self.value.modify_bits(|r| r & !Self::DMA_ENABLE_MASK);
+    }
+
     /// **INT_ENABLE** `[4]` (RW)
     ///
     /// Global interrupt enable/disable bit. 0: Disable; 1: Enable.
@@ -394,6 +460,14 @@ impl CtrlVal {
         self.bits
     }
 
+    /// Read **USE_INTERNAL_DMA** `[25:25]`
+    ///
+    /// 0: the data FIFO is accessed through the APB interface. 1: the internal DMA engine moves the FIFO.
+    #[inline(always)]
+    pub const fn use_internal_dma(&self) -> bool {
+        (self.bits & Ctrl::USE_INTERNAL_DMA_MASK) != 0
+    }
+
     /// Read **CEATA_DEVICE_INTERRUPT_STATUS** `[11:11]`
     ///
     /// Software should appropriately write to this bit after the power-on reset or any other reset to the CE-ATA device. After reset, the CE-ATA device's interrupt is usually disabled (nIEN = 1). If the host enables the CE-ATA device's interrupt, then software should set this bit.
@@ -443,6 +517,14 @@ impl CtrlVal {
         (self.bits & Ctrl::READ_WAIT_MASK) != 0
     }
 
+    /// Read **DMA_ENABLE** `[5:5]`
+    ///
+    /// Enable the internal DMA (IDMAC) to move the data FIFO. 0: CPU reads and writes SDHOST_BUFFIFO_REG itself.
+    #[inline(always)]
+    pub const fn dma_enable(&self) -> bool {
+        (self.bits & Ctrl::DMA_ENABLE_MASK) != 0
+    }
+
     /// Read **INT_ENABLE** `[4:4]`
     ///
     /// Global interrupt enable/disable bit. 0: Disable; 1: Enable.
@@ -474,6 +556,20 @@ impl CtrlVal {
     #[inline(always)]
     pub const fn controller_reset(&self) -> bool {
         (self.bits & Ctrl::CONTROLLER_RESET_MASK) != 0
+    }
+
+    /// Set **USE_INTERNAL_DMA** `[25:25]`
+    ///
+    /// 0: the data FIFO is accessed through the APB interface. 1: the internal DMA engine moves the FIFO.
+    #[inline(always)]
+    pub const fn with_use_internal_dma(self, value: bool) -> Self {
+        Self {
+            bits: if value {
+                self.bits | Ctrl::USE_INTERNAL_DMA_MASK
+            } else {
+                self.bits & !Ctrl::USE_INTERNAL_DMA_MASK
+            },
+        }
     }
 
     /// Set **CEATA_DEVICE_INTERRUPT_STATUS** `[11:11]`
@@ -557,6 +653,20 @@ impl CtrlVal {
                 self.bits | Ctrl::READ_WAIT_MASK
             } else {
                 self.bits & !Ctrl::READ_WAIT_MASK
+            },
+        }
+    }
+
+    /// Set **DMA_ENABLE** `[5:5]`
+    ///
+    /// Enable the internal DMA (IDMAC) to move the data FIFO. 0: CPU reads and writes SDHOST_BUFFIFO_REG itself.
+    #[inline(always)]
+    pub const fn with_dma_enable(self, value: bool) -> Self {
+        Self {
+            bits: if value {
+                self.bits | Ctrl::DMA_ENABLE_MASK
+            } else {
+                self.bits & !Ctrl::DMA_ENABLE_MASK
             },
         }
     }

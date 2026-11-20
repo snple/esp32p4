@@ -13,9 +13,9 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | [`esp32p4-pac`](esp32p4-pac/) | **PAC**：由 `esp32p4.svd` 生成，提供寄存器块、字段常量和访问器。勿手改 |
 | [`esp32p4-rt`](esp32p4-rt/) | **运行时**：`_start`、trap 入口、`link.x`、CSR/汇编封装 |
 | [`esp32p4-macro`](esp32p4-macro/) | **过程宏**：`#[main]` |
-| [`esp32p4-hal`](esp32p4-hal/) | **HAL**：时钟树、GPIO / IO MUX、UART、I2C 主机、SPI 主机/从机（GPSPI2/3）、ADC、GDMA（GDMA-AHB）与描述符链、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
+| [`esp32p4-hal`](esp32p4-hal/) | **HAL**：时钟树、GPIO / IO MUX、UART、I2C 主机、SPI 主机/从机（GPSPI2/3）、SD 卡主机（SDHOST）、ADC、GDMA（GDMA-AHB）与描述符链、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
 | [`esp32p4-usb`](esp32p4-usb/) | **USB 栈**：DWC OTG 全速/高速控制器的设备模式与主机模式驱动（slave 模式、轮询）；协议层全部在跨仓库共享的 [`usb-stack`](../../rp2350/usb-stack)（设备状态机、标准请求、class、主机枚举与控制/bulk/interrupt 传输、HID 键盘） |
-| [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、UART 回环、I2C 扫描、SPI 主机/从机自检、ADC 采样、GDMA 存储到存储拷贝、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC、USB HID 主机 |
+| [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、UART 回环、I2C 扫描、SPI 主机/从机自检、SD 卡读写、ADC 采样、GDMA 存储到存储拷贝、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC、USB HID 主机 |
 | [`xtask`](xtask/) | 构建辅助：`cargo xtask gen-pac` |
 
 依赖方向是单向的：`macro` / `rt` → `pac` → `esp32p4` / `esp32p4-usb` → `examples`。
@@ -49,6 +49,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `adc` | 报告 eFuse 校准是否可用，并在四档衰减下采样 13 个 ADC 焊盘 |
 | `dma_mem2mem` | GDMA-AHB 的存储到存储拷贝：单描述符 64 B 与四描述符 16 KB 两种链路，逐字节校验并打印吞吐 |
 | `spi` | GP-SPI2 主机对 GP-SPI3 从机（四根飞线）：时钟模式 0–3 × 1/4/32/64 字节双向校验 |
+| `sd` | SDHOST 上的 SD 卡：识别、读 CID/CSD 与容量、读第 0 块、双块写入后回读比对 |
 
 ## 快速开始
 
@@ -846,6 +847,48 @@ spi.transfer(&[0x9f, 0x00, 0x00], &mut id);
   结束的位置 —— 表现是主机读回自己的 TX（RX 落到了下一个字），从机干脆不再驱动 MISO；
 - **`SPI_USR_MOSI` 同时管发送和时钟**：只置 `SPI_USR_MISO` 的话 SCK 不动，读操作也必须
   把 `SPI_USR_MOSI` 打开（用 `0xFF` 填充）。
+
+## SD 卡
+
+[`sdhost`](esp32p4-hal/src/sdhost.rs) 驱动 SD/MMC 主机控制器（`SDHOST`，Synopsys
+DesignWare MSHC）：[`SdHost`](esp32p4-hal/src/sdhost.rs) 负责控制器（时钟、总线位宽、命令、块传输），
+[`SdCard`](esp32p4-hal/src/sdhost.rs) 负责卡（SD 规范的识别序列、从 CSD 解出的容量、
+512 字节块读写）。
+
+- 命令支持无响应、48 位（R1/R3/R6/R7）与 136 位（R2）响应；
+- 块读写走控制器的内部 DMA（IDMAC）：驱动里有一块 2 KB 的暂存区，调用者的切片不需要对齐；
+- 多块传输用 CMD18/CMD25 加一次手发的 CMD12（原因见下）；
+- 位宽 1/4 位，卡时钟由 160 MHz PLL 分频得到（识别 400 kHz，之后 25 MHz）。
+
+```rust
+let host = SdHost::init(dp.SDHOST, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST, &dp.PMU);
+host.set_pins(
+    pins.pin::<43>(),
+    pins.pin::<44>(),
+    (pins.pin::<39>(), pins.pin::<40>(), pins.pin::<41>(), pins.pin::<42>()),
+);
+
+let card = SdCard::init(&host)?;
+let mut block = [0u8; 512];
+card.read_blocks(&host, 0, &mut block)?;
+```
+
+示例 [`sd`](esp32p4-examples/src/sd.rs) 识别卡（32 GB SDHC，容量 62 521 344 块）、读出
+CID/CSD、读第 0 块（`0x55AA` 引导签名），再在卡尾写两个块并回读逐字节比对，上板通过。
+
+四个只在硬件上才暴露的点：
+
+- **槽位的引脚走 IO MUX，不是 GPIO 矩阵**：P4 的两个卡槽路径不同，槽 0（片上 SD 焊盘）
+  用固定的 `SD1_*` 焊盘功能，槽 1 才走矩阵。命令里的 `CARD_NUMBER` 也要选对（这里是 0）。
+  走错路径时命令发得出去、卡却不回响应；
+- **SD 口的供电来自片上 LDO 通道 4**：不打开 `PMU.EXT_LDO_P1_0P2A`（3.3 V 直连）时，
+  所有命令都超时，看起来像接线错误；
+- **`COMMAND_DONE` 比响应早到**：中断位置起来时 `RESP0..3` 还是上一条命令的内容，必须等到
+  `STATUS.RESPONSE_INDEX` 变成刚发的命令号再读，否则每条响应都会晚一条命令；
+- **多块写不能用硬件的自动 CMD12**：`SEND_AUTO_STOP` 置位时数据阶段永远等不到 `DATA_OVER`
+  （卡总线已经传完 1024 字节），改成数据阶段结束后手发 CMD12 就正常。另外 IDMAC 的描述符
+  与缓冲区都过 cache，必须用 `cache::writeback`/`invalidate` 维护（直通别名在这条 DMA 上
+  读不到）。
 
 ## eFuse 与芯片版本
 
