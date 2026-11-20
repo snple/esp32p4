@@ -995,3 +995,6 @@ espflash save-image --chip esp32p4 \
 ## 许可证
 
 MIT OR Apache-2.0
+
+每个可发布 crate 目录里的 `LICENSE-APACHE` / `LICENSE-MIT` 是指向仓库根同名文件的软链接，
+`cargo package` 会跟随链接、把实际内容打进 `.crate`（不是把链接本身打进去）。
