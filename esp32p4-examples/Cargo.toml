@@ -169,6 +169,11 @@ path = "src/ledc.rs"
 required-features = ["defmt"]
 
 [[bin]]
+name = "rmt"
+path = "src/rmt.rs"
+required-features = ["defmt"]
+
+[[bin]]
 name = "tsens"
 path = "src/tsens.rs"
 required-features = ["defmt"]

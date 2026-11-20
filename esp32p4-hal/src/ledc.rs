@@ -59,6 +59,8 @@
 //!   own in the TRM; the driver reaches it through the generated `CHn_GAMMA_MEM`
 //!   registers.
 
+pub use crate::gpio::Level;
+
 use esp32p4_pac::{HP_SYS_CLKRST, LEDC, ledc};
 
 /// Which timer drives a channel.
@@ -170,17 +172,6 @@ impl Default for TimerConfig {
     fn default() -> Self {
         Self::new(5_000, 13)
     }
-}
-
-/// Output level of an idle channel.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum Level {
-    /// Low.
-    #[default]
-    Low,
-    /// High.
-    High,
 }
 
 impl Level {

@@ -3,7 +3,7 @@
 
 #![allow(dead_code)]
 
-pub const BASE: u32 = 0x500d4000;
+pub const BASE: u32 = 0x500a2000;
 
 /// TX_CH0DATA Register
 ///
@@ -19437,6 +19437,7686 @@ impl Date {
     }
 }
 
+/// TX_CH0_MEM[0] Register
+///
+/// Pulse code 0 of TX channel 0
+///
+/// Address offset: 0x0800
+#[repr(transparent)]
+pub struct TxCh0Mem0 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem0 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem0 {}
+
+/// TX_CH0_MEM[1] Register
+///
+/// Pulse code 1 of TX channel 0
+///
+/// Address offset: 0x0804
+#[repr(transparent)]
+pub struct TxCh0Mem1 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem1 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem1 {}
+
+/// TX_CH0_MEM[2] Register
+///
+/// Pulse code 2 of TX channel 0
+///
+/// Address offset: 0x0808
+#[repr(transparent)]
+pub struct TxCh0Mem2 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem2 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem2 {}
+
+/// TX_CH0_MEM[3] Register
+///
+/// Pulse code 3 of TX channel 0
+///
+/// Address offset: 0x080c
+#[repr(transparent)]
+pub struct TxCh0Mem3 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem3 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem3 {}
+
+/// TX_CH0_MEM[4] Register
+///
+/// Pulse code 4 of TX channel 0
+///
+/// Address offset: 0x0810
+#[repr(transparent)]
+pub struct TxCh0Mem4 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem4 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem4 {}
+
+/// TX_CH0_MEM[5] Register
+///
+/// Pulse code 5 of TX channel 0
+///
+/// Address offset: 0x0814
+#[repr(transparent)]
+pub struct TxCh0Mem5 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem5 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem5 {}
+
+/// TX_CH0_MEM[6] Register
+///
+/// Pulse code 6 of TX channel 0
+///
+/// Address offset: 0x0818
+#[repr(transparent)]
+pub struct TxCh0Mem6 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem6 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem6 {}
+
+/// TX_CH0_MEM[7] Register
+///
+/// Pulse code 7 of TX channel 0
+///
+/// Address offset: 0x081c
+#[repr(transparent)]
+pub struct TxCh0Mem7 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem7 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem7 {}
+
+/// TX_CH0_MEM[8] Register
+///
+/// Pulse code 8 of TX channel 0
+///
+/// Address offset: 0x0820
+#[repr(transparent)]
+pub struct TxCh0Mem8 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem8 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem8 {}
+
+/// TX_CH0_MEM[9] Register
+///
+/// Pulse code 9 of TX channel 0
+///
+/// Address offset: 0x0824
+#[repr(transparent)]
+pub struct TxCh0Mem9 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem9 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem9 {}
+
+/// TX_CH0_MEM[10] Register
+///
+/// Pulse code 10 of TX channel 0
+///
+/// Address offset: 0x0828
+#[repr(transparent)]
+pub struct TxCh0Mem10 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem10 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem10 {}
+
+/// TX_CH0_MEM[11] Register
+///
+/// Pulse code 11 of TX channel 0
+///
+/// Address offset: 0x082c
+#[repr(transparent)]
+pub struct TxCh0Mem11 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem11 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem11 {}
+
+/// TX_CH0_MEM[12] Register
+///
+/// Pulse code 12 of TX channel 0
+///
+/// Address offset: 0x0830
+#[repr(transparent)]
+pub struct TxCh0Mem12 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem12 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem12 {}
+
+/// TX_CH0_MEM[13] Register
+///
+/// Pulse code 13 of TX channel 0
+///
+/// Address offset: 0x0834
+#[repr(transparent)]
+pub struct TxCh0Mem13 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem13 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem13 {}
+
+/// TX_CH0_MEM[14] Register
+///
+/// Pulse code 14 of TX channel 0
+///
+/// Address offset: 0x0838
+#[repr(transparent)]
+pub struct TxCh0Mem14 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem14 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem14 {}
+
+/// TX_CH0_MEM[15] Register
+///
+/// Pulse code 15 of TX channel 0
+///
+/// Address offset: 0x083c
+#[repr(transparent)]
+pub struct TxCh0Mem15 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem15 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem15 {}
+
+/// TX_CH0_MEM[16] Register
+///
+/// Pulse code 16 of TX channel 0
+///
+/// Address offset: 0x0840
+#[repr(transparent)]
+pub struct TxCh0Mem16 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem16 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem16 {}
+
+/// TX_CH0_MEM[17] Register
+///
+/// Pulse code 17 of TX channel 0
+///
+/// Address offset: 0x0844
+#[repr(transparent)]
+pub struct TxCh0Mem17 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem17 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem17 {}
+
+/// TX_CH0_MEM[18] Register
+///
+/// Pulse code 18 of TX channel 0
+///
+/// Address offset: 0x0848
+#[repr(transparent)]
+pub struct TxCh0Mem18 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem18 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem18 {}
+
+/// TX_CH0_MEM[19] Register
+///
+/// Pulse code 19 of TX channel 0
+///
+/// Address offset: 0x084c
+#[repr(transparent)]
+pub struct TxCh0Mem19 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem19 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem19 {}
+
+/// TX_CH0_MEM[20] Register
+///
+/// Pulse code 20 of TX channel 0
+///
+/// Address offset: 0x0850
+#[repr(transparent)]
+pub struct TxCh0Mem20 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem20 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem20 {}
+
+/// TX_CH0_MEM[21] Register
+///
+/// Pulse code 21 of TX channel 0
+///
+/// Address offset: 0x0854
+#[repr(transparent)]
+pub struct TxCh0Mem21 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem21 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem21 {}
+
+/// TX_CH0_MEM[22] Register
+///
+/// Pulse code 22 of TX channel 0
+///
+/// Address offset: 0x0858
+#[repr(transparent)]
+pub struct TxCh0Mem22 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem22 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem22 {}
+
+/// TX_CH0_MEM[23] Register
+///
+/// Pulse code 23 of TX channel 0
+///
+/// Address offset: 0x085c
+#[repr(transparent)]
+pub struct TxCh0Mem23 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem23 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem23 {}
+
+/// TX_CH0_MEM[24] Register
+///
+/// Pulse code 24 of TX channel 0
+///
+/// Address offset: 0x0860
+#[repr(transparent)]
+pub struct TxCh0Mem24 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem24 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem24 {}
+
+/// TX_CH0_MEM[25] Register
+///
+/// Pulse code 25 of TX channel 0
+///
+/// Address offset: 0x0864
+#[repr(transparent)]
+pub struct TxCh0Mem25 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem25 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem25 {}
+
+/// TX_CH0_MEM[26] Register
+///
+/// Pulse code 26 of TX channel 0
+///
+/// Address offset: 0x0868
+#[repr(transparent)]
+pub struct TxCh0Mem26 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem26 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem26 {}
+
+/// TX_CH0_MEM[27] Register
+///
+/// Pulse code 27 of TX channel 0
+///
+/// Address offset: 0x086c
+#[repr(transparent)]
+pub struct TxCh0Mem27 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem27 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem27 {}
+
+/// TX_CH0_MEM[28] Register
+///
+/// Pulse code 28 of TX channel 0
+///
+/// Address offset: 0x0870
+#[repr(transparent)]
+pub struct TxCh0Mem28 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem28 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem28 {}
+
+/// TX_CH0_MEM[29] Register
+///
+/// Pulse code 29 of TX channel 0
+///
+/// Address offset: 0x0874
+#[repr(transparent)]
+pub struct TxCh0Mem29 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem29 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem29 {}
+
+/// TX_CH0_MEM[30] Register
+///
+/// Pulse code 30 of TX channel 0
+///
+/// Address offset: 0x0878
+#[repr(transparent)]
+pub struct TxCh0Mem30 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem30 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem30 {}
+
+/// TX_CH0_MEM[31] Register
+///
+/// Pulse code 31 of TX channel 0
+///
+/// Address offset: 0x087c
+#[repr(transparent)]
+pub struct TxCh0Mem31 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem31 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem31 {}
+
+/// TX_CH0_MEM[32] Register
+///
+/// Pulse code 32 of TX channel 0
+///
+/// Address offset: 0x0880
+#[repr(transparent)]
+pub struct TxCh0Mem32 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem32 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem32 {}
+
+/// TX_CH0_MEM[33] Register
+///
+/// Pulse code 33 of TX channel 0
+///
+/// Address offset: 0x0884
+#[repr(transparent)]
+pub struct TxCh0Mem33 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem33 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem33 {}
+
+/// TX_CH0_MEM[34] Register
+///
+/// Pulse code 34 of TX channel 0
+///
+/// Address offset: 0x0888
+#[repr(transparent)]
+pub struct TxCh0Mem34 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem34 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem34 {}
+
+/// TX_CH0_MEM[35] Register
+///
+/// Pulse code 35 of TX channel 0
+///
+/// Address offset: 0x088c
+#[repr(transparent)]
+pub struct TxCh0Mem35 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem35 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem35 {}
+
+/// TX_CH0_MEM[36] Register
+///
+/// Pulse code 36 of TX channel 0
+///
+/// Address offset: 0x0890
+#[repr(transparent)]
+pub struct TxCh0Mem36 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem36 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem36 {}
+
+/// TX_CH0_MEM[37] Register
+///
+/// Pulse code 37 of TX channel 0
+///
+/// Address offset: 0x0894
+#[repr(transparent)]
+pub struct TxCh0Mem37 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem37 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem37 {}
+
+/// TX_CH0_MEM[38] Register
+///
+/// Pulse code 38 of TX channel 0
+///
+/// Address offset: 0x0898
+#[repr(transparent)]
+pub struct TxCh0Mem38 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem38 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem38 {}
+
+/// TX_CH0_MEM[39] Register
+///
+/// Pulse code 39 of TX channel 0
+///
+/// Address offset: 0x089c
+#[repr(transparent)]
+pub struct TxCh0Mem39 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem39 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem39 {}
+
+/// TX_CH0_MEM[40] Register
+///
+/// Pulse code 40 of TX channel 0
+///
+/// Address offset: 0x08a0
+#[repr(transparent)]
+pub struct TxCh0Mem40 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem40 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem40 {}
+
+/// TX_CH0_MEM[41] Register
+///
+/// Pulse code 41 of TX channel 0
+///
+/// Address offset: 0x08a4
+#[repr(transparent)]
+pub struct TxCh0Mem41 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem41 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem41 {}
+
+/// TX_CH0_MEM[42] Register
+///
+/// Pulse code 42 of TX channel 0
+///
+/// Address offset: 0x08a8
+#[repr(transparent)]
+pub struct TxCh0Mem42 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem42 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem42 {}
+
+/// TX_CH0_MEM[43] Register
+///
+/// Pulse code 43 of TX channel 0
+///
+/// Address offset: 0x08ac
+#[repr(transparent)]
+pub struct TxCh0Mem43 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem43 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem43 {}
+
+/// TX_CH0_MEM[44] Register
+///
+/// Pulse code 44 of TX channel 0
+///
+/// Address offset: 0x08b0
+#[repr(transparent)]
+pub struct TxCh0Mem44 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem44 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem44 {}
+
+/// TX_CH0_MEM[45] Register
+///
+/// Pulse code 45 of TX channel 0
+///
+/// Address offset: 0x08b4
+#[repr(transparent)]
+pub struct TxCh0Mem45 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem45 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem45 {}
+
+/// TX_CH0_MEM[46] Register
+///
+/// Pulse code 46 of TX channel 0
+///
+/// Address offset: 0x08b8
+#[repr(transparent)]
+pub struct TxCh0Mem46 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem46 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem46 {}
+
+/// TX_CH0_MEM[47] Register
+///
+/// Pulse code 47 of TX channel 0
+///
+/// Address offset: 0x08bc
+#[repr(transparent)]
+pub struct TxCh0Mem47 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh0Mem47 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh0Mem47 {}
+
+/// TX_CH1_MEM[0] Register
+///
+/// Pulse code 0 of TX channel 1
+///
+/// Address offset: 0x08c0
+#[repr(transparent)]
+pub struct TxCh1Mem0 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem0 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem0 {}
+
+/// TX_CH1_MEM[1] Register
+///
+/// Pulse code 1 of TX channel 1
+///
+/// Address offset: 0x08c4
+#[repr(transparent)]
+pub struct TxCh1Mem1 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem1 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem1 {}
+
+/// TX_CH1_MEM[2] Register
+///
+/// Pulse code 2 of TX channel 1
+///
+/// Address offset: 0x08c8
+#[repr(transparent)]
+pub struct TxCh1Mem2 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem2 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem2 {}
+
+/// TX_CH1_MEM[3] Register
+///
+/// Pulse code 3 of TX channel 1
+///
+/// Address offset: 0x08cc
+#[repr(transparent)]
+pub struct TxCh1Mem3 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem3 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem3 {}
+
+/// TX_CH1_MEM[4] Register
+///
+/// Pulse code 4 of TX channel 1
+///
+/// Address offset: 0x08d0
+#[repr(transparent)]
+pub struct TxCh1Mem4 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem4 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem4 {}
+
+/// TX_CH1_MEM[5] Register
+///
+/// Pulse code 5 of TX channel 1
+///
+/// Address offset: 0x08d4
+#[repr(transparent)]
+pub struct TxCh1Mem5 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem5 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem5 {}
+
+/// TX_CH1_MEM[6] Register
+///
+/// Pulse code 6 of TX channel 1
+///
+/// Address offset: 0x08d8
+#[repr(transparent)]
+pub struct TxCh1Mem6 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem6 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem6 {}
+
+/// TX_CH1_MEM[7] Register
+///
+/// Pulse code 7 of TX channel 1
+///
+/// Address offset: 0x08dc
+#[repr(transparent)]
+pub struct TxCh1Mem7 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem7 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem7 {}
+
+/// TX_CH1_MEM[8] Register
+///
+/// Pulse code 8 of TX channel 1
+///
+/// Address offset: 0x08e0
+#[repr(transparent)]
+pub struct TxCh1Mem8 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem8 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem8 {}
+
+/// TX_CH1_MEM[9] Register
+///
+/// Pulse code 9 of TX channel 1
+///
+/// Address offset: 0x08e4
+#[repr(transparent)]
+pub struct TxCh1Mem9 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem9 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem9 {}
+
+/// TX_CH1_MEM[10] Register
+///
+/// Pulse code 10 of TX channel 1
+///
+/// Address offset: 0x08e8
+#[repr(transparent)]
+pub struct TxCh1Mem10 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem10 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem10 {}
+
+/// TX_CH1_MEM[11] Register
+///
+/// Pulse code 11 of TX channel 1
+///
+/// Address offset: 0x08ec
+#[repr(transparent)]
+pub struct TxCh1Mem11 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem11 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem11 {}
+
+/// TX_CH1_MEM[12] Register
+///
+/// Pulse code 12 of TX channel 1
+///
+/// Address offset: 0x08f0
+#[repr(transparent)]
+pub struct TxCh1Mem12 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem12 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem12 {}
+
+/// TX_CH1_MEM[13] Register
+///
+/// Pulse code 13 of TX channel 1
+///
+/// Address offset: 0x08f4
+#[repr(transparent)]
+pub struct TxCh1Mem13 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem13 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem13 {}
+
+/// TX_CH1_MEM[14] Register
+///
+/// Pulse code 14 of TX channel 1
+///
+/// Address offset: 0x08f8
+#[repr(transparent)]
+pub struct TxCh1Mem14 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem14 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem14 {}
+
+/// TX_CH1_MEM[15] Register
+///
+/// Pulse code 15 of TX channel 1
+///
+/// Address offset: 0x08fc
+#[repr(transparent)]
+pub struct TxCh1Mem15 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem15 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem15 {}
+
+/// TX_CH1_MEM[16] Register
+///
+/// Pulse code 16 of TX channel 1
+///
+/// Address offset: 0x0900
+#[repr(transparent)]
+pub struct TxCh1Mem16 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem16 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem16 {}
+
+/// TX_CH1_MEM[17] Register
+///
+/// Pulse code 17 of TX channel 1
+///
+/// Address offset: 0x0904
+#[repr(transparent)]
+pub struct TxCh1Mem17 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem17 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem17 {}
+
+/// TX_CH1_MEM[18] Register
+///
+/// Pulse code 18 of TX channel 1
+///
+/// Address offset: 0x0908
+#[repr(transparent)]
+pub struct TxCh1Mem18 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem18 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem18 {}
+
+/// TX_CH1_MEM[19] Register
+///
+/// Pulse code 19 of TX channel 1
+///
+/// Address offset: 0x090c
+#[repr(transparent)]
+pub struct TxCh1Mem19 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem19 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem19 {}
+
+/// TX_CH1_MEM[20] Register
+///
+/// Pulse code 20 of TX channel 1
+///
+/// Address offset: 0x0910
+#[repr(transparent)]
+pub struct TxCh1Mem20 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem20 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem20 {}
+
+/// TX_CH1_MEM[21] Register
+///
+/// Pulse code 21 of TX channel 1
+///
+/// Address offset: 0x0914
+#[repr(transparent)]
+pub struct TxCh1Mem21 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem21 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem21 {}
+
+/// TX_CH1_MEM[22] Register
+///
+/// Pulse code 22 of TX channel 1
+///
+/// Address offset: 0x0918
+#[repr(transparent)]
+pub struct TxCh1Mem22 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem22 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem22 {}
+
+/// TX_CH1_MEM[23] Register
+///
+/// Pulse code 23 of TX channel 1
+///
+/// Address offset: 0x091c
+#[repr(transparent)]
+pub struct TxCh1Mem23 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem23 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem23 {}
+
+/// TX_CH1_MEM[24] Register
+///
+/// Pulse code 24 of TX channel 1
+///
+/// Address offset: 0x0920
+#[repr(transparent)]
+pub struct TxCh1Mem24 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem24 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem24 {}
+
+/// TX_CH1_MEM[25] Register
+///
+/// Pulse code 25 of TX channel 1
+///
+/// Address offset: 0x0924
+#[repr(transparent)]
+pub struct TxCh1Mem25 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem25 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem25 {}
+
+/// TX_CH1_MEM[26] Register
+///
+/// Pulse code 26 of TX channel 1
+///
+/// Address offset: 0x0928
+#[repr(transparent)]
+pub struct TxCh1Mem26 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem26 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem26 {}
+
+/// TX_CH1_MEM[27] Register
+///
+/// Pulse code 27 of TX channel 1
+///
+/// Address offset: 0x092c
+#[repr(transparent)]
+pub struct TxCh1Mem27 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem27 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem27 {}
+
+/// TX_CH1_MEM[28] Register
+///
+/// Pulse code 28 of TX channel 1
+///
+/// Address offset: 0x0930
+#[repr(transparent)]
+pub struct TxCh1Mem28 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem28 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem28 {}
+
+/// TX_CH1_MEM[29] Register
+///
+/// Pulse code 29 of TX channel 1
+///
+/// Address offset: 0x0934
+#[repr(transparent)]
+pub struct TxCh1Mem29 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem29 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem29 {}
+
+/// TX_CH1_MEM[30] Register
+///
+/// Pulse code 30 of TX channel 1
+///
+/// Address offset: 0x0938
+#[repr(transparent)]
+pub struct TxCh1Mem30 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem30 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem30 {}
+
+/// TX_CH1_MEM[31] Register
+///
+/// Pulse code 31 of TX channel 1
+///
+/// Address offset: 0x093c
+#[repr(transparent)]
+pub struct TxCh1Mem31 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem31 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem31 {}
+
+/// TX_CH1_MEM[32] Register
+///
+/// Pulse code 32 of TX channel 1
+///
+/// Address offset: 0x0940
+#[repr(transparent)]
+pub struct TxCh1Mem32 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem32 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem32 {}
+
+/// TX_CH1_MEM[33] Register
+///
+/// Pulse code 33 of TX channel 1
+///
+/// Address offset: 0x0944
+#[repr(transparent)]
+pub struct TxCh1Mem33 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem33 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem33 {}
+
+/// TX_CH1_MEM[34] Register
+///
+/// Pulse code 34 of TX channel 1
+///
+/// Address offset: 0x0948
+#[repr(transparent)]
+pub struct TxCh1Mem34 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem34 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem34 {}
+
+/// TX_CH1_MEM[35] Register
+///
+/// Pulse code 35 of TX channel 1
+///
+/// Address offset: 0x094c
+#[repr(transparent)]
+pub struct TxCh1Mem35 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem35 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem35 {}
+
+/// TX_CH1_MEM[36] Register
+///
+/// Pulse code 36 of TX channel 1
+///
+/// Address offset: 0x0950
+#[repr(transparent)]
+pub struct TxCh1Mem36 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem36 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem36 {}
+
+/// TX_CH1_MEM[37] Register
+///
+/// Pulse code 37 of TX channel 1
+///
+/// Address offset: 0x0954
+#[repr(transparent)]
+pub struct TxCh1Mem37 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem37 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem37 {}
+
+/// TX_CH1_MEM[38] Register
+///
+/// Pulse code 38 of TX channel 1
+///
+/// Address offset: 0x0958
+#[repr(transparent)]
+pub struct TxCh1Mem38 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem38 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem38 {}
+
+/// TX_CH1_MEM[39] Register
+///
+/// Pulse code 39 of TX channel 1
+///
+/// Address offset: 0x095c
+#[repr(transparent)]
+pub struct TxCh1Mem39 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem39 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem39 {}
+
+/// TX_CH1_MEM[40] Register
+///
+/// Pulse code 40 of TX channel 1
+///
+/// Address offset: 0x0960
+#[repr(transparent)]
+pub struct TxCh1Mem40 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem40 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem40 {}
+
+/// TX_CH1_MEM[41] Register
+///
+/// Pulse code 41 of TX channel 1
+///
+/// Address offset: 0x0964
+#[repr(transparent)]
+pub struct TxCh1Mem41 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem41 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem41 {}
+
+/// TX_CH1_MEM[42] Register
+///
+/// Pulse code 42 of TX channel 1
+///
+/// Address offset: 0x0968
+#[repr(transparent)]
+pub struct TxCh1Mem42 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem42 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem42 {}
+
+/// TX_CH1_MEM[43] Register
+///
+/// Pulse code 43 of TX channel 1
+///
+/// Address offset: 0x096c
+#[repr(transparent)]
+pub struct TxCh1Mem43 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem43 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem43 {}
+
+/// TX_CH1_MEM[44] Register
+///
+/// Pulse code 44 of TX channel 1
+///
+/// Address offset: 0x0970
+#[repr(transparent)]
+pub struct TxCh1Mem44 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem44 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem44 {}
+
+/// TX_CH1_MEM[45] Register
+///
+/// Pulse code 45 of TX channel 1
+///
+/// Address offset: 0x0974
+#[repr(transparent)]
+pub struct TxCh1Mem45 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem45 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem45 {}
+
+/// TX_CH1_MEM[46] Register
+///
+/// Pulse code 46 of TX channel 1
+///
+/// Address offset: 0x0978
+#[repr(transparent)]
+pub struct TxCh1Mem46 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem46 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem46 {}
+
+/// TX_CH1_MEM[47] Register
+///
+/// Pulse code 47 of TX channel 1
+///
+/// Address offset: 0x097c
+#[repr(transparent)]
+pub struct TxCh1Mem47 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh1Mem47 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh1Mem47 {}
+
+/// TX_CH2_MEM[0] Register
+///
+/// Pulse code 0 of TX channel 2
+///
+/// Address offset: 0x0980
+#[repr(transparent)]
+pub struct TxCh2Mem0 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem0 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem0 {}
+
+/// TX_CH2_MEM[1] Register
+///
+/// Pulse code 1 of TX channel 2
+///
+/// Address offset: 0x0984
+#[repr(transparent)]
+pub struct TxCh2Mem1 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem1 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem1 {}
+
+/// TX_CH2_MEM[2] Register
+///
+/// Pulse code 2 of TX channel 2
+///
+/// Address offset: 0x0988
+#[repr(transparent)]
+pub struct TxCh2Mem2 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem2 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem2 {}
+
+/// TX_CH2_MEM[3] Register
+///
+/// Pulse code 3 of TX channel 2
+///
+/// Address offset: 0x098c
+#[repr(transparent)]
+pub struct TxCh2Mem3 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem3 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem3 {}
+
+/// TX_CH2_MEM[4] Register
+///
+/// Pulse code 4 of TX channel 2
+///
+/// Address offset: 0x0990
+#[repr(transparent)]
+pub struct TxCh2Mem4 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem4 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem4 {}
+
+/// TX_CH2_MEM[5] Register
+///
+/// Pulse code 5 of TX channel 2
+///
+/// Address offset: 0x0994
+#[repr(transparent)]
+pub struct TxCh2Mem5 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem5 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem5 {}
+
+/// TX_CH2_MEM[6] Register
+///
+/// Pulse code 6 of TX channel 2
+///
+/// Address offset: 0x0998
+#[repr(transparent)]
+pub struct TxCh2Mem6 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem6 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem6 {}
+
+/// TX_CH2_MEM[7] Register
+///
+/// Pulse code 7 of TX channel 2
+///
+/// Address offset: 0x099c
+#[repr(transparent)]
+pub struct TxCh2Mem7 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem7 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem7 {}
+
+/// TX_CH2_MEM[8] Register
+///
+/// Pulse code 8 of TX channel 2
+///
+/// Address offset: 0x09a0
+#[repr(transparent)]
+pub struct TxCh2Mem8 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem8 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem8 {}
+
+/// TX_CH2_MEM[9] Register
+///
+/// Pulse code 9 of TX channel 2
+///
+/// Address offset: 0x09a4
+#[repr(transparent)]
+pub struct TxCh2Mem9 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem9 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem9 {}
+
+/// TX_CH2_MEM[10] Register
+///
+/// Pulse code 10 of TX channel 2
+///
+/// Address offset: 0x09a8
+#[repr(transparent)]
+pub struct TxCh2Mem10 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem10 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem10 {}
+
+/// TX_CH2_MEM[11] Register
+///
+/// Pulse code 11 of TX channel 2
+///
+/// Address offset: 0x09ac
+#[repr(transparent)]
+pub struct TxCh2Mem11 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem11 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem11 {}
+
+/// TX_CH2_MEM[12] Register
+///
+/// Pulse code 12 of TX channel 2
+///
+/// Address offset: 0x09b0
+#[repr(transparent)]
+pub struct TxCh2Mem12 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem12 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem12 {}
+
+/// TX_CH2_MEM[13] Register
+///
+/// Pulse code 13 of TX channel 2
+///
+/// Address offset: 0x09b4
+#[repr(transparent)]
+pub struct TxCh2Mem13 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem13 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem13 {}
+
+/// TX_CH2_MEM[14] Register
+///
+/// Pulse code 14 of TX channel 2
+///
+/// Address offset: 0x09b8
+#[repr(transparent)]
+pub struct TxCh2Mem14 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem14 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem14 {}
+
+/// TX_CH2_MEM[15] Register
+///
+/// Pulse code 15 of TX channel 2
+///
+/// Address offset: 0x09bc
+#[repr(transparent)]
+pub struct TxCh2Mem15 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem15 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem15 {}
+
+/// TX_CH2_MEM[16] Register
+///
+/// Pulse code 16 of TX channel 2
+///
+/// Address offset: 0x09c0
+#[repr(transparent)]
+pub struct TxCh2Mem16 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem16 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem16 {}
+
+/// TX_CH2_MEM[17] Register
+///
+/// Pulse code 17 of TX channel 2
+///
+/// Address offset: 0x09c4
+#[repr(transparent)]
+pub struct TxCh2Mem17 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem17 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem17 {}
+
+/// TX_CH2_MEM[18] Register
+///
+/// Pulse code 18 of TX channel 2
+///
+/// Address offset: 0x09c8
+#[repr(transparent)]
+pub struct TxCh2Mem18 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem18 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem18 {}
+
+/// TX_CH2_MEM[19] Register
+///
+/// Pulse code 19 of TX channel 2
+///
+/// Address offset: 0x09cc
+#[repr(transparent)]
+pub struct TxCh2Mem19 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem19 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem19 {}
+
+/// TX_CH2_MEM[20] Register
+///
+/// Pulse code 20 of TX channel 2
+///
+/// Address offset: 0x09d0
+#[repr(transparent)]
+pub struct TxCh2Mem20 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem20 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem20 {}
+
+/// TX_CH2_MEM[21] Register
+///
+/// Pulse code 21 of TX channel 2
+///
+/// Address offset: 0x09d4
+#[repr(transparent)]
+pub struct TxCh2Mem21 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem21 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem21 {}
+
+/// TX_CH2_MEM[22] Register
+///
+/// Pulse code 22 of TX channel 2
+///
+/// Address offset: 0x09d8
+#[repr(transparent)]
+pub struct TxCh2Mem22 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem22 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem22 {}
+
+/// TX_CH2_MEM[23] Register
+///
+/// Pulse code 23 of TX channel 2
+///
+/// Address offset: 0x09dc
+#[repr(transparent)]
+pub struct TxCh2Mem23 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem23 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem23 {}
+
+/// TX_CH2_MEM[24] Register
+///
+/// Pulse code 24 of TX channel 2
+///
+/// Address offset: 0x09e0
+#[repr(transparent)]
+pub struct TxCh2Mem24 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem24 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem24 {}
+
+/// TX_CH2_MEM[25] Register
+///
+/// Pulse code 25 of TX channel 2
+///
+/// Address offset: 0x09e4
+#[repr(transparent)]
+pub struct TxCh2Mem25 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem25 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem25 {}
+
+/// TX_CH2_MEM[26] Register
+///
+/// Pulse code 26 of TX channel 2
+///
+/// Address offset: 0x09e8
+#[repr(transparent)]
+pub struct TxCh2Mem26 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem26 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem26 {}
+
+/// TX_CH2_MEM[27] Register
+///
+/// Pulse code 27 of TX channel 2
+///
+/// Address offset: 0x09ec
+#[repr(transparent)]
+pub struct TxCh2Mem27 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem27 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem27 {}
+
+/// TX_CH2_MEM[28] Register
+///
+/// Pulse code 28 of TX channel 2
+///
+/// Address offset: 0x09f0
+#[repr(transparent)]
+pub struct TxCh2Mem28 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem28 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem28 {}
+
+/// TX_CH2_MEM[29] Register
+///
+/// Pulse code 29 of TX channel 2
+///
+/// Address offset: 0x09f4
+#[repr(transparent)]
+pub struct TxCh2Mem29 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem29 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem29 {}
+
+/// TX_CH2_MEM[30] Register
+///
+/// Pulse code 30 of TX channel 2
+///
+/// Address offset: 0x09f8
+#[repr(transparent)]
+pub struct TxCh2Mem30 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem30 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem30 {}
+
+/// TX_CH2_MEM[31] Register
+///
+/// Pulse code 31 of TX channel 2
+///
+/// Address offset: 0x09fc
+#[repr(transparent)]
+pub struct TxCh2Mem31 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem31 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem31 {}
+
+/// TX_CH2_MEM[32] Register
+///
+/// Pulse code 32 of TX channel 2
+///
+/// Address offset: 0x0a00
+#[repr(transparent)]
+pub struct TxCh2Mem32 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem32 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem32 {}
+
+/// TX_CH2_MEM[33] Register
+///
+/// Pulse code 33 of TX channel 2
+///
+/// Address offset: 0x0a04
+#[repr(transparent)]
+pub struct TxCh2Mem33 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem33 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem33 {}
+
+/// TX_CH2_MEM[34] Register
+///
+/// Pulse code 34 of TX channel 2
+///
+/// Address offset: 0x0a08
+#[repr(transparent)]
+pub struct TxCh2Mem34 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem34 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem34 {}
+
+/// TX_CH2_MEM[35] Register
+///
+/// Pulse code 35 of TX channel 2
+///
+/// Address offset: 0x0a0c
+#[repr(transparent)]
+pub struct TxCh2Mem35 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem35 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem35 {}
+
+/// TX_CH2_MEM[36] Register
+///
+/// Pulse code 36 of TX channel 2
+///
+/// Address offset: 0x0a10
+#[repr(transparent)]
+pub struct TxCh2Mem36 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem36 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem36 {}
+
+/// TX_CH2_MEM[37] Register
+///
+/// Pulse code 37 of TX channel 2
+///
+/// Address offset: 0x0a14
+#[repr(transparent)]
+pub struct TxCh2Mem37 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem37 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem37 {}
+
+/// TX_CH2_MEM[38] Register
+///
+/// Pulse code 38 of TX channel 2
+///
+/// Address offset: 0x0a18
+#[repr(transparent)]
+pub struct TxCh2Mem38 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem38 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem38 {}
+
+/// TX_CH2_MEM[39] Register
+///
+/// Pulse code 39 of TX channel 2
+///
+/// Address offset: 0x0a1c
+#[repr(transparent)]
+pub struct TxCh2Mem39 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem39 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem39 {}
+
+/// TX_CH2_MEM[40] Register
+///
+/// Pulse code 40 of TX channel 2
+///
+/// Address offset: 0x0a20
+#[repr(transparent)]
+pub struct TxCh2Mem40 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem40 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem40 {}
+
+/// TX_CH2_MEM[41] Register
+///
+/// Pulse code 41 of TX channel 2
+///
+/// Address offset: 0x0a24
+#[repr(transparent)]
+pub struct TxCh2Mem41 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem41 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem41 {}
+
+/// TX_CH2_MEM[42] Register
+///
+/// Pulse code 42 of TX channel 2
+///
+/// Address offset: 0x0a28
+#[repr(transparent)]
+pub struct TxCh2Mem42 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem42 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem42 {}
+
+/// TX_CH2_MEM[43] Register
+///
+/// Pulse code 43 of TX channel 2
+///
+/// Address offset: 0x0a2c
+#[repr(transparent)]
+pub struct TxCh2Mem43 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem43 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem43 {}
+
+/// TX_CH2_MEM[44] Register
+///
+/// Pulse code 44 of TX channel 2
+///
+/// Address offset: 0x0a30
+#[repr(transparent)]
+pub struct TxCh2Mem44 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem44 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem44 {}
+
+/// TX_CH2_MEM[45] Register
+///
+/// Pulse code 45 of TX channel 2
+///
+/// Address offset: 0x0a34
+#[repr(transparent)]
+pub struct TxCh2Mem45 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem45 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem45 {}
+
+/// TX_CH2_MEM[46] Register
+///
+/// Pulse code 46 of TX channel 2
+///
+/// Address offset: 0x0a38
+#[repr(transparent)]
+pub struct TxCh2Mem46 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem46 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem46 {}
+
+/// TX_CH2_MEM[47] Register
+///
+/// Pulse code 47 of TX channel 2
+///
+/// Address offset: 0x0a3c
+#[repr(transparent)]
+pub struct TxCh2Mem47 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh2Mem47 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh2Mem47 {}
+
+/// TX_CH3_MEM[0] Register
+///
+/// Pulse code 0 of TX channel 3
+///
+/// Address offset: 0x0a40
+#[repr(transparent)]
+pub struct TxCh3Mem0 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem0 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem0 {}
+
+/// TX_CH3_MEM[1] Register
+///
+/// Pulse code 1 of TX channel 3
+///
+/// Address offset: 0x0a44
+#[repr(transparent)]
+pub struct TxCh3Mem1 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem1 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem1 {}
+
+/// TX_CH3_MEM[2] Register
+///
+/// Pulse code 2 of TX channel 3
+///
+/// Address offset: 0x0a48
+#[repr(transparent)]
+pub struct TxCh3Mem2 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem2 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem2 {}
+
+/// TX_CH3_MEM[3] Register
+///
+/// Pulse code 3 of TX channel 3
+///
+/// Address offset: 0x0a4c
+#[repr(transparent)]
+pub struct TxCh3Mem3 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem3 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem3 {}
+
+/// TX_CH3_MEM[4] Register
+///
+/// Pulse code 4 of TX channel 3
+///
+/// Address offset: 0x0a50
+#[repr(transparent)]
+pub struct TxCh3Mem4 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem4 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem4 {}
+
+/// TX_CH3_MEM[5] Register
+///
+/// Pulse code 5 of TX channel 3
+///
+/// Address offset: 0x0a54
+#[repr(transparent)]
+pub struct TxCh3Mem5 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem5 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem5 {}
+
+/// TX_CH3_MEM[6] Register
+///
+/// Pulse code 6 of TX channel 3
+///
+/// Address offset: 0x0a58
+#[repr(transparent)]
+pub struct TxCh3Mem6 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem6 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem6 {}
+
+/// TX_CH3_MEM[7] Register
+///
+/// Pulse code 7 of TX channel 3
+///
+/// Address offset: 0x0a5c
+#[repr(transparent)]
+pub struct TxCh3Mem7 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem7 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem7 {}
+
+/// TX_CH3_MEM[8] Register
+///
+/// Pulse code 8 of TX channel 3
+///
+/// Address offset: 0x0a60
+#[repr(transparent)]
+pub struct TxCh3Mem8 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem8 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem8 {}
+
+/// TX_CH3_MEM[9] Register
+///
+/// Pulse code 9 of TX channel 3
+///
+/// Address offset: 0x0a64
+#[repr(transparent)]
+pub struct TxCh3Mem9 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem9 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem9 {}
+
+/// TX_CH3_MEM[10] Register
+///
+/// Pulse code 10 of TX channel 3
+///
+/// Address offset: 0x0a68
+#[repr(transparent)]
+pub struct TxCh3Mem10 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem10 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem10 {}
+
+/// TX_CH3_MEM[11] Register
+///
+/// Pulse code 11 of TX channel 3
+///
+/// Address offset: 0x0a6c
+#[repr(transparent)]
+pub struct TxCh3Mem11 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem11 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem11 {}
+
+/// TX_CH3_MEM[12] Register
+///
+/// Pulse code 12 of TX channel 3
+///
+/// Address offset: 0x0a70
+#[repr(transparent)]
+pub struct TxCh3Mem12 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem12 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem12 {}
+
+/// TX_CH3_MEM[13] Register
+///
+/// Pulse code 13 of TX channel 3
+///
+/// Address offset: 0x0a74
+#[repr(transparent)]
+pub struct TxCh3Mem13 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem13 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem13 {}
+
+/// TX_CH3_MEM[14] Register
+///
+/// Pulse code 14 of TX channel 3
+///
+/// Address offset: 0x0a78
+#[repr(transparent)]
+pub struct TxCh3Mem14 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem14 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem14 {}
+
+/// TX_CH3_MEM[15] Register
+///
+/// Pulse code 15 of TX channel 3
+///
+/// Address offset: 0x0a7c
+#[repr(transparent)]
+pub struct TxCh3Mem15 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem15 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem15 {}
+
+/// TX_CH3_MEM[16] Register
+///
+/// Pulse code 16 of TX channel 3
+///
+/// Address offset: 0x0a80
+#[repr(transparent)]
+pub struct TxCh3Mem16 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem16 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem16 {}
+
+/// TX_CH3_MEM[17] Register
+///
+/// Pulse code 17 of TX channel 3
+///
+/// Address offset: 0x0a84
+#[repr(transparent)]
+pub struct TxCh3Mem17 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem17 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem17 {}
+
+/// TX_CH3_MEM[18] Register
+///
+/// Pulse code 18 of TX channel 3
+///
+/// Address offset: 0x0a88
+#[repr(transparent)]
+pub struct TxCh3Mem18 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem18 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem18 {}
+
+/// TX_CH3_MEM[19] Register
+///
+/// Pulse code 19 of TX channel 3
+///
+/// Address offset: 0x0a8c
+#[repr(transparent)]
+pub struct TxCh3Mem19 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem19 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem19 {}
+
+/// TX_CH3_MEM[20] Register
+///
+/// Pulse code 20 of TX channel 3
+///
+/// Address offset: 0x0a90
+#[repr(transparent)]
+pub struct TxCh3Mem20 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem20 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem20 {}
+
+/// TX_CH3_MEM[21] Register
+///
+/// Pulse code 21 of TX channel 3
+///
+/// Address offset: 0x0a94
+#[repr(transparent)]
+pub struct TxCh3Mem21 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem21 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem21 {}
+
+/// TX_CH3_MEM[22] Register
+///
+/// Pulse code 22 of TX channel 3
+///
+/// Address offset: 0x0a98
+#[repr(transparent)]
+pub struct TxCh3Mem22 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem22 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem22 {}
+
+/// TX_CH3_MEM[23] Register
+///
+/// Pulse code 23 of TX channel 3
+///
+/// Address offset: 0x0a9c
+#[repr(transparent)]
+pub struct TxCh3Mem23 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem23 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem23 {}
+
+/// TX_CH3_MEM[24] Register
+///
+/// Pulse code 24 of TX channel 3
+///
+/// Address offset: 0x0aa0
+#[repr(transparent)]
+pub struct TxCh3Mem24 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem24 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem24 {}
+
+/// TX_CH3_MEM[25] Register
+///
+/// Pulse code 25 of TX channel 3
+///
+/// Address offset: 0x0aa4
+#[repr(transparent)]
+pub struct TxCh3Mem25 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem25 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem25 {}
+
+/// TX_CH3_MEM[26] Register
+///
+/// Pulse code 26 of TX channel 3
+///
+/// Address offset: 0x0aa8
+#[repr(transparent)]
+pub struct TxCh3Mem26 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem26 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem26 {}
+
+/// TX_CH3_MEM[27] Register
+///
+/// Pulse code 27 of TX channel 3
+///
+/// Address offset: 0x0aac
+#[repr(transparent)]
+pub struct TxCh3Mem27 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem27 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem27 {}
+
+/// TX_CH3_MEM[28] Register
+///
+/// Pulse code 28 of TX channel 3
+///
+/// Address offset: 0x0ab0
+#[repr(transparent)]
+pub struct TxCh3Mem28 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem28 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem28 {}
+
+/// TX_CH3_MEM[29] Register
+///
+/// Pulse code 29 of TX channel 3
+///
+/// Address offset: 0x0ab4
+#[repr(transparent)]
+pub struct TxCh3Mem29 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem29 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem29 {}
+
+/// TX_CH3_MEM[30] Register
+///
+/// Pulse code 30 of TX channel 3
+///
+/// Address offset: 0x0ab8
+#[repr(transparent)]
+pub struct TxCh3Mem30 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem30 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem30 {}
+
+/// TX_CH3_MEM[31] Register
+///
+/// Pulse code 31 of TX channel 3
+///
+/// Address offset: 0x0abc
+#[repr(transparent)]
+pub struct TxCh3Mem31 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem31 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem31 {}
+
+/// TX_CH3_MEM[32] Register
+///
+/// Pulse code 32 of TX channel 3
+///
+/// Address offset: 0x0ac0
+#[repr(transparent)]
+pub struct TxCh3Mem32 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem32 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem32 {}
+
+/// TX_CH3_MEM[33] Register
+///
+/// Pulse code 33 of TX channel 3
+///
+/// Address offset: 0x0ac4
+#[repr(transparent)]
+pub struct TxCh3Mem33 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem33 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem33 {}
+
+/// TX_CH3_MEM[34] Register
+///
+/// Pulse code 34 of TX channel 3
+///
+/// Address offset: 0x0ac8
+#[repr(transparent)]
+pub struct TxCh3Mem34 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem34 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem34 {}
+
+/// TX_CH3_MEM[35] Register
+///
+/// Pulse code 35 of TX channel 3
+///
+/// Address offset: 0x0acc
+#[repr(transparent)]
+pub struct TxCh3Mem35 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem35 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem35 {}
+
+/// TX_CH3_MEM[36] Register
+///
+/// Pulse code 36 of TX channel 3
+///
+/// Address offset: 0x0ad0
+#[repr(transparent)]
+pub struct TxCh3Mem36 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem36 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem36 {}
+
+/// TX_CH3_MEM[37] Register
+///
+/// Pulse code 37 of TX channel 3
+///
+/// Address offset: 0x0ad4
+#[repr(transparent)]
+pub struct TxCh3Mem37 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem37 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem37 {}
+
+/// TX_CH3_MEM[38] Register
+///
+/// Pulse code 38 of TX channel 3
+///
+/// Address offset: 0x0ad8
+#[repr(transparent)]
+pub struct TxCh3Mem38 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem38 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem38 {}
+
+/// TX_CH3_MEM[39] Register
+///
+/// Pulse code 39 of TX channel 3
+///
+/// Address offset: 0x0adc
+#[repr(transparent)]
+pub struct TxCh3Mem39 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem39 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem39 {}
+
+/// TX_CH3_MEM[40] Register
+///
+/// Pulse code 40 of TX channel 3
+///
+/// Address offset: 0x0ae0
+#[repr(transparent)]
+pub struct TxCh3Mem40 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem40 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem40 {}
+
+/// TX_CH3_MEM[41] Register
+///
+/// Pulse code 41 of TX channel 3
+///
+/// Address offset: 0x0ae4
+#[repr(transparent)]
+pub struct TxCh3Mem41 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem41 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem41 {}
+
+/// TX_CH3_MEM[42] Register
+///
+/// Pulse code 42 of TX channel 3
+///
+/// Address offset: 0x0ae8
+#[repr(transparent)]
+pub struct TxCh3Mem42 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem42 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem42 {}
+
+/// TX_CH3_MEM[43] Register
+///
+/// Pulse code 43 of TX channel 3
+///
+/// Address offset: 0x0aec
+#[repr(transparent)]
+pub struct TxCh3Mem43 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem43 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem43 {}
+
+/// TX_CH3_MEM[44] Register
+///
+/// Pulse code 44 of TX channel 3
+///
+/// Address offset: 0x0af0
+#[repr(transparent)]
+pub struct TxCh3Mem44 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem44 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem44 {}
+
+/// TX_CH3_MEM[45] Register
+///
+/// Pulse code 45 of TX channel 3
+///
+/// Address offset: 0x0af4
+#[repr(transparent)]
+pub struct TxCh3Mem45 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem45 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem45 {}
+
+/// TX_CH3_MEM[46] Register
+///
+/// Pulse code 46 of TX channel 3
+///
+/// Address offset: 0x0af8
+#[repr(transparent)]
+pub struct TxCh3Mem46 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem46 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem46 {}
+
+/// TX_CH3_MEM[47] Register
+///
+/// Pulse code 47 of TX channel 3
+///
+/// Address offset: 0x0afc
+#[repr(transparent)]
+pub struct TxCh3Mem47 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for TxCh3Mem47 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl TxCh3Mem47 {}
+
+/// RX_CH0_MEM[0] Register
+///
+/// Pulse code 0 of RX channel 4
+///
+/// Address offset: 0x0b00
+#[repr(transparent)]
+pub struct RxCh0Mem0 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem0 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem0 {}
+
+/// RX_CH0_MEM[1] Register
+///
+/// Pulse code 1 of RX channel 4
+///
+/// Address offset: 0x0b04
+#[repr(transparent)]
+pub struct RxCh0Mem1 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem1 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem1 {}
+
+/// RX_CH0_MEM[2] Register
+///
+/// Pulse code 2 of RX channel 4
+///
+/// Address offset: 0x0b08
+#[repr(transparent)]
+pub struct RxCh0Mem2 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem2 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem2 {}
+
+/// RX_CH0_MEM[3] Register
+///
+/// Pulse code 3 of RX channel 4
+///
+/// Address offset: 0x0b0c
+#[repr(transparent)]
+pub struct RxCh0Mem3 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem3 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem3 {}
+
+/// RX_CH0_MEM[4] Register
+///
+/// Pulse code 4 of RX channel 4
+///
+/// Address offset: 0x0b10
+#[repr(transparent)]
+pub struct RxCh0Mem4 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem4 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem4 {}
+
+/// RX_CH0_MEM[5] Register
+///
+/// Pulse code 5 of RX channel 4
+///
+/// Address offset: 0x0b14
+#[repr(transparent)]
+pub struct RxCh0Mem5 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem5 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem5 {}
+
+/// RX_CH0_MEM[6] Register
+///
+/// Pulse code 6 of RX channel 4
+///
+/// Address offset: 0x0b18
+#[repr(transparent)]
+pub struct RxCh0Mem6 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem6 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem6 {}
+
+/// RX_CH0_MEM[7] Register
+///
+/// Pulse code 7 of RX channel 4
+///
+/// Address offset: 0x0b1c
+#[repr(transparent)]
+pub struct RxCh0Mem7 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem7 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem7 {}
+
+/// RX_CH0_MEM[8] Register
+///
+/// Pulse code 8 of RX channel 4
+///
+/// Address offset: 0x0b20
+#[repr(transparent)]
+pub struct RxCh0Mem8 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem8 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem8 {}
+
+/// RX_CH0_MEM[9] Register
+///
+/// Pulse code 9 of RX channel 4
+///
+/// Address offset: 0x0b24
+#[repr(transparent)]
+pub struct RxCh0Mem9 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem9 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem9 {}
+
+/// RX_CH0_MEM[10] Register
+///
+/// Pulse code 10 of RX channel 4
+///
+/// Address offset: 0x0b28
+#[repr(transparent)]
+pub struct RxCh0Mem10 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem10 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem10 {}
+
+/// RX_CH0_MEM[11] Register
+///
+/// Pulse code 11 of RX channel 4
+///
+/// Address offset: 0x0b2c
+#[repr(transparent)]
+pub struct RxCh0Mem11 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem11 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem11 {}
+
+/// RX_CH0_MEM[12] Register
+///
+/// Pulse code 12 of RX channel 4
+///
+/// Address offset: 0x0b30
+#[repr(transparent)]
+pub struct RxCh0Mem12 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem12 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem12 {}
+
+/// RX_CH0_MEM[13] Register
+///
+/// Pulse code 13 of RX channel 4
+///
+/// Address offset: 0x0b34
+#[repr(transparent)]
+pub struct RxCh0Mem13 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem13 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem13 {}
+
+/// RX_CH0_MEM[14] Register
+///
+/// Pulse code 14 of RX channel 4
+///
+/// Address offset: 0x0b38
+#[repr(transparent)]
+pub struct RxCh0Mem14 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem14 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem14 {}
+
+/// RX_CH0_MEM[15] Register
+///
+/// Pulse code 15 of RX channel 4
+///
+/// Address offset: 0x0b3c
+#[repr(transparent)]
+pub struct RxCh0Mem15 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem15 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem15 {}
+
+/// RX_CH0_MEM[16] Register
+///
+/// Pulse code 16 of RX channel 4
+///
+/// Address offset: 0x0b40
+#[repr(transparent)]
+pub struct RxCh0Mem16 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem16 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem16 {}
+
+/// RX_CH0_MEM[17] Register
+///
+/// Pulse code 17 of RX channel 4
+///
+/// Address offset: 0x0b44
+#[repr(transparent)]
+pub struct RxCh0Mem17 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem17 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem17 {}
+
+/// RX_CH0_MEM[18] Register
+///
+/// Pulse code 18 of RX channel 4
+///
+/// Address offset: 0x0b48
+#[repr(transparent)]
+pub struct RxCh0Mem18 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem18 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem18 {}
+
+/// RX_CH0_MEM[19] Register
+///
+/// Pulse code 19 of RX channel 4
+///
+/// Address offset: 0x0b4c
+#[repr(transparent)]
+pub struct RxCh0Mem19 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem19 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem19 {}
+
+/// RX_CH0_MEM[20] Register
+///
+/// Pulse code 20 of RX channel 4
+///
+/// Address offset: 0x0b50
+#[repr(transparent)]
+pub struct RxCh0Mem20 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem20 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem20 {}
+
+/// RX_CH0_MEM[21] Register
+///
+/// Pulse code 21 of RX channel 4
+///
+/// Address offset: 0x0b54
+#[repr(transparent)]
+pub struct RxCh0Mem21 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem21 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem21 {}
+
+/// RX_CH0_MEM[22] Register
+///
+/// Pulse code 22 of RX channel 4
+///
+/// Address offset: 0x0b58
+#[repr(transparent)]
+pub struct RxCh0Mem22 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem22 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem22 {}
+
+/// RX_CH0_MEM[23] Register
+///
+/// Pulse code 23 of RX channel 4
+///
+/// Address offset: 0x0b5c
+#[repr(transparent)]
+pub struct RxCh0Mem23 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem23 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem23 {}
+
+/// RX_CH0_MEM[24] Register
+///
+/// Pulse code 24 of RX channel 4
+///
+/// Address offset: 0x0b60
+#[repr(transparent)]
+pub struct RxCh0Mem24 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem24 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem24 {}
+
+/// RX_CH0_MEM[25] Register
+///
+/// Pulse code 25 of RX channel 4
+///
+/// Address offset: 0x0b64
+#[repr(transparent)]
+pub struct RxCh0Mem25 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem25 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem25 {}
+
+/// RX_CH0_MEM[26] Register
+///
+/// Pulse code 26 of RX channel 4
+///
+/// Address offset: 0x0b68
+#[repr(transparent)]
+pub struct RxCh0Mem26 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem26 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem26 {}
+
+/// RX_CH0_MEM[27] Register
+///
+/// Pulse code 27 of RX channel 4
+///
+/// Address offset: 0x0b6c
+#[repr(transparent)]
+pub struct RxCh0Mem27 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem27 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem27 {}
+
+/// RX_CH0_MEM[28] Register
+///
+/// Pulse code 28 of RX channel 4
+///
+/// Address offset: 0x0b70
+#[repr(transparent)]
+pub struct RxCh0Mem28 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem28 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem28 {}
+
+/// RX_CH0_MEM[29] Register
+///
+/// Pulse code 29 of RX channel 4
+///
+/// Address offset: 0x0b74
+#[repr(transparent)]
+pub struct RxCh0Mem29 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem29 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem29 {}
+
+/// RX_CH0_MEM[30] Register
+///
+/// Pulse code 30 of RX channel 4
+///
+/// Address offset: 0x0b78
+#[repr(transparent)]
+pub struct RxCh0Mem30 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem30 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem30 {}
+
+/// RX_CH0_MEM[31] Register
+///
+/// Pulse code 31 of RX channel 4
+///
+/// Address offset: 0x0b7c
+#[repr(transparent)]
+pub struct RxCh0Mem31 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem31 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem31 {}
+
+/// RX_CH0_MEM[32] Register
+///
+/// Pulse code 32 of RX channel 4
+///
+/// Address offset: 0x0b80
+#[repr(transparent)]
+pub struct RxCh0Mem32 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem32 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem32 {}
+
+/// RX_CH0_MEM[33] Register
+///
+/// Pulse code 33 of RX channel 4
+///
+/// Address offset: 0x0b84
+#[repr(transparent)]
+pub struct RxCh0Mem33 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem33 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem33 {}
+
+/// RX_CH0_MEM[34] Register
+///
+/// Pulse code 34 of RX channel 4
+///
+/// Address offset: 0x0b88
+#[repr(transparent)]
+pub struct RxCh0Mem34 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem34 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem34 {}
+
+/// RX_CH0_MEM[35] Register
+///
+/// Pulse code 35 of RX channel 4
+///
+/// Address offset: 0x0b8c
+#[repr(transparent)]
+pub struct RxCh0Mem35 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem35 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem35 {}
+
+/// RX_CH0_MEM[36] Register
+///
+/// Pulse code 36 of RX channel 4
+///
+/// Address offset: 0x0b90
+#[repr(transparent)]
+pub struct RxCh0Mem36 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem36 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem36 {}
+
+/// RX_CH0_MEM[37] Register
+///
+/// Pulse code 37 of RX channel 4
+///
+/// Address offset: 0x0b94
+#[repr(transparent)]
+pub struct RxCh0Mem37 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem37 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem37 {}
+
+/// RX_CH0_MEM[38] Register
+///
+/// Pulse code 38 of RX channel 4
+///
+/// Address offset: 0x0b98
+#[repr(transparent)]
+pub struct RxCh0Mem38 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem38 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem38 {}
+
+/// RX_CH0_MEM[39] Register
+///
+/// Pulse code 39 of RX channel 4
+///
+/// Address offset: 0x0b9c
+#[repr(transparent)]
+pub struct RxCh0Mem39 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem39 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem39 {}
+
+/// RX_CH0_MEM[40] Register
+///
+/// Pulse code 40 of RX channel 4
+///
+/// Address offset: 0x0ba0
+#[repr(transparent)]
+pub struct RxCh0Mem40 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem40 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem40 {}
+
+/// RX_CH0_MEM[41] Register
+///
+/// Pulse code 41 of RX channel 4
+///
+/// Address offset: 0x0ba4
+#[repr(transparent)]
+pub struct RxCh0Mem41 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem41 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem41 {}
+
+/// RX_CH0_MEM[42] Register
+///
+/// Pulse code 42 of RX channel 4
+///
+/// Address offset: 0x0ba8
+#[repr(transparent)]
+pub struct RxCh0Mem42 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem42 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem42 {}
+
+/// RX_CH0_MEM[43] Register
+///
+/// Pulse code 43 of RX channel 4
+///
+/// Address offset: 0x0bac
+#[repr(transparent)]
+pub struct RxCh0Mem43 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem43 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem43 {}
+
+/// RX_CH0_MEM[44] Register
+///
+/// Pulse code 44 of RX channel 4
+///
+/// Address offset: 0x0bb0
+#[repr(transparent)]
+pub struct RxCh0Mem44 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem44 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem44 {}
+
+/// RX_CH0_MEM[45] Register
+///
+/// Pulse code 45 of RX channel 4
+///
+/// Address offset: 0x0bb4
+#[repr(transparent)]
+pub struct RxCh0Mem45 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem45 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem45 {}
+
+/// RX_CH0_MEM[46] Register
+///
+/// Pulse code 46 of RX channel 4
+///
+/// Address offset: 0x0bb8
+#[repr(transparent)]
+pub struct RxCh0Mem46 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem46 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem46 {}
+
+/// RX_CH0_MEM[47] Register
+///
+/// Pulse code 47 of RX channel 4
+///
+/// Address offset: 0x0bbc
+#[repr(transparent)]
+pub struct RxCh0Mem47 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh0Mem47 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh0Mem47 {}
+
+/// RX_CH1_MEM[0] Register
+///
+/// Pulse code 0 of RX channel 5
+///
+/// Address offset: 0x0bc0
+#[repr(transparent)]
+pub struct RxCh1Mem0 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem0 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem0 {}
+
+/// RX_CH1_MEM[1] Register
+///
+/// Pulse code 1 of RX channel 5
+///
+/// Address offset: 0x0bc4
+#[repr(transparent)]
+pub struct RxCh1Mem1 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem1 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem1 {}
+
+/// RX_CH1_MEM[2] Register
+///
+/// Pulse code 2 of RX channel 5
+///
+/// Address offset: 0x0bc8
+#[repr(transparent)]
+pub struct RxCh1Mem2 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem2 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem2 {}
+
+/// RX_CH1_MEM[3] Register
+///
+/// Pulse code 3 of RX channel 5
+///
+/// Address offset: 0x0bcc
+#[repr(transparent)]
+pub struct RxCh1Mem3 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem3 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem3 {}
+
+/// RX_CH1_MEM[4] Register
+///
+/// Pulse code 4 of RX channel 5
+///
+/// Address offset: 0x0bd0
+#[repr(transparent)]
+pub struct RxCh1Mem4 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem4 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem4 {}
+
+/// RX_CH1_MEM[5] Register
+///
+/// Pulse code 5 of RX channel 5
+///
+/// Address offset: 0x0bd4
+#[repr(transparent)]
+pub struct RxCh1Mem5 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem5 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem5 {}
+
+/// RX_CH1_MEM[6] Register
+///
+/// Pulse code 6 of RX channel 5
+///
+/// Address offset: 0x0bd8
+#[repr(transparent)]
+pub struct RxCh1Mem6 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem6 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem6 {}
+
+/// RX_CH1_MEM[7] Register
+///
+/// Pulse code 7 of RX channel 5
+///
+/// Address offset: 0x0bdc
+#[repr(transparent)]
+pub struct RxCh1Mem7 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem7 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem7 {}
+
+/// RX_CH1_MEM[8] Register
+///
+/// Pulse code 8 of RX channel 5
+///
+/// Address offset: 0x0be0
+#[repr(transparent)]
+pub struct RxCh1Mem8 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem8 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem8 {}
+
+/// RX_CH1_MEM[9] Register
+///
+/// Pulse code 9 of RX channel 5
+///
+/// Address offset: 0x0be4
+#[repr(transparent)]
+pub struct RxCh1Mem9 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem9 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem9 {}
+
+/// RX_CH1_MEM[10] Register
+///
+/// Pulse code 10 of RX channel 5
+///
+/// Address offset: 0x0be8
+#[repr(transparent)]
+pub struct RxCh1Mem10 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem10 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem10 {}
+
+/// RX_CH1_MEM[11] Register
+///
+/// Pulse code 11 of RX channel 5
+///
+/// Address offset: 0x0bec
+#[repr(transparent)]
+pub struct RxCh1Mem11 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem11 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem11 {}
+
+/// RX_CH1_MEM[12] Register
+///
+/// Pulse code 12 of RX channel 5
+///
+/// Address offset: 0x0bf0
+#[repr(transparent)]
+pub struct RxCh1Mem12 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem12 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem12 {}
+
+/// RX_CH1_MEM[13] Register
+///
+/// Pulse code 13 of RX channel 5
+///
+/// Address offset: 0x0bf4
+#[repr(transparent)]
+pub struct RxCh1Mem13 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem13 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem13 {}
+
+/// RX_CH1_MEM[14] Register
+///
+/// Pulse code 14 of RX channel 5
+///
+/// Address offset: 0x0bf8
+#[repr(transparent)]
+pub struct RxCh1Mem14 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem14 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem14 {}
+
+/// RX_CH1_MEM[15] Register
+///
+/// Pulse code 15 of RX channel 5
+///
+/// Address offset: 0x0bfc
+#[repr(transparent)]
+pub struct RxCh1Mem15 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem15 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem15 {}
+
+/// RX_CH1_MEM[16] Register
+///
+/// Pulse code 16 of RX channel 5
+///
+/// Address offset: 0x0c00
+#[repr(transparent)]
+pub struct RxCh1Mem16 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem16 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem16 {}
+
+/// RX_CH1_MEM[17] Register
+///
+/// Pulse code 17 of RX channel 5
+///
+/// Address offset: 0x0c04
+#[repr(transparent)]
+pub struct RxCh1Mem17 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem17 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem17 {}
+
+/// RX_CH1_MEM[18] Register
+///
+/// Pulse code 18 of RX channel 5
+///
+/// Address offset: 0x0c08
+#[repr(transparent)]
+pub struct RxCh1Mem18 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem18 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem18 {}
+
+/// RX_CH1_MEM[19] Register
+///
+/// Pulse code 19 of RX channel 5
+///
+/// Address offset: 0x0c0c
+#[repr(transparent)]
+pub struct RxCh1Mem19 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem19 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem19 {}
+
+/// RX_CH1_MEM[20] Register
+///
+/// Pulse code 20 of RX channel 5
+///
+/// Address offset: 0x0c10
+#[repr(transparent)]
+pub struct RxCh1Mem20 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem20 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem20 {}
+
+/// RX_CH1_MEM[21] Register
+///
+/// Pulse code 21 of RX channel 5
+///
+/// Address offset: 0x0c14
+#[repr(transparent)]
+pub struct RxCh1Mem21 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem21 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem21 {}
+
+/// RX_CH1_MEM[22] Register
+///
+/// Pulse code 22 of RX channel 5
+///
+/// Address offset: 0x0c18
+#[repr(transparent)]
+pub struct RxCh1Mem22 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem22 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem22 {}
+
+/// RX_CH1_MEM[23] Register
+///
+/// Pulse code 23 of RX channel 5
+///
+/// Address offset: 0x0c1c
+#[repr(transparent)]
+pub struct RxCh1Mem23 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem23 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem23 {}
+
+/// RX_CH1_MEM[24] Register
+///
+/// Pulse code 24 of RX channel 5
+///
+/// Address offset: 0x0c20
+#[repr(transparent)]
+pub struct RxCh1Mem24 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem24 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem24 {}
+
+/// RX_CH1_MEM[25] Register
+///
+/// Pulse code 25 of RX channel 5
+///
+/// Address offset: 0x0c24
+#[repr(transparent)]
+pub struct RxCh1Mem25 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem25 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem25 {}
+
+/// RX_CH1_MEM[26] Register
+///
+/// Pulse code 26 of RX channel 5
+///
+/// Address offset: 0x0c28
+#[repr(transparent)]
+pub struct RxCh1Mem26 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem26 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem26 {}
+
+/// RX_CH1_MEM[27] Register
+///
+/// Pulse code 27 of RX channel 5
+///
+/// Address offset: 0x0c2c
+#[repr(transparent)]
+pub struct RxCh1Mem27 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem27 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem27 {}
+
+/// RX_CH1_MEM[28] Register
+///
+/// Pulse code 28 of RX channel 5
+///
+/// Address offset: 0x0c30
+#[repr(transparent)]
+pub struct RxCh1Mem28 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem28 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem28 {}
+
+/// RX_CH1_MEM[29] Register
+///
+/// Pulse code 29 of RX channel 5
+///
+/// Address offset: 0x0c34
+#[repr(transparent)]
+pub struct RxCh1Mem29 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem29 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem29 {}
+
+/// RX_CH1_MEM[30] Register
+///
+/// Pulse code 30 of RX channel 5
+///
+/// Address offset: 0x0c38
+#[repr(transparent)]
+pub struct RxCh1Mem30 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem30 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem30 {}
+
+/// RX_CH1_MEM[31] Register
+///
+/// Pulse code 31 of RX channel 5
+///
+/// Address offset: 0x0c3c
+#[repr(transparent)]
+pub struct RxCh1Mem31 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem31 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem31 {}
+
+/// RX_CH1_MEM[32] Register
+///
+/// Pulse code 32 of RX channel 5
+///
+/// Address offset: 0x0c40
+#[repr(transparent)]
+pub struct RxCh1Mem32 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem32 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem32 {}
+
+/// RX_CH1_MEM[33] Register
+///
+/// Pulse code 33 of RX channel 5
+///
+/// Address offset: 0x0c44
+#[repr(transparent)]
+pub struct RxCh1Mem33 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem33 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem33 {}
+
+/// RX_CH1_MEM[34] Register
+///
+/// Pulse code 34 of RX channel 5
+///
+/// Address offset: 0x0c48
+#[repr(transparent)]
+pub struct RxCh1Mem34 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem34 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem34 {}
+
+/// RX_CH1_MEM[35] Register
+///
+/// Pulse code 35 of RX channel 5
+///
+/// Address offset: 0x0c4c
+#[repr(transparent)]
+pub struct RxCh1Mem35 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem35 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem35 {}
+
+/// RX_CH1_MEM[36] Register
+///
+/// Pulse code 36 of RX channel 5
+///
+/// Address offset: 0x0c50
+#[repr(transparent)]
+pub struct RxCh1Mem36 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem36 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem36 {}
+
+/// RX_CH1_MEM[37] Register
+///
+/// Pulse code 37 of RX channel 5
+///
+/// Address offset: 0x0c54
+#[repr(transparent)]
+pub struct RxCh1Mem37 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem37 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem37 {}
+
+/// RX_CH1_MEM[38] Register
+///
+/// Pulse code 38 of RX channel 5
+///
+/// Address offset: 0x0c58
+#[repr(transparent)]
+pub struct RxCh1Mem38 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem38 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem38 {}
+
+/// RX_CH1_MEM[39] Register
+///
+/// Pulse code 39 of RX channel 5
+///
+/// Address offset: 0x0c5c
+#[repr(transparent)]
+pub struct RxCh1Mem39 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem39 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem39 {}
+
+/// RX_CH1_MEM[40] Register
+///
+/// Pulse code 40 of RX channel 5
+///
+/// Address offset: 0x0c60
+#[repr(transparent)]
+pub struct RxCh1Mem40 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem40 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem40 {}
+
+/// RX_CH1_MEM[41] Register
+///
+/// Pulse code 41 of RX channel 5
+///
+/// Address offset: 0x0c64
+#[repr(transparent)]
+pub struct RxCh1Mem41 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem41 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem41 {}
+
+/// RX_CH1_MEM[42] Register
+///
+/// Pulse code 42 of RX channel 5
+///
+/// Address offset: 0x0c68
+#[repr(transparent)]
+pub struct RxCh1Mem42 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem42 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem42 {}
+
+/// RX_CH1_MEM[43] Register
+///
+/// Pulse code 43 of RX channel 5
+///
+/// Address offset: 0x0c6c
+#[repr(transparent)]
+pub struct RxCh1Mem43 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem43 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem43 {}
+
+/// RX_CH1_MEM[44] Register
+///
+/// Pulse code 44 of RX channel 5
+///
+/// Address offset: 0x0c70
+#[repr(transparent)]
+pub struct RxCh1Mem44 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem44 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem44 {}
+
+/// RX_CH1_MEM[45] Register
+///
+/// Pulse code 45 of RX channel 5
+///
+/// Address offset: 0x0c74
+#[repr(transparent)]
+pub struct RxCh1Mem45 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem45 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem45 {}
+
+/// RX_CH1_MEM[46] Register
+///
+/// Pulse code 46 of RX channel 5
+///
+/// Address offset: 0x0c78
+#[repr(transparent)]
+pub struct RxCh1Mem46 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem46 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem46 {}
+
+/// RX_CH1_MEM[47] Register
+///
+/// Pulse code 47 of RX channel 5
+///
+/// Address offset: 0x0c7c
+#[repr(transparent)]
+pub struct RxCh1Mem47 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh1Mem47 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh1Mem47 {}
+
+/// RX_CH2_MEM[0] Register
+///
+/// Pulse code 0 of RX channel 6
+///
+/// Address offset: 0x0c80
+#[repr(transparent)]
+pub struct RxCh2Mem0 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem0 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem0 {}
+
+/// RX_CH2_MEM[1] Register
+///
+/// Pulse code 1 of RX channel 6
+///
+/// Address offset: 0x0c84
+#[repr(transparent)]
+pub struct RxCh2Mem1 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem1 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem1 {}
+
+/// RX_CH2_MEM[2] Register
+///
+/// Pulse code 2 of RX channel 6
+///
+/// Address offset: 0x0c88
+#[repr(transparent)]
+pub struct RxCh2Mem2 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem2 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem2 {}
+
+/// RX_CH2_MEM[3] Register
+///
+/// Pulse code 3 of RX channel 6
+///
+/// Address offset: 0x0c8c
+#[repr(transparent)]
+pub struct RxCh2Mem3 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem3 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem3 {}
+
+/// RX_CH2_MEM[4] Register
+///
+/// Pulse code 4 of RX channel 6
+///
+/// Address offset: 0x0c90
+#[repr(transparent)]
+pub struct RxCh2Mem4 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem4 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem4 {}
+
+/// RX_CH2_MEM[5] Register
+///
+/// Pulse code 5 of RX channel 6
+///
+/// Address offset: 0x0c94
+#[repr(transparent)]
+pub struct RxCh2Mem5 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem5 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem5 {}
+
+/// RX_CH2_MEM[6] Register
+///
+/// Pulse code 6 of RX channel 6
+///
+/// Address offset: 0x0c98
+#[repr(transparent)]
+pub struct RxCh2Mem6 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem6 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem6 {}
+
+/// RX_CH2_MEM[7] Register
+///
+/// Pulse code 7 of RX channel 6
+///
+/// Address offset: 0x0c9c
+#[repr(transparent)]
+pub struct RxCh2Mem7 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem7 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem7 {}
+
+/// RX_CH2_MEM[8] Register
+///
+/// Pulse code 8 of RX channel 6
+///
+/// Address offset: 0x0ca0
+#[repr(transparent)]
+pub struct RxCh2Mem8 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem8 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem8 {}
+
+/// RX_CH2_MEM[9] Register
+///
+/// Pulse code 9 of RX channel 6
+///
+/// Address offset: 0x0ca4
+#[repr(transparent)]
+pub struct RxCh2Mem9 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem9 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem9 {}
+
+/// RX_CH2_MEM[10] Register
+///
+/// Pulse code 10 of RX channel 6
+///
+/// Address offset: 0x0ca8
+#[repr(transparent)]
+pub struct RxCh2Mem10 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem10 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem10 {}
+
+/// RX_CH2_MEM[11] Register
+///
+/// Pulse code 11 of RX channel 6
+///
+/// Address offset: 0x0cac
+#[repr(transparent)]
+pub struct RxCh2Mem11 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem11 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem11 {}
+
+/// RX_CH2_MEM[12] Register
+///
+/// Pulse code 12 of RX channel 6
+///
+/// Address offset: 0x0cb0
+#[repr(transparent)]
+pub struct RxCh2Mem12 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem12 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem12 {}
+
+/// RX_CH2_MEM[13] Register
+///
+/// Pulse code 13 of RX channel 6
+///
+/// Address offset: 0x0cb4
+#[repr(transparent)]
+pub struct RxCh2Mem13 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem13 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem13 {}
+
+/// RX_CH2_MEM[14] Register
+///
+/// Pulse code 14 of RX channel 6
+///
+/// Address offset: 0x0cb8
+#[repr(transparent)]
+pub struct RxCh2Mem14 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem14 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem14 {}
+
+/// RX_CH2_MEM[15] Register
+///
+/// Pulse code 15 of RX channel 6
+///
+/// Address offset: 0x0cbc
+#[repr(transparent)]
+pub struct RxCh2Mem15 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem15 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem15 {}
+
+/// RX_CH2_MEM[16] Register
+///
+/// Pulse code 16 of RX channel 6
+///
+/// Address offset: 0x0cc0
+#[repr(transparent)]
+pub struct RxCh2Mem16 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem16 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem16 {}
+
+/// RX_CH2_MEM[17] Register
+///
+/// Pulse code 17 of RX channel 6
+///
+/// Address offset: 0x0cc4
+#[repr(transparent)]
+pub struct RxCh2Mem17 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem17 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem17 {}
+
+/// RX_CH2_MEM[18] Register
+///
+/// Pulse code 18 of RX channel 6
+///
+/// Address offset: 0x0cc8
+#[repr(transparent)]
+pub struct RxCh2Mem18 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem18 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem18 {}
+
+/// RX_CH2_MEM[19] Register
+///
+/// Pulse code 19 of RX channel 6
+///
+/// Address offset: 0x0ccc
+#[repr(transparent)]
+pub struct RxCh2Mem19 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem19 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem19 {}
+
+/// RX_CH2_MEM[20] Register
+///
+/// Pulse code 20 of RX channel 6
+///
+/// Address offset: 0x0cd0
+#[repr(transparent)]
+pub struct RxCh2Mem20 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem20 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem20 {}
+
+/// RX_CH2_MEM[21] Register
+///
+/// Pulse code 21 of RX channel 6
+///
+/// Address offset: 0x0cd4
+#[repr(transparent)]
+pub struct RxCh2Mem21 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem21 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem21 {}
+
+/// RX_CH2_MEM[22] Register
+///
+/// Pulse code 22 of RX channel 6
+///
+/// Address offset: 0x0cd8
+#[repr(transparent)]
+pub struct RxCh2Mem22 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem22 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem22 {}
+
+/// RX_CH2_MEM[23] Register
+///
+/// Pulse code 23 of RX channel 6
+///
+/// Address offset: 0x0cdc
+#[repr(transparent)]
+pub struct RxCh2Mem23 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem23 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem23 {}
+
+/// RX_CH2_MEM[24] Register
+///
+/// Pulse code 24 of RX channel 6
+///
+/// Address offset: 0x0ce0
+#[repr(transparent)]
+pub struct RxCh2Mem24 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem24 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem24 {}
+
+/// RX_CH2_MEM[25] Register
+///
+/// Pulse code 25 of RX channel 6
+///
+/// Address offset: 0x0ce4
+#[repr(transparent)]
+pub struct RxCh2Mem25 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem25 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem25 {}
+
+/// RX_CH2_MEM[26] Register
+///
+/// Pulse code 26 of RX channel 6
+///
+/// Address offset: 0x0ce8
+#[repr(transparent)]
+pub struct RxCh2Mem26 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem26 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem26 {}
+
+/// RX_CH2_MEM[27] Register
+///
+/// Pulse code 27 of RX channel 6
+///
+/// Address offset: 0x0cec
+#[repr(transparent)]
+pub struct RxCh2Mem27 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem27 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem27 {}
+
+/// RX_CH2_MEM[28] Register
+///
+/// Pulse code 28 of RX channel 6
+///
+/// Address offset: 0x0cf0
+#[repr(transparent)]
+pub struct RxCh2Mem28 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem28 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem28 {}
+
+/// RX_CH2_MEM[29] Register
+///
+/// Pulse code 29 of RX channel 6
+///
+/// Address offset: 0x0cf4
+#[repr(transparent)]
+pub struct RxCh2Mem29 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem29 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem29 {}
+
+/// RX_CH2_MEM[30] Register
+///
+/// Pulse code 30 of RX channel 6
+///
+/// Address offset: 0x0cf8
+#[repr(transparent)]
+pub struct RxCh2Mem30 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem30 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem30 {}
+
+/// RX_CH2_MEM[31] Register
+///
+/// Pulse code 31 of RX channel 6
+///
+/// Address offset: 0x0cfc
+#[repr(transparent)]
+pub struct RxCh2Mem31 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem31 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem31 {}
+
+/// RX_CH2_MEM[32] Register
+///
+/// Pulse code 32 of RX channel 6
+///
+/// Address offset: 0x0d00
+#[repr(transparent)]
+pub struct RxCh2Mem32 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem32 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem32 {}
+
+/// RX_CH2_MEM[33] Register
+///
+/// Pulse code 33 of RX channel 6
+///
+/// Address offset: 0x0d04
+#[repr(transparent)]
+pub struct RxCh2Mem33 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem33 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem33 {}
+
+/// RX_CH2_MEM[34] Register
+///
+/// Pulse code 34 of RX channel 6
+///
+/// Address offset: 0x0d08
+#[repr(transparent)]
+pub struct RxCh2Mem34 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem34 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem34 {}
+
+/// RX_CH2_MEM[35] Register
+///
+/// Pulse code 35 of RX channel 6
+///
+/// Address offset: 0x0d0c
+#[repr(transparent)]
+pub struct RxCh2Mem35 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem35 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem35 {}
+
+/// RX_CH2_MEM[36] Register
+///
+/// Pulse code 36 of RX channel 6
+///
+/// Address offset: 0x0d10
+#[repr(transparent)]
+pub struct RxCh2Mem36 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem36 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem36 {}
+
+/// RX_CH2_MEM[37] Register
+///
+/// Pulse code 37 of RX channel 6
+///
+/// Address offset: 0x0d14
+#[repr(transparent)]
+pub struct RxCh2Mem37 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem37 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem37 {}
+
+/// RX_CH2_MEM[38] Register
+///
+/// Pulse code 38 of RX channel 6
+///
+/// Address offset: 0x0d18
+#[repr(transparent)]
+pub struct RxCh2Mem38 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem38 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem38 {}
+
+/// RX_CH2_MEM[39] Register
+///
+/// Pulse code 39 of RX channel 6
+///
+/// Address offset: 0x0d1c
+#[repr(transparent)]
+pub struct RxCh2Mem39 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem39 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem39 {}
+
+/// RX_CH2_MEM[40] Register
+///
+/// Pulse code 40 of RX channel 6
+///
+/// Address offset: 0x0d20
+#[repr(transparent)]
+pub struct RxCh2Mem40 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem40 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem40 {}
+
+/// RX_CH2_MEM[41] Register
+///
+/// Pulse code 41 of RX channel 6
+///
+/// Address offset: 0x0d24
+#[repr(transparent)]
+pub struct RxCh2Mem41 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem41 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem41 {}
+
+/// RX_CH2_MEM[42] Register
+///
+/// Pulse code 42 of RX channel 6
+///
+/// Address offset: 0x0d28
+#[repr(transparent)]
+pub struct RxCh2Mem42 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem42 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem42 {}
+
+/// RX_CH2_MEM[43] Register
+///
+/// Pulse code 43 of RX channel 6
+///
+/// Address offset: 0x0d2c
+#[repr(transparent)]
+pub struct RxCh2Mem43 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem43 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem43 {}
+
+/// RX_CH2_MEM[44] Register
+///
+/// Pulse code 44 of RX channel 6
+///
+/// Address offset: 0x0d30
+#[repr(transparent)]
+pub struct RxCh2Mem44 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem44 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem44 {}
+
+/// RX_CH2_MEM[45] Register
+///
+/// Pulse code 45 of RX channel 6
+///
+/// Address offset: 0x0d34
+#[repr(transparent)]
+pub struct RxCh2Mem45 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem45 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem45 {}
+
+/// RX_CH2_MEM[46] Register
+///
+/// Pulse code 46 of RX channel 6
+///
+/// Address offset: 0x0d38
+#[repr(transparent)]
+pub struct RxCh2Mem46 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem46 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem46 {}
+
+/// RX_CH2_MEM[47] Register
+///
+/// Pulse code 47 of RX channel 6
+///
+/// Address offset: 0x0d3c
+#[repr(transparent)]
+pub struct RxCh2Mem47 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh2Mem47 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh2Mem47 {}
+
+/// RX_CH3_MEM[0] Register
+///
+/// Pulse code 0 of RX channel 7
+///
+/// Address offset: 0x0d40
+#[repr(transparent)]
+pub struct RxCh3Mem0 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem0 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem0 {}
+
+/// RX_CH3_MEM[1] Register
+///
+/// Pulse code 1 of RX channel 7
+///
+/// Address offset: 0x0d44
+#[repr(transparent)]
+pub struct RxCh3Mem1 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem1 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem1 {}
+
+/// RX_CH3_MEM[2] Register
+///
+/// Pulse code 2 of RX channel 7
+///
+/// Address offset: 0x0d48
+#[repr(transparent)]
+pub struct RxCh3Mem2 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem2 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem2 {}
+
+/// RX_CH3_MEM[3] Register
+///
+/// Pulse code 3 of RX channel 7
+///
+/// Address offset: 0x0d4c
+#[repr(transparent)]
+pub struct RxCh3Mem3 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem3 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem3 {}
+
+/// RX_CH3_MEM[4] Register
+///
+/// Pulse code 4 of RX channel 7
+///
+/// Address offset: 0x0d50
+#[repr(transparent)]
+pub struct RxCh3Mem4 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem4 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem4 {}
+
+/// RX_CH3_MEM[5] Register
+///
+/// Pulse code 5 of RX channel 7
+///
+/// Address offset: 0x0d54
+#[repr(transparent)]
+pub struct RxCh3Mem5 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem5 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem5 {}
+
+/// RX_CH3_MEM[6] Register
+///
+/// Pulse code 6 of RX channel 7
+///
+/// Address offset: 0x0d58
+#[repr(transparent)]
+pub struct RxCh3Mem6 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem6 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem6 {}
+
+/// RX_CH3_MEM[7] Register
+///
+/// Pulse code 7 of RX channel 7
+///
+/// Address offset: 0x0d5c
+#[repr(transparent)]
+pub struct RxCh3Mem7 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem7 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem7 {}
+
+/// RX_CH3_MEM[8] Register
+///
+/// Pulse code 8 of RX channel 7
+///
+/// Address offset: 0x0d60
+#[repr(transparent)]
+pub struct RxCh3Mem8 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem8 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem8 {}
+
+/// RX_CH3_MEM[9] Register
+///
+/// Pulse code 9 of RX channel 7
+///
+/// Address offset: 0x0d64
+#[repr(transparent)]
+pub struct RxCh3Mem9 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem9 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem9 {}
+
+/// RX_CH3_MEM[10] Register
+///
+/// Pulse code 10 of RX channel 7
+///
+/// Address offset: 0x0d68
+#[repr(transparent)]
+pub struct RxCh3Mem10 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem10 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem10 {}
+
+/// RX_CH3_MEM[11] Register
+///
+/// Pulse code 11 of RX channel 7
+///
+/// Address offset: 0x0d6c
+#[repr(transparent)]
+pub struct RxCh3Mem11 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem11 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem11 {}
+
+/// RX_CH3_MEM[12] Register
+///
+/// Pulse code 12 of RX channel 7
+///
+/// Address offset: 0x0d70
+#[repr(transparent)]
+pub struct RxCh3Mem12 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem12 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem12 {}
+
+/// RX_CH3_MEM[13] Register
+///
+/// Pulse code 13 of RX channel 7
+///
+/// Address offset: 0x0d74
+#[repr(transparent)]
+pub struct RxCh3Mem13 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem13 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem13 {}
+
+/// RX_CH3_MEM[14] Register
+///
+/// Pulse code 14 of RX channel 7
+///
+/// Address offset: 0x0d78
+#[repr(transparent)]
+pub struct RxCh3Mem14 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem14 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem14 {}
+
+/// RX_CH3_MEM[15] Register
+///
+/// Pulse code 15 of RX channel 7
+///
+/// Address offset: 0x0d7c
+#[repr(transparent)]
+pub struct RxCh3Mem15 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem15 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem15 {}
+
+/// RX_CH3_MEM[16] Register
+///
+/// Pulse code 16 of RX channel 7
+///
+/// Address offset: 0x0d80
+#[repr(transparent)]
+pub struct RxCh3Mem16 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem16 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem16 {}
+
+/// RX_CH3_MEM[17] Register
+///
+/// Pulse code 17 of RX channel 7
+///
+/// Address offset: 0x0d84
+#[repr(transparent)]
+pub struct RxCh3Mem17 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem17 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem17 {}
+
+/// RX_CH3_MEM[18] Register
+///
+/// Pulse code 18 of RX channel 7
+///
+/// Address offset: 0x0d88
+#[repr(transparent)]
+pub struct RxCh3Mem18 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem18 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem18 {}
+
+/// RX_CH3_MEM[19] Register
+///
+/// Pulse code 19 of RX channel 7
+///
+/// Address offset: 0x0d8c
+#[repr(transparent)]
+pub struct RxCh3Mem19 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem19 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem19 {}
+
+/// RX_CH3_MEM[20] Register
+///
+/// Pulse code 20 of RX channel 7
+///
+/// Address offset: 0x0d90
+#[repr(transparent)]
+pub struct RxCh3Mem20 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem20 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem20 {}
+
+/// RX_CH3_MEM[21] Register
+///
+/// Pulse code 21 of RX channel 7
+///
+/// Address offset: 0x0d94
+#[repr(transparent)]
+pub struct RxCh3Mem21 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem21 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem21 {}
+
+/// RX_CH3_MEM[22] Register
+///
+/// Pulse code 22 of RX channel 7
+///
+/// Address offset: 0x0d98
+#[repr(transparent)]
+pub struct RxCh3Mem22 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem22 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem22 {}
+
+/// RX_CH3_MEM[23] Register
+///
+/// Pulse code 23 of RX channel 7
+///
+/// Address offset: 0x0d9c
+#[repr(transparent)]
+pub struct RxCh3Mem23 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem23 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem23 {}
+
+/// RX_CH3_MEM[24] Register
+///
+/// Pulse code 24 of RX channel 7
+///
+/// Address offset: 0x0da0
+#[repr(transparent)]
+pub struct RxCh3Mem24 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem24 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem24 {}
+
+/// RX_CH3_MEM[25] Register
+///
+/// Pulse code 25 of RX channel 7
+///
+/// Address offset: 0x0da4
+#[repr(transparent)]
+pub struct RxCh3Mem25 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem25 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem25 {}
+
+/// RX_CH3_MEM[26] Register
+///
+/// Pulse code 26 of RX channel 7
+///
+/// Address offset: 0x0da8
+#[repr(transparent)]
+pub struct RxCh3Mem26 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem26 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem26 {}
+
+/// RX_CH3_MEM[27] Register
+///
+/// Pulse code 27 of RX channel 7
+///
+/// Address offset: 0x0dac
+#[repr(transparent)]
+pub struct RxCh3Mem27 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem27 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem27 {}
+
+/// RX_CH3_MEM[28] Register
+///
+/// Pulse code 28 of RX channel 7
+///
+/// Address offset: 0x0db0
+#[repr(transparent)]
+pub struct RxCh3Mem28 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem28 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem28 {}
+
+/// RX_CH3_MEM[29] Register
+///
+/// Pulse code 29 of RX channel 7
+///
+/// Address offset: 0x0db4
+#[repr(transparent)]
+pub struct RxCh3Mem29 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem29 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem29 {}
+
+/// RX_CH3_MEM[30] Register
+///
+/// Pulse code 30 of RX channel 7
+///
+/// Address offset: 0x0db8
+#[repr(transparent)]
+pub struct RxCh3Mem30 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem30 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem30 {}
+
+/// RX_CH3_MEM[31] Register
+///
+/// Pulse code 31 of RX channel 7
+///
+/// Address offset: 0x0dbc
+#[repr(transparent)]
+pub struct RxCh3Mem31 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem31 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem31 {}
+
+/// RX_CH3_MEM[32] Register
+///
+/// Pulse code 32 of RX channel 7
+///
+/// Address offset: 0x0dc0
+#[repr(transparent)]
+pub struct RxCh3Mem32 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem32 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem32 {}
+
+/// RX_CH3_MEM[33] Register
+///
+/// Pulse code 33 of RX channel 7
+///
+/// Address offset: 0x0dc4
+#[repr(transparent)]
+pub struct RxCh3Mem33 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem33 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem33 {}
+
+/// RX_CH3_MEM[34] Register
+///
+/// Pulse code 34 of RX channel 7
+///
+/// Address offset: 0x0dc8
+#[repr(transparent)]
+pub struct RxCh3Mem34 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem34 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem34 {}
+
+/// RX_CH3_MEM[35] Register
+///
+/// Pulse code 35 of RX channel 7
+///
+/// Address offset: 0x0dcc
+#[repr(transparent)]
+pub struct RxCh3Mem35 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem35 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem35 {}
+
+/// RX_CH3_MEM[36] Register
+///
+/// Pulse code 36 of RX channel 7
+///
+/// Address offset: 0x0dd0
+#[repr(transparent)]
+pub struct RxCh3Mem36 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem36 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem36 {}
+
+/// RX_CH3_MEM[37] Register
+///
+/// Pulse code 37 of RX channel 7
+///
+/// Address offset: 0x0dd4
+#[repr(transparent)]
+pub struct RxCh3Mem37 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem37 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem37 {}
+
+/// RX_CH3_MEM[38] Register
+///
+/// Pulse code 38 of RX channel 7
+///
+/// Address offset: 0x0dd8
+#[repr(transparent)]
+pub struct RxCh3Mem38 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem38 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem38 {}
+
+/// RX_CH3_MEM[39] Register
+///
+/// Pulse code 39 of RX channel 7
+///
+/// Address offset: 0x0ddc
+#[repr(transparent)]
+pub struct RxCh3Mem39 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem39 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem39 {}
+
+/// RX_CH3_MEM[40] Register
+///
+/// Pulse code 40 of RX channel 7
+///
+/// Address offset: 0x0de0
+#[repr(transparent)]
+pub struct RxCh3Mem40 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem40 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem40 {}
+
+/// RX_CH3_MEM[41] Register
+///
+/// Pulse code 41 of RX channel 7
+///
+/// Address offset: 0x0de4
+#[repr(transparent)]
+pub struct RxCh3Mem41 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem41 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem41 {}
+
+/// RX_CH3_MEM[42] Register
+///
+/// Pulse code 42 of RX channel 7
+///
+/// Address offset: 0x0de8
+#[repr(transparent)]
+pub struct RxCh3Mem42 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem42 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem42 {}
+
+/// RX_CH3_MEM[43] Register
+///
+/// Pulse code 43 of RX channel 7
+///
+/// Address offset: 0x0dec
+#[repr(transparent)]
+pub struct RxCh3Mem43 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem43 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem43 {}
+
+/// RX_CH3_MEM[44] Register
+///
+/// Pulse code 44 of RX channel 7
+///
+/// Address offset: 0x0df0
+#[repr(transparent)]
+pub struct RxCh3Mem44 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem44 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem44 {}
+
+/// RX_CH3_MEM[45] Register
+///
+/// Pulse code 45 of RX channel 7
+///
+/// Address offset: 0x0df4
+#[repr(transparent)]
+pub struct RxCh3Mem45 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem45 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem45 {}
+
+/// RX_CH3_MEM[46] Register
+///
+/// Pulse code 46 of RX channel 7
+///
+/// Address offset: 0x0df8
+#[repr(transparent)]
+pub struct RxCh3Mem46 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem46 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem46 {}
+
+/// RX_CH3_MEM[47] Register
+///
+/// Pulse code 47 of RX channel 7
+///
+/// Address offset: 0x0dfc
+#[repr(transparent)]
+pub struct RxCh3Mem47 {
+    value: crate::common::VolatileCell<u32>,
+}
+
+impl core::ops::Deref for RxCh3Mem47 {
+    type Target = crate::common::VolatileCell<u32>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl RxCh3Mem47 {}
+
 /// Register block
 #[repr(C)]
 pub struct RegisterBlock {
@@ -19596,4 +27276,1157 @@ pub struct RegisterBlock {
     /// 0x00cc
     /// RMT version register
     pub date: Date,
+    _reserved0: [u8; 1840],
+    /// 0x0800
+    /// Pulse code 0 of TX channel 0
+    pub tx_ch0_mem0: TxCh0Mem0,
+    /// 0x0804
+    /// Pulse code 1 of TX channel 0
+    pub tx_ch0_mem1: TxCh0Mem1,
+    /// 0x0808
+    /// Pulse code 2 of TX channel 0
+    pub tx_ch0_mem2: TxCh0Mem2,
+    /// 0x080c
+    /// Pulse code 3 of TX channel 0
+    pub tx_ch0_mem3: TxCh0Mem3,
+    /// 0x0810
+    /// Pulse code 4 of TX channel 0
+    pub tx_ch0_mem4: TxCh0Mem4,
+    /// 0x0814
+    /// Pulse code 5 of TX channel 0
+    pub tx_ch0_mem5: TxCh0Mem5,
+    /// 0x0818
+    /// Pulse code 6 of TX channel 0
+    pub tx_ch0_mem6: TxCh0Mem6,
+    /// 0x081c
+    /// Pulse code 7 of TX channel 0
+    pub tx_ch0_mem7: TxCh0Mem7,
+    /// 0x0820
+    /// Pulse code 8 of TX channel 0
+    pub tx_ch0_mem8: TxCh0Mem8,
+    /// 0x0824
+    /// Pulse code 9 of TX channel 0
+    pub tx_ch0_mem9: TxCh0Mem9,
+    /// 0x0828
+    /// Pulse code 10 of TX channel 0
+    pub tx_ch0_mem10: TxCh0Mem10,
+    /// 0x082c
+    /// Pulse code 11 of TX channel 0
+    pub tx_ch0_mem11: TxCh0Mem11,
+    /// 0x0830
+    /// Pulse code 12 of TX channel 0
+    pub tx_ch0_mem12: TxCh0Mem12,
+    /// 0x0834
+    /// Pulse code 13 of TX channel 0
+    pub tx_ch0_mem13: TxCh0Mem13,
+    /// 0x0838
+    /// Pulse code 14 of TX channel 0
+    pub tx_ch0_mem14: TxCh0Mem14,
+    /// 0x083c
+    /// Pulse code 15 of TX channel 0
+    pub tx_ch0_mem15: TxCh0Mem15,
+    /// 0x0840
+    /// Pulse code 16 of TX channel 0
+    pub tx_ch0_mem16: TxCh0Mem16,
+    /// 0x0844
+    /// Pulse code 17 of TX channel 0
+    pub tx_ch0_mem17: TxCh0Mem17,
+    /// 0x0848
+    /// Pulse code 18 of TX channel 0
+    pub tx_ch0_mem18: TxCh0Mem18,
+    /// 0x084c
+    /// Pulse code 19 of TX channel 0
+    pub tx_ch0_mem19: TxCh0Mem19,
+    /// 0x0850
+    /// Pulse code 20 of TX channel 0
+    pub tx_ch0_mem20: TxCh0Mem20,
+    /// 0x0854
+    /// Pulse code 21 of TX channel 0
+    pub tx_ch0_mem21: TxCh0Mem21,
+    /// 0x0858
+    /// Pulse code 22 of TX channel 0
+    pub tx_ch0_mem22: TxCh0Mem22,
+    /// 0x085c
+    /// Pulse code 23 of TX channel 0
+    pub tx_ch0_mem23: TxCh0Mem23,
+    /// 0x0860
+    /// Pulse code 24 of TX channel 0
+    pub tx_ch0_mem24: TxCh0Mem24,
+    /// 0x0864
+    /// Pulse code 25 of TX channel 0
+    pub tx_ch0_mem25: TxCh0Mem25,
+    /// 0x0868
+    /// Pulse code 26 of TX channel 0
+    pub tx_ch0_mem26: TxCh0Mem26,
+    /// 0x086c
+    /// Pulse code 27 of TX channel 0
+    pub tx_ch0_mem27: TxCh0Mem27,
+    /// 0x0870
+    /// Pulse code 28 of TX channel 0
+    pub tx_ch0_mem28: TxCh0Mem28,
+    /// 0x0874
+    /// Pulse code 29 of TX channel 0
+    pub tx_ch0_mem29: TxCh0Mem29,
+    /// 0x0878
+    /// Pulse code 30 of TX channel 0
+    pub tx_ch0_mem30: TxCh0Mem30,
+    /// 0x087c
+    /// Pulse code 31 of TX channel 0
+    pub tx_ch0_mem31: TxCh0Mem31,
+    /// 0x0880
+    /// Pulse code 32 of TX channel 0
+    pub tx_ch0_mem32: TxCh0Mem32,
+    /// 0x0884
+    /// Pulse code 33 of TX channel 0
+    pub tx_ch0_mem33: TxCh0Mem33,
+    /// 0x0888
+    /// Pulse code 34 of TX channel 0
+    pub tx_ch0_mem34: TxCh0Mem34,
+    /// 0x088c
+    /// Pulse code 35 of TX channel 0
+    pub tx_ch0_mem35: TxCh0Mem35,
+    /// 0x0890
+    /// Pulse code 36 of TX channel 0
+    pub tx_ch0_mem36: TxCh0Mem36,
+    /// 0x0894
+    /// Pulse code 37 of TX channel 0
+    pub tx_ch0_mem37: TxCh0Mem37,
+    /// 0x0898
+    /// Pulse code 38 of TX channel 0
+    pub tx_ch0_mem38: TxCh0Mem38,
+    /// 0x089c
+    /// Pulse code 39 of TX channel 0
+    pub tx_ch0_mem39: TxCh0Mem39,
+    /// 0x08a0
+    /// Pulse code 40 of TX channel 0
+    pub tx_ch0_mem40: TxCh0Mem40,
+    /// 0x08a4
+    /// Pulse code 41 of TX channel 0
+    pub tx_ch0_mem41: TxCh0Mem41,
+    /// 0x08a8
+    /// Pulse code 42 of TX channel 0
+    pub tx_ch0_mem42: TxCh0Mem42,
+    /// 0x08ac
+    /// Pulse code 43 of TX channel 0
+    pub tx_ch0_mem43: TxCh0Mem43,
+    /// 0x08b0
+    /// Pulse code 44 of TX channel 0
+    pub tx_ch0_mem44: TxCh0Mem44,
+    /// 0x08b4
+    /// Pulse code 45 of TX channel 0
+    pub tx_ch0_mem45: TxCh0Mem45,
+    /// 0x08b8
+    /// Pulse code 46 of TX channel 0
+    pub tx_ch0_mem46: TxCh0Mem46,
+    /// 0x08bc
+    /// Pulse code 47 of TX channel 0
+    pub tx_ch0_mem47: TxCh0Mem47,
+    /// 0x08c0
+    /// Pulse code 0 of TX channel 1
+    pub tx_ch1_mem0: TxCh1Mem0,
+    /// 0x08c4
+    /// Pulse code 1 of TX channel 1
+    pub tx_ch1_mem1: TxCh1Mem1,
+    /// 0x08c8
+    /// Pulse code 2 of TX channel 1
+    pub tx_ch1_mem2: TxCh1Mem2,
+    /// 0x08cc
+    /// Pulse code 3 of TX channel 1
+    pub tx_ch1_mem3: TxCh1Mem3,
+    /// 0x08d0
+    /// Pulse code 4 of TX channel 1
+    pub tx_ch1_mem4: TxCh1Mem4,
+    /// 0x08d4
+    /// Pulse code 5 of TX channel 1
+    pub tx_ch1_mem5: TxCh1Mem5,
+    /// 0x08d8
+    /// Pulse code 6 of TX channel 1
+    pub tx_ch1_mem6: TxCh1Mem6,
+    /// 0x08dc
+    /// Pulse code 7 of TX channel 1
+    pub tx_ch1_mem7: TxCh1Mem7,
+    /// 0x08e0
+    /// Pulse code 8 of TX channel 1
+    pub tx_ch1_mem8: TxCh1Mem8,
+    /// 0x08e4
+    /// Pulse code 9 of TX channel 1
+    pub tx_ch1_mem9: TxCh1Mem9,
+    /// 0x08e8
+    /// Pulse code 10 of TX channel 1
+    pub tx_ch1_mem10: TxCh1Mem10,
+    /// 0x08ec
+    /// Pulse code 11 of TX channel 1
+    pub tx_ch1_mem11: TxCh1Mem11,
+    /// 0x08f0
+    /// Pulse code 12 of TX channel 1
+    pub tx_ch1_mem12: TxCh1Mem12,
+    /// 0x08f4
+    /// Pulse code 13 of TX channel 1
+    pub tx_ch1_mem13: TxCh1Mem13,
+    /// 0x08f8
+    /// Pulse code 14 of TX channel 1
+    pub tx_ch1_mem14: TxCh1Mem14,
+    /// 0x08fc
+    /// Pulse code 15 of TX channel 1
+    pub tx_ch1_mem15: TxCh1Mem15,
+    /// 0x0900
+    /// Pulse code 16 of TX channel 1
+    pub tx_ch1_mem16: TxCh1Mem16,
+    /// 0x0904
+    /// Pulse code 17 of TX channel 1
+    pub tx_ch1_mem17: TxCh1Mem17,
+    /// 0x0908
+    /// Pulse code 18 of TX channel 1
+    pub tx_ch1_mem18: TxCh1Mem18,
+    /// 0x090c
+    /// Pulse code 19 of TX channel 1
+    pub tx_ch1_mem19: TxCh1Mem19,
+    /// 0x0910
+    /// Pulse code 20 of TX channel 1
+    pub tx_ch1_mem20: TxCh1Mem20,
+    /// 0x0914
+    /// Pulse code 21 of TX channel 1
+    pub tx_ch1_mem21: TxCh1Mem21,
+    /// 0x0918
+    /// Pulse code 22 of TX channel 1
+    pub tx_ch1_mem22: TxCh1Mem22,
+    /// 0x091c
+    /// Pulse code 23 of TX channel 1
+    pub tx_ch1_mem23: TxCh1Mem23,
+    /// 0x0920
+    /// Pulse code 24 of TX channel 1
+    pub tx_ch1_mem24: TxCh1Mem24,
+    /// 0x0924
+    /// Pulse code 25 of TX channel 1
+    pub tx_ch1_mem25: TxCh1Mem25,
+    /// 0x0928
+    /// Pulse code 26 of TX channel 1
+    pub tx_ch1_mem26: TxCh1Mem26,
+    /// 0x092c
+    /// Pulse code 27 of TX channel 1
+    pub tx_ch1_mem27: TxCh1Mem27,
+    /// 0x0930
+    /// Pulse code 28 of TX channel 1
+    pub tx_ch1_mem28: TxCh1Mem28,
+    /// 0x0934
+    /// Pulse code 29 of TX channel 1
+    pub tx_ch1_mem29: TxCh1Mem29,
+    /// 0x0938
+    /// Pulse code 30 of TX channel 1
+    pub tx_ch1_mem30: TxCh1Mem30,
+    /// 0x093c
+    /// Pulse code 31 of TX channel 1
+    pub tx_ch1_mem31: TxCh1Mem31,
+    /// 0x0940
+    /// Pulse code 32 of TX channel 1
+    pub tx_ch1_mem32: TxCh1Mem32,
+    /// 0x0944
+    /// Pulse code 33 of TX channel 1
+    pub tx_ch1_mem33: TxCh1Mem33,
+    /// 0x0948
+    /// Pulse code 34 of TX channel 1
+    pub tx_ch1_mem34: TxCh1Mem34,
+    /// 0x094c
+    /// Pulse code 35 of TX channel 1
+    pub tx_ch1_mem35: TxCh1Mem35,
+    /// 0x0950
+    /// Pulse code 36 of TX channel 1
+    pub tx_ch1_mem36: TxCh1Mem36,
+    /// 0x0954
+    /// Pulse code 37 of TX channel 1
+    pub tx_ch1_mem37: TxCh1Mem37,
+    /// 0x0958
+    /// Pulse code 38 of TX channel 1
+    pub tx_ch1_mem38: TxCh1Mem38,
+    /// 0x095c
+    /// Pulse code 39 of TX channel 1
+    pub tx_ch1_mem39: TxCh1Mem39,
+    /// 0x0960
+    /// Pulse code 40 of TX channel 1
+    pub tx_ch1_mem40: TxCh1Mem40,
+    /// 0x0964
+    /// Pulse code 41 of TX channel 1
+    pub tx_ch1_mem41: TxCh1Mem41,
+    /// 0x0968
+    /// Pulse code 42 of TX channel 1
+    pub tx_ch1_mem42: TxCh1Mem42,
+    /// 0x096c
+    /// Pulse code 43 of TX channel 1
+    pub tx_ch1_mem43: TxCh1Mem43,
+    /// 0x0970
+    /// Pulse code 44 of TX channel 1
+    pub tx_ch1_mem44: TxCh1Mem44,
+    /// 0x0974
+    /// Pulse code 45 of TX channel 1
+    pub tx_ch1_mem45: TxCh1Mem45,
+    /// 0x0978
+    /// Pulse code 46 of TX channel 1
+    pub tx_ch1_mem46: TxCh1Mem46,
+    /// 0x097c
+    /// Pulse code 47 of TX channel 1
+    pub tx_ch1_mem47: TxCh1Mem47,
+    /// 0x0980
+    /// Pulse code 0 of TX channel 2
+    pub tx_ch2_mem0: TxCh2Mem0,
+    /// 0x0984
+    /// Pulse code 1 of TX channel 2
+    pub tx_ch2_mem1: TxCh2Mem1,
+    /// 0x0988
+    /// Pulse code 2 of TX channel 2
+    pub tx_ch2_mem2: TxCh2Mem2,
+    /// 0x098c
+    /// Pulse code 3 of TX channel 2
+    pub tx_ch2_mem3: TxCh2Mem3,
+    /// 0x0990
+    /// Pulse code 4 of TX channel 2
+    pub tx_ch2_mem4: TxCh2Mem4,
+    /// 0x0994
+    /// Pulse code 5 of TX channel 2
+    pub tx_ch2_mem5: TxCh2Mem5,
+    /// 0x0998
+    /// Pulse code 6 of TX channel 2
+    pub tx_ch2_mem6: TxCh2Mem6,
+    /// 0x099c
+    /// Pulse code 7 of TX channel 2
+    pub tx_ch2_mem7: TxCh2Mem7,
+    /// 0x09a0
+    /// Pulse code 8 of TX channel 2
+    pub tx_ch2_mem8: TxCh2Mem8,
+    /// 0x09a4
+    /// Pulse code 9 of TX channel 2
+    pub tx_ch2_mem9: TxCh2Mem9,
+    /// 0x09a8
+    /// Pulse code 10 of TX channel 2
+    pub tx_ch2_mem10: TxCh2Mem10,
+    /// 0x09ac
+    /// Pulse code 11 of TX channel 2
+    pub tx_ch2_mem11: TxCh2Mem11,
+    /// 0x09b0
+    /// Pulse code 12 of TX channel 2
+    pub tx_ch2_mem12: TxCh2Mem12,
+    /// 0x09b4
+    /// Pulse code 13 of TX channel 2
+    pub tx_ch2_mem13: TxCh2Mem13,
+    /// 0x09b8
+    /// Pulse code 14 of TX channel 2
+    pub tx_ch2_mem14: TxCh2Mem14,
+    /// 0x09bc
+    /// Pulse code 15 of TX channel 2
+    pub tx_ch2_mem15: TxCh2Mem15,
+    /// 0x09c0
+    /// Pulse code 16 of TX channel 2
+    pub tx_ch2_mem16: TxCh2Mem16,
+    /// 0x09c4
+    /// Pulse code 17 of TX channel 2
+    pub tx_ch2_mem17: TxCh2Mem17,
+    /// 0x09c8
+    /// Pulse code 18 of TX channel 2
+    pub tx_ch2_mem18: TxCh2Mem18,
+    /// 0x09cc
+    /// Pulse code 19 of TX channel 2
+    pub tx_ch2_mem19: TxCh2Mem19,
+    /// 0x09d0
+    /// Pulse code 20 of TX channel 2
+    pub tx_ch2_mem20: TxCh2Mem20,
+    /// 0x09d4
+    /// Pulse code 21 of TX channel 2
+    pub tx_ch2_mem21: TxCh2Mem21,
+    /// 0x09d8
+    /// Pulse code 22 of TX channel 2
+    pub tx_ch2_mem22: TxCh2Mem22,
+    /// 0x09dc
+    /// Pulse code 23 of TX channel 2
+    pub tx_ch2_mem23: TxCh2Mem23,
+    /// 0x09e0
+    /// Pulse code 24 of TX channel 2
+    pub tx_ch2_mem24: TxCh2Mem24,
+    /// 0x09e4
+    /// Pulse code 25 of TX channel 2
+    pub tx_ch2_mem25: TxCh2Mem25,
+    /// 0x09e8
+    /// Pulse code 26 of TX channel 2
+    pub tx_ch2_mem26: TxCh2Mem26,
+    /// 0x09ec
+    /// Pulse code 27 of TX channel 2
+    pub tx_ch2_mem27: TxCh2Mem27,
+    /// 0x09f0
+    /// Pulse code 28 of TX channel 2
+    pub tx_ch2_mem28: TxCh2Mem28,
+    /// 0x09f4
+    /// Pulse code 29 of TX channel 2
+    pub tx_ch2_mem29: TxCh2Mem29,
+    /// 0x09f8
+    /// Pulse code 30 of TX channel 2
+    pub tx_ch2_mem30: TxCh2Mem30,
+    /// 0x09fc
+    /// Pulse code 31 of TX channel 2
+    pub tx_ch2_mem31: TxCh2Mem31,
+    /// 0x0a00
+    /// Pulse code 32 of TX channel 2
+    pub tx_ch2_mem32: TxCh2Mem32,
+    /// 0x0a04
+    /// Pulse code 33 of TX channel 2
+    pub tx_ch2_mem33: TxCh2Mem33,
+    /// 0x0a08
+    /// Pulse code 34 of TX channel 2
+    pub tx_ch2_mem34: TxCh2Mem34,
+    /// 0x0a0c
+    /// Pulse code 35 of TX channel 2
+    pub tx_ch2_mem35: TxCh2Mem35,
+    /// 0x0a10
+    /// Pulse code 36 of TX channel 2
+    pub tx_ch2_mem36: TxCh2Mem36,
+    /// 0x0a14
+    /// Pulse code 37 of TX channel 2
+    pub tx_ch2_mem37: TxCh2Mem37,
+    /// 0x0a18
+    /// Pulse code 38 of TX channel 2
+    pub tx_ch2_mem38: TxCh2Mem38,
+    /// 0x0a1c
+    /// Pulse code 39 of TX channel 2
+    pub tx_ch2_mem39: TxCh2Mem39,
+    /// 0x0a20
+    /// Pulse code 40 of TX channel 2
+    pub tx_ch2_mem40: TxCh2Mem40,
+    /// 0x0a24
+    /// Pulse code 41 of TX channel 2
+    pub tx_ch2_mem41: TxCh2Mem41,
+    /// 0x0a28
+    /// Pulse code 42 of TX channel 2
+    pub tx_ch2_mem42: TxCh2Mem42,
+    /// 0x0a2c
+    /// Pulse code 43 of TX channel 2
+    pub tx_ch2_mem43: TxCh2Mem43,
+    /// 0x0a30
+    /// Pulse code 44 of TX channel 2
+    pub tx_ch2_mem44: TxCh2Mem44,
+    /// 0x0a34
+    /// Pulse code 45 of TX channel 2
+    pub tx_ch2_mem45: TxCh2Mem45,
+    /// 0x0a38
+    /// Pulse code 46 of TX channel 2
+    pub tx_ch2_mem46: TxCh2Mem46,
+    /// 0x0a3c
+    /// Pulse code 47 of TX channel 2
+    pub tx_ch2_mem47: TxCh2Mem47,
+    /// 0x0a40
+    /// Pulse code 0 of TX channel 3
+    pub tx_ch3_mem0: TxCh3Mem0,
+    /// 0x0a44
+    /// Pulse code 1 of TX channel 3
+    pub tx_ch3_mem1: TxCh3Mem1,
+    /// 0x0a48
+    /// Pulse code 2 of TX channel 3
+    pub tx_ch3_mem2: TxCh3Mem2,
+    /// 0x0a4c
+    /// Pulse code 3 of TX channel 3
+    pub tx_ch3_mem3: TxCh3Mem3,
+    /// 0x0a50
+    /// Pulse code 4 of TX channel 3
+    pub tx_ch3_mem4: TxCh3Mem4,
+    /// 0x0a54
+    /// Pulse code 5 of TX channel 3
+    pub tx_ch3_mem5: TxCh3Mem5,
+    /// 0x0a58
+    /// Pulse code 6 of TX channel 3
+    pub tx_ch3_mem6: TxCh3Mem6,
+    /// 0x0a5c
+    /// Pulse code 7 of TX channel 3
+    pub tx_ch3_mem7: TxCh3Mem7,
+    /// 0x0a60
+    /// Pulse code 8 of TX channel 3
+    pub tx_ch3_mem8: TxCh3Mem8,
+    /// 0x0a64
+    /// Pulse code 9 of TX channel 3
+    pub tx_ch3_mem9: TxCh3Mem9,
+    /// 0x0a68
+    /// Pulse code 10 of TX channel 3
+    pub tx_ch3_mem10: TxCh3Mem10,
+    /// 0x0a6c
+    /// Pulse code 11 of TX channel 3
+    pub tx_ch3_mem11: TxCh3Mem11,
+    /// 0x0a70
+    /// Pulse code 12 of TX channel 3
+    pub tx_ch3_mem12: TxCh3Mem12,
+    /// 0x0a74
+    /// Pulse code 13 of TX channel 3
+    pub tx_ch3_mem13: TxCh3Mem13,
+    /// 0x0a78
+    /// Pulse code 14 of TX channel 3
+    pub tx_ch3_mem14: TxCh3Mem14,
+    /// 0x0a7c
+    /// Pulse code 15 of TX channel 3
+    pub tx_ch3_mem15: TxCh3Mem15,
+    /// 0x0a80
+    /// Pulse code 16 of TX channel 3
+    pub tx_ch3_mem16: TxCh3Mem16,
+    /// 0x0a84
+    /// Pulse code 17 of TX channel 3
+    pub tx_ch3_mem17: TxCh3Mem17,
+    /// 0x0a88
+    /// Pulse code 18 of TX channel 3
+    pub tx_ch3_mem18: TxCh3Mem18,
+    /// 0x0a8c
+    /// Pulse code 19 of TX channel 3
+    pub tx_ch3_mem19: TxCh3Mem19,
+    /// 0x0a90
+    /// Pulse code 20 of TX channel 3
+    pub tx_ch3_mem20: TxCh3Mem20,
+    /// 0x0a94
+    /// Pulse code 21 of TX channel 3
+    pub tx_ch3_mem21: TxCh3Mem21,
+    /// 0x0a98
+    /// Pulse code 22 of TX channel 3
+    pub tx_ch3_mem22: TxCh3Mem22,
+    /// 0x0a9c
+    /// Pulse code 23 of TX channel 3
+    pub tx_ch3_mem23: TxCh3Mem23,
+    /// 0x0aa0
+    /// Pulse code 24 of TX channel 3
+    pub tx_ch3_mem24: TxCh3Mem24,
+    /// 0x0aa4
+    /// Pulse code 25 of TX channel 3
+    pub tx_ch3_mem25: TxCh3Mem25,
+    /// 0x0aa8
+    /// Pulse code 26 of TX channel 3
+    pub tx_ch3_mem26: TxCh3Mem26,
+    /// 0x0aac
+    /// Pulse code 27 of TX channel 3
+    pub tx_ch3_mem27: TxCh3Mem27,
+    /// 0x0ab0
+    /// Pulse code 28 of TX channel 3
+    pub tx_ch3_mem28: TxCh3Mem28,
+    /// 0x0ab4
+    /// Pulse code 29 of TX channel 3
+    pub tx_ch3_mem29: TxCh3Mem29,
+    /// 0x0ab8
+    /// Pulse code 30 of TX channel 3
+    pub tx_ch3_mem30: TxCh3Mem30,
+    /// 0x0abc
+    /// Pulse code 31 of TX channel 3
+    pub tx_ch3_mem31: TxCh3Mem31,
+    /// 0x0ac0
+    /// Pulse code 32 of TX channel 3
+    pub tx_ch3_mem32: TxCh3Mem32,
+    /// 0x0ac4
+    /// Pulse code 33 of TX channel 3
+    pub tx_ch3_mem33: TxCh3Mem33,
+    /// 0x0ac8
+    /// Pulse code 34 of TX channel 3
+    pub tx_ch3_mem34: TxCh3Mem34,
+    /// 0x0acc
+    /// Pulse code 35 of TX channel 3
+    pub tx_ch3_mem35: TxCh3Mem35,
+    /// 0x0ad0
+    /// Pulse code 36 of TX channel 3
+    pub tx_ch3_mem36: TxCh3Mem36,
+    /// 0x0ad4
+    /// Pulse code 37 of TX channel 3
+    pub tx_ch3_mem37: TxCh3Mem37,
+    /// 0x0ad8
+    /// Pulse code 38 of TX channel 3
+    pub tx_ch3_mem38: TxCh3Mem38,
+    /// 0x0adc
+    /// Pulse code 39 of TX channel 3
+    pub tx_ch3_mem39: TxCh3Mem39,
+    /// 0x0ae0
+    /// Pulse code 40 of TX channel 3
+    pub tx_ch3_mem40: TxCh3Mem40,
+    /// 0x0ae4
+    /// Pulse code 41 of TX channel 3
+    pub tx_ch3_mem41: TxCh3Mem41,
+    /// 0x0ae8
+    /// Pulse code 42 of TX channel 3
+    pub tx_ch3_mem42: TxCh3Mem42,
+    /// 0x0aec
+    /// Pulse code 43 of TX channel 3
+    pub tx_ch3_mem43: TxCh3Mem43,
+    /// 0x0af0
+    /// Pulse code 44 of TX channel 3
+    pub tx_ch3_mem44: TxCh3Mem44,
+    /// 0x0af4
+    /// Pulse code 45 of TX channel 3
+    pub tx_ch3_mem45: TxCh3Mem45,
+    /// 0x0af8
+    /// Pulse code 46 of TX channel 3
+    pub tx_ch3_mem46: TxCh3Mem46,
+    /// 0x0afc
+    /// Pulse code 47 of TX channel 3
+    pub tx_ch3_mem47: TxCh3Mem47,
+    /// 0x0b00
+    /// Pulse code 0 of RX channel 4
+    pub rx_ch0_mem0: RxCh0Mem0,
+    /// 0x0b04
+    /// Pulse code 1 of RX channel 4
+    pub rx_ch0_mem1: RxCh0Mem1,
+    /// 0x0b08
+    /// Pulse code 2 of RX channel 4
+    pub rx_ch0_mem2: RxCh0Mem2,
+    /// 0x0b0c
+    /// Pulse code 3 of RX channel 4
+    pub rx_ch0_mem3: RxCh0Mem3,
+    /// 0x0b10
+    /// Pulse code 4 of RX channel 4
+    pub rx_ch0_mem4: RxCh0Mem4,
+    /// 0x0b14
+    /// Pulse code 5 of RX channel 4
+    pub rx_ch0_mem5: RxCh0Mem5,
+    /// 0x0b18
+    /// Pulse code 6 of RX channel 4
+    pub rx_ch0_mem6: RxCh0Mem6,
+    /// 0x0b1c
+    /// Pulse code 7 of RX channel 4
+    pub rx_ch0_mem7: RxCh0Mem7,
+    /// 0x0b20
+    /// Pulse code 8 of RX channel 4
+    pub rx_ch0_mem8: RxCh0Mem8,
+    /// 0x0b24
+    /// Pulse code 9 of RX channel 4
+    pub rx_ch0_mem9: RxCh0Mem9,
+    /// 0x0b28
+    /// Pulse code 10 of RX channel 4
+    pub rx_ch0_mem10: RxCh0Mem10,
+    /// 0x0b2c
+    /// Pulse code 11 of RX channel 4
+    pub rx_ch0_mem11: RxCh0Mem11,
+    /// 0x0b30
+    /// Pulse code 12 of RX channel 4
+    pub rx_ch0_mem12: RxCh0Mem12,
+    /// 0x0b34
+    /// Pulse code 13 of RX channel 4
+    pub rx_ch0_mem13: RxCh0Mem13,
+    /// 0x0b38
+    /// Pulse code 14 of RX channel 4
+    pub rx_ch0_mem14: RxCh0Mem14,
+    /// 0x0b3c
+    /// Pulse code 15 of RX channel 4
+    pub rx_ch0_mem15: RxCh0Mem15,
+    /// 0x0b40
+    /// Pulse code 16 of RX channel 4
+    pub rx_ch0_mem16: RxCh0Mem16,
+    /// 0x0b44
+    /// Pulse code 17 of RX channel 4
+    pub rx_ch0_mem17: RxCh0Mem17,
+    /// 0x0b48
+    /// Pulse code 18 of RX channel 4
+    pub rx_ch0_mem18: RxCh0Mem18,
+    /// 0x0b4c
+    /// Pulse code 19 of RX channel 4
+    pub rx_ch0_mem19: RxCh0Mem19,
+    /// 0x0b50
+    /// Pulse code 20 of RX channel 4
+    pub rx_ch0_mem20: RxCh0Mem20,
+    /// 0x0b54
+    /// Pulse code 21 of RX channel 4
+    pub rx_ch0_mem21: RxCh0Mem21,
+    /// 0x0b58
+    /// Pulse code 22 of RX channel 4
+    pub rx_ch0_mem22: RxCh0Mem22,
+    /// 0x0b5c
+    /// Pulse code 23 of RX channel 4
+    pub rx_ch0_mem23: RxCh0Mem23,
+    /// 0x0b60
+    /// Pulse code 24 of RX channel 4
+    pub rx_ch0_mem24: RxCh0Mem24,
+    /// 0x0b64
+    /// Pulse code 25 of RX channel 4
+    pub rx_ch0_mem25: RxCh0Mem25,
+    /// 0x0b68
+    /// Pulse code 26 of RX channel 4
+    pub rx_ch0_mem26: RxCh0Mem26,
+    /// 0x0b6c
+    /// Pulse code 27 of RX channel 4
+    pub rx_ch0_mem27: RxCh0Mem27,
+    /// 0x0b70
+    /// Pulse code 28 of RX channel 4
+    pub rx_ch0_mem28: RxCh0Mem28,
+    /// 0x0b74
+    /// Pulse code 29 of RX channel 4
+    pub rx_ch0_mem29: RxCh0Mem29,
+    /// 0x0b78
+    /// Pulse code 30 of RX channel 4
+    pub rx_ch0_mem30: RxCh0Mem30,
+    /// 0x0b7c
+    /// Pulse code 31 of RX channel 4
+    pub rx_ch0_mem31: RxCh0Mem31,
+    /// 0x0b80
+    /// Pulse code 32 of RX channel 4
+    pub rx_ch0_mem32: RxCh0Mem32,
+    /// 0x0b84
+    /// Pulse code 33 of RX channel 4
+    pub rx_ch0_mem33: RxCh0Mem33,
+    /// 0x0b88
+    /// Pulse code 34 of RX channel 4
+    pub rx_ch0_mem34: RxCh0Mem34,
+    /// 0x0b8c
+    /// Pulse code 35 of RX channel 4
+    pub rx_ch0_mem35: RxCh0Mem35,
+    /// 0x0b90
+    /// Pulse code 36 of RX channel 4
+    pub rx_ch0_mem36: RxCh0Mem36,
+    /// 0x0b94
+    /// Pulse code 37 of RX channel 4
+    pub rx_ch0_mem37: RxCh0Mem37,
+    /// 0x0b98
+    /// Pulse code 38 of RX channel 4
+    pub rx_ch0_mem38: RxCh0Mem38,
+    /// 0x0b9c
+    /// Pulse code 39 of RX channel 4
+    pub rx_ch0_mem39: RxCh0Mem39,
+    /// 0x0ba0
+    /// Pulse code 40 of RX channel 4
+    pub rx_ch0_mem40: RxCh0Mem40,
+    /// 0x0ba4
+    /// Pulse code 41 of RX channel 4
+    pub rx_ch0_mem41: RxCh0Mem41,
+    /// 0x0ba8
+    /// Pulse code 42 of RX channel 4
+    pub rx_ch0_mem42: RxCh0Mem42,
+    /// 0x0bac
+    /// Pulse code 43 of RX channel 4
+    pub rx_ch0_mem43: RxCh0Mem43,
+    /// 0x0bb0
+    /// Pulse code 44 of RX channel 4
+    pub rx_ch0_mem44: RxCh0Mem44,
+    /// 0x0bb4
+    /// Pulse code 45 of RX channel 4
+    pub rx_ch0_mem45: RxCh0Mem45,
+    /// 0x0bb8
+    /// Pulse code 46 of RX channel 4
+    pub rx_ch0_mem46: RxCh0Mem46,
+    /// 0x0bbc
+    /// Pulse code 47 of RX channel 4
+    pub rx_ch0_mem47: RxCh0Mem47,
+    /// 0x0bc0
+    /// Pulse code 0 of RX channel 5
+    pub rx_ch1_mem0: RxCh1Mem0,
+    /// 0x0bc4
+    /// Pulse code 1 of RX channel 5
+    pub rx_ch1_mem1: RxCh1Mem1,
+    /// 0x0bc8
+    /// Pulse code 2 of RX channel 5
+    pub rx_ch1_mem2: RxCh1Mem2,
+    /// 0x0bcc
+    /// Pulse code 3 of RX channel 5
+    pub rx_ch1_mem3: RxCh1Mem3,
+    /// 0x0bd0
+    /// Pulse code 4 of RX channel 5
+    pub rx_ch1_mem4: RxCh1Mem4,
+    /// 0x0bd4
+    /// Pulse code 5 of RX channel 5
+    pub rx_ch1_mem5: RxCh1Mem5,
+    /// 0x0bd8
+    /// Pulse code 6 of RX channel 5
+    pub rx_ch1_mem6: RxCh1Mem6,
+    /// 0x0bdc
+    /// Pulse code 7 of RX channel 5
+    pub rx_ch1_mem7: RxCh1Mem7,
+    /// 0x0be0
+    /// Pulse code 8 of RX channel 5
+    pub rx_ch1_mem8: RxCh1Mem8,
+    /// 0x0be4
+    /// Pulse code 9 of RX channel 5
+    pub rx_ch1_mem9: RxCh1Mem9,
+    /// 0x0be8
+    /// Pulse code 10 of RX channel 5
+    pub rx_ch1_mem10: RxCh1Mem10,
+    /// 0x0bec
+    /// Pulse code 11 of RX channel 5
+    pub rx_ch1_mem11: RxCh1Mem11,
+    /// 0x0bf0
+    /// Pulse code 12 of RX channel 5
+    pub rx_ch1_mem12: RxCh1Mem12,
+    /// 0x0bf4
+    /// Pulse code 13 of RX channel 5
+    pub rx_ch1_mem13: RxCh1Mem13,
+    /// 0x0bf8
+    /// Pulse code 14 of RX channel 5
+    pub rx_ch1_mem14: RxCh1Mem14,
+    /// 0x0bfc
+    /// Pulse code 15 of RX channel 5
+    pub rx_ch1_mem15: RxCh1Mem15,
+    /// 0x0c00
+    /// Pulse code 16 of RX channel 5
+    pub rx_ch1_mem16: RxCh1Mem16,
+    /// 0x0c04
+    /// Pulse code 17 of RX channel 5
+    pub rx_ch1_mem17: RxCh1Mem17,
+    /// 0x0c08
+    /// Pulse code 18 of RX channel 5
+    pub rx_ch1_mem18: RxCh1Mem18,
+    /// 0x0c0c
+    /// Pulse code 19 of RX channel 5
+    pub rx_ch1_mem19: RxCh1Mem19,
+    /// 0x0c10
+    /// Pulse code 20 of RX channel 5
+    pub rx_ch1_mem20: RxCh1Mem20,
+    /// 0x0c14
+    /// Pulse code 21 of RX channel 5
+    pub rx_ch1_mem21: RxCh1Mem21,
+    /// 0x0c18
+    /// Pulse code 22 of RX channel 5
+    pub rx_ch1_mem22: RxCh1Mem22,
+    /// 0x0c1c
+    /// Pulse code 23 of RX channel 5
+    pub rx_ch1_mem23: RxCh1Mem23,
+    /// 0x0c20
+    /// Pulse code 24 of RX channel 5
+    pub rx_ch1_mem24: RxCh1Mem24,
+    /// 0x0c24
+    /// Pulse code 25 of RX channel 5
+    pub rx_ch1_mem25: RxCh1Mem25,
+    /// 0x0c28
+    /// Pulse code 26 of RX channel 5
+    pub rx_ch1_mem26: RxCh1Mem26,
+    /// 0x0c2c
+    /// Pulse code 27 of RX channel 5
+    pub rx_ch1_mem27: RxCh1Mem27,
+    /// 0x0c30
+    /// Pulse code 28 of RX channel 5
+    pub rx_ch1_mem28: RxCh1Mem28,
+    /// 0x0c34
+    /// Pulse code 29 of RX channel 5
+    pub rx_ch1_mem29: RxCh1Mem29,
+    /// 0x0c38
+    /// Pulse code 30 of RX channel 5
+    pub rx_ch1_mem30: RxCh1Mem30,
+    /// 0x0c3c
+    /// Pulse code 31 of RX channel 5
+    pub rx_ch1_mem31: RxCh1Mem31,
+    /// 0x0c40
+    /// Pulse code 32 of RX channel 5
+    pub rx_ch1_mem32: RxCh1Mem32,
+    /// 0x0c44
+    /// Pulse code 33 of RX channel 5
+    pub rx_ch1_mem33: RxCh1Mem33,
+    /// 0x0c48
+    /// Pulse code 34 of RX channel 5
+    pub rx_ch1_mem34: RxCh1Mem34,
+    /// 0x0c4c
+    /// Pulse code 35 of RX channel 5
+    pub rx_ch1_mem35: RxCh1Mem35,
+    /// 0x0c50
+    /// Pulse code 36 of RX channel 5
+    pub rx_ch1_mem36: RxCh1Mem36,
+    /// 0x0c54
+    /// Pulse code 37 of RX channel 5
+    pub rx_ch1_mem37: RxCh1Mem37,
+    /// 0x0c58
+    /// Pulse code 38 of RX channel 5
+    pub rx_ch1_mem38: RxCh1Mem38,
+    /// 0x0c5c
+    /// Pulse code 39 of RX channel 5
+    pub rx_ch1_mem39: RxCh1Mem39,
+    /// 0x0c60
+    /// Pulse code 40 of RX channel 5
+    pub rx_ch1_mem40: RxCh1Mem40,
+    /// 0x0c64
+    /// Pulse code 41 of RX channel 5
+    pub rx_ch1_mem41: RxCh1Mem41,
+    /// 0x0c68
+    /// Pulse code 42 of RX channel 5
+    pub rx_ch1_mem42: RxCh1Mem42,
+    /// 0x0c6c
+    /// Pulse code 43 of RX channel 5
+    pub rx_ch1_mem43: RxCh1Mem43,
+    /// 0x0c70
+    /// Pulse code 44 of RX channel 5
+    pub rx_ch1_mem44: RxCh1Mem44,
+    /// 0x0c74
+    /// Pulse code 45 of RX channel 5
+    pub rx_ch1_mem45: RxCh1Mem45,
+    /// 0x0c78
+    /// Pulse code 46 of RX channel 5
+    pub rx_ch1_mem46: RxCh1Mem46,
+    /// 0x0c7c
+    /// Pulse code 47 of RX channel 5
+    pub rx_ch1_mem47: RxCh1Mem47,
+    /// 0x0c80
+    /// Pulse code 0 of RX channel 6
+    pub rx_ch2_mem0: RxCh2Mem0,
+    /// 0x0c84
+    /// Pulse code 1 of RX channel 6
+    pub rx_ch2_mem1: RxCh2Mem1,
+    /// 0x0c88
+    /// Pulse code 2 of RX channel 6
+    pub rx_ch2_mem2: RxCh2Mem2,
+    /// 0x0c8c
+    /// Pulse code 3 of RX channel 6
+    pub rx_ch2_mem3: RxCh2Mem3,
+    /// 0x0c90
+    /// Pulse code 4 of RX channel 6
+    pub rx_ch2_mem4: RxCh2Mem4,
+    /// 0x0c94
+    /// Pulse code 5 of RX channel 6
+    pub rx_ch2_mem5: RxCh2Mem5,
+    /// 0x0c98
+    /// Pulse code 6 of RX channel 6
+    pub rx_ch2_mem6: RxCh2Mem6,
+    /// 0x0c9c
+    /// Pulse code 7 of RX channel 6
+    pub rx_ch2_mem7: RxCh2Mem7,
+    /// 0x0ca0
+    /// Pulse code 8 of RX channel 6
+    pub rx_ch2_mem8: RxCh2Mem8,
+    /// 0x0ca4
+    /// Pulse code 9 of RX channel 6
+    pub rx_ch2_mem9: RxCh2Mem9,
+    /// 0x0ca8
+    /// Pulse code 10 of RX channel 6
+    pub rx_ch2_mem10: RxCh2Mem10,
+    /// 0x0cac
+    /// Pulse code 11 of RX channel 6
+    pub rx_ch2_mem11: RxCh2Mem11,
+    /// 0x0cb0
+    /// Pulse code 12 of RX channel 6
+    pub rx_ch2_mem12: RxCh2Mem12,
+    /// 0x0cb4
+    /// Pulse code 13 of RX channel 6
+    pub rx_ch2_mem13: RxCh2Mem13,
+    /// 0x0cb8
+    /// Pulse code 14 of RX channel 6
+    pub rx_ch2_mem14: RxCh2Mem14,
+    /// 0x0cbc
+    /// Pulse code 15 of RX channel 6
+    pub rx_ch2_mem15: RxCh2Mem15,
+    /// 0x0cc0
+    /// Pulse code 16 of RX channel 6
+    pub rx_ch2_mem16: RxCh2Mem16,
+    /// 0x0cc4
+    /// Pulse code 17 of RX channel 6
+    pub rx_ch2_mem17: RxCh2Mem17,
+    /// 0x0cc8
+    /// Pulse code 18 of RX channel 6
+    pub rx_ch2_mem18: RxCh2Mem18,
+    /// 0x0ccc
+    /// Pulse code 19 of RX channel 6
+    pub rx_ch2_mem19: RxCh2Mem19,
+    /// 0x0cd0
+    /// Pulse code 20 of RX channel 6
+    pub rx_ch2_mem20: RxCh2Mem20,
+    /// 0x0cd4
+    /// Pulse code 21 of RX channel 6
+    pub rx_ch2_mem21: RxCh2Mem21,
+    /// 0x0cd8
+    /// Pulse code 22 of RX channel 6
+    pub rx_ch2_mem22: RxCh2Mem22,
+    /// 0x0cdc
+    /// Pulse code 23 of RX channel 6
+    pub rx_ch2_mem23: RxCh2Mem23,
+    /// 0x0ce0
+    /// Pulse code 24 of RX channel 6
+    pub rx_ch2_mem24: RxCh2Mem24,
+    /// 0x0ce4
+    /// Pulse code 25 of RX channel 6
+    pub rx_ch2_mem25: RxCh2Mem25,
+    /// 0x0ce8
+    /// Pulse code 26 of RX channel 6
+    pub rx_ch2_mem26: RxCh2Mem26,
+    /// 0x0cec
+    /// Pulse code 27 of RX channel 6
+    pub rx_ch2_mem27: RxCh2Mem27,
+    /// 0x0cf0
+    /// Pulse code 28 of RX channel 6
+    pub rx_ch2_mem28: RxCh2Mem28,
+    /// 0x0cf4
+    /// Pulse code 29 of RX channel 6
+    pub rx_ch2_mem29: RxCh2Mem29,
+    /// 0x0cf8
+    /// Pulse code 30 of RX channel 6
+    pub rx_ch2_mem30: RxCh2Mem30,
+    /// 0x0cfc
+    /// Pulse code 31 of RX channel 6
+    pub rx_ch2_mem31: RxCh2Mem31,
+    /// 0x0d00
+    /// Pulse code 32 of RX channel 6
+    pub rx_ch2_mem32: RxCh2Mem32,
+    /// 0x0d04
+    /// Pulse code 33 of RX channel 6
+    pub rx_ch2_mem33: RxCh2Mem33,
+    /// 0x0d08
+    /// Pulse code 34 of RX channel 6
+    pub rx_ch2_mem34: RxCh2Mem34,
+    /// 0x0d0c
+    /// Pulse code 35 of RX channel 6
+    pub rx_ch2_mem35: RxCh2Mem35,
+    /// 0x0d10
+    /// Pulse code 36 of RX channel 6
+    pub rx_ch2_mem36: RxCh2Mem36,
+    /// 0x0d14
+    /// Pulse code 37 of RX channel 6
+    pub rx_ch2_mem37: RxCh2Mem37,
+    /// 0x0d18
+    /// Pulse code 38 of RX channel 6
+    pub rx_ch2_mem38: RxCh2Mem38,
+    /// 0x0d1c
+    /// Pulse code 39 of RX channel 6
+    pub rx_ch2_mem39: RxCh2Mem39,
+    /// 0x0d20
+    /// Pulse code 40 of RX channel 6
+    pub rx_ch2_mem40: RxCh2Mem40,
+    /// 0x0d24
+    /// Pulse code 41 of RX channel 6
+    pub rx_ch2_mem41: RxCh2Mem41,
+    /// 0x0d28
+    /// Pulse code 42 of RX channel 6
+    pub rx_ch2_mem42: RxCh2Mem42,
+    /// 0x0d2c
+    /// Pulse code 43 of RX channel 6
+    pub rx_ch2_mem43: RxCh2Mem43,
+    /// 0x0d30
+    /// Pulse code 44 of RX channel 6
+    pub rx_ch2_mem44: RxCh2Mem44,
+    /// 0x0d34
+    /// Pulse code 45 of RX channel 6
+    pub rx_ch2_mem45: RxCh2Mem45,
+    /// 0x0d38
+    /// Pulse code 46 of RX channel 6
+    pub rx_ch2_mem46: RxCh2Mem46,
+    /// 0x0d3c
+    /// Pulse code 47 of RX channel 6
+    pub rx_ch2_mem47: RxCh2Mem47,
+    /// 0x0d40
+    /// Pulse code 0 of RX channel 7
+    pub rx_ch3_mem0: RxCh3Mem0,
+    /// 0x0d44
+    /// Pulse code 1 of RX channel 7
+    pub rx_ch3_mem1: RxCh3Mem1,
+    /// 0x0d48
+    /// Pulse code 2 of RX channel 7
+    pub rx_ch3_mem2: RxCh3Mem2,
+    /// 0x0d4c
+    /// Pulse code 3 of RX channel 7
+    pub rx_ch3_mem3: RxCh3Mem3,
+    /// 0x0d50
+    /// Pulse code 4 of RX channel 7
+    pub rx_ch3_mem4: RxCh3Mem4,
+    /// 0x0d54
+    /// Pulse code 5 of RX channel 7
+    pub rx_ch3_mem5: RxCh3Mem5,
+    /// 0x0d58
+    /// Pulse code 6 of RX channel 7
+    pub rx_ch3_mem6: RxCh3Mem6,
+    /// 0x0d5c
+    /// Pulse code 7 of RX channel 7
+    pub rx_ch3_mem7: RxCh3Mem7,
+    /// 0x0d60
+    /// Pulse code 8 of RX channel 7
+    pub rx_ch3_mem8: RxCh3Mem8,
+    /// 0x0d64
+    /// Pulse code 9 of RX channel 7
+    pub rx_ch3_mem9: RxCh3Mem9,
+    /// 0x0d68
+    /// Pulse code 10 of RX channel 7
+    pub rx_ch3_mem10: RxCh3Mem10,
+    /// 0x0d6c
+    /// Pulse code 11 of RX channel 7
+    pub rx_ch3_mem11: RxCh3Mem11,
+    /// 0x0d70
+    /// Pulse code 12 of RX channel 7
+    pub rx_ch3_mem12: RxCh3Mem12,
+    /// 0x0d74
+    /// Pulse code 13 of RX channel 7
+    pub rx_ch3_mem13: RxCh3Mem13,
+    /// 0x0d78
+    /// Pulse code 14 of RX channel 7
+    pub rx_ch3_mem14: RxCh3Mem14,
+    /// 0x0d7c
+    /// Pulse code 15 of RX channel 7
+    pub rx_ch3_mem15: RxCh3Mem15,
+    /// 0x0d80
+    /// Pulse code 16 of RX channel 7
+    pub rx_ch3_mem16: RxCh3Mem16,
+    /// 0x0d84
+    /// Pulse code 17 of RX channel 7
+    pub rx_ch3_mem17: RxCh3Mem17,
+    /// 0x0d88
+    /// Pulse code 18 of RX channel 7
+    pub rx_ch3_mem18: RxCh3Mem18,
+    /// 0x0d8c
+    /// Pulse code 19 of RX channel 7
+    pub rx_ch3_mem19: RxCh3Mem19,
+    /// 0x0d90
+    /// Pulse code 20 of RX channel 7
+    pub rx_ch3_mem20: RxCh3Mem20,
+    /// 0x0d94
+    /// Pulse code 21 of RX channel 7
+    pub rx_ch3_mem21: RxCh3Mem21,
+    /// 0x0d98
+    /// Pulse code 22 of RX channel 7
+    pub rx_ch3_mem22: RxCh3Mem22,
+    /// 0x0d9c
+    /// Pulse code 23 of RX channel 7
+    pub rx_ch3_mem23: RxCh3Mem23,
+    /// 0x0da0
+    /// Pulse code 24 of RX channel 7
+    pub rx_ch3_mem24: RxCh3Mem24,
+    /// 0x0da4
+    /// Pulse code 25 of RX channel 7
+    pub rx_ch3_mem25: RxCh3Mem25,
+    /// 0x0da8
+    /// Pulse code 26 of RX channel 7
+    pub rx_ch3_mem26: RxCh3Mem26,
+    /// 0x0dac
+    /// Pulse code 27 of RX channel 7
+    pub rx_ch3_mem27: RxCh3Mem27,
+    /// 0x0db0
+    /// Pulse code 28 of RX channel 7
+    pub rx_ch3_mem28: RxCh3Mem28,
+    /// 0x0db4
+    /// Pulse code 29 of RX channel 7
+    pub rx_ch3_mem29: RxCh3Mem29,
+    /// 0x0db8
+    /// Pulse code 30 of RX channel 7
+    pub rx_ch3_mem30: RxCh3Mem30,
+    /// 0x0dbc
+    /// Pulse code 31 of RX channel 7
+    pub rx_ch3_mem31: RxCh3Mem31,
+    /// 0x0dc0
+    /// Pulse code 32 of RX channel 7
+    pub rx_ch3_mem32: RxCh3Mem32,
+    /// 0x0dc4
+    /// Pulse code 33 of RX channel 7
+    pub rx_ch3_mem33: RxCh3Mem33,
+    /// 0x0dc8
+    /// Pulse code 34 of RX channel 7
+    pub rx_ch3_mem34: RxCh3Mem34,
+    /// 0x0dcc
+    /// Pulse code 35 of RX channel 7
+    pub rx_ch3_mem35: RxCh3Mem35,
+    /// 0x0dd0
+    /// Pulse code 36 of RX channel 7
+    pub rx_ch3_mem36: RxCh3Mem36,
+    /// 0x0dd4
+    /// Pulse code 37 of RX channel 7
+    pub rx_ch3_mem37: RxCh3Mem37,
+    /// 0x0dd8
+    /// Pulse code 38 of RX channel 7
+    pub rx_ch3_mem38: RxCh3Mem38,
+    /// 0x0ddc
+    /// Pulse code 39 of RX channel 7
+    pub rx_ch3_mem39: RxCh3Mem39,
+    /// 0x0de0
+    /// Pulse code 40 of RX channel 7
+    pub rx_ch3_mem40: RxCh3Mem40,
+    /// 0x0de4
+    /// Pulse code 41 of RX channel 7
+    pub rx_ch3_mem41: RxCh3Mem41,
+    /// 0x0de8
+    /// Pulse code 42 of RX channel 7
+    pub rx_ch3_mem42: RxCh3Mem42,
+    /// 0x0dec
+    /// Pulse code 43 of RX channel 7
+    pub rx_ch3_mem43: RxCh3Mem43,
+    /// 0x0df0
+    /// Pulse code 44 of RX channel 7
+    pub rx_ch3_mem44: RxCh3Mem44,
+    /// 0x0df4
+    /// Pulse code 45 of RX channel 7
+    pub rx_ch3_mem45: RxCh3Mem45,
+    /// 0x0df8
+    /// Pulse code 46 of RX channel 7
+    pub rx_ch3_mem46: RxCh3Mem46,
+    /// 0x0dfc
+    /// Pulse code 47 of RX channel 7
+    pub rx_ch3_mem47: RxCh3Mem47,
 }

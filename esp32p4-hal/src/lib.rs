@@ -198,6 +198,7 @@ pub mod net;
 pub mod psram;
 pub mod regi2c;
 pub mod reset;
+pub mod rmt;
 pub mod sdhost;
 pub mod spi;
 pub mod spin;

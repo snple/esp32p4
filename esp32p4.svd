@@ -102408,10 +102408,10 @@ Any pulses with width less than this will be ignored when the filter is enabled.
       <name>RMT</name>
       <description>Remote Control</description>
       <groupName>RMT</groupName>
-      <baseAddress>0x500D4000</baseAddress>
+      <baseAddress>0x500A2000</baseAddress>
       <addressBlock>
         <offset>0x0</offset>
-        <size>0xD0</size>
+        <size>0xE00</size>
         <usage>registers</usage>
       </addressBlock>
       <interrupt>
@@ -103973,7 +103973,71 @@ Any pulses with width less than this will be ignored when the filter is enabled.
               <access>read-write</access>
             </field>
           </fields>
+        </register>        <register>
+          <dim>48</dim>
+          <dimIncrement>4</dimIncrement>
+          <name>TX_CH0_MEM[%s]</name>
+          <description>Pulse code %s of TX channel 0</description>
+          <addressOffset>0x0800</addressOffset>
+          <size>0x20</size>
         </register>
+        <register>
+          <dim>48</dim>
+          <dimIncrement>4</dimIncrement>
+          <name>TX_CH1_MEM[%s]</name>
+          <description>Pulse code %s of TX channel 1</description>
+          <addressOffset>0x08c0</addressOffset>
+          <size>0x20</size>
+        </register>
+        <register>
+          <dim>48</dim>
+          <dimIncrement>4</dimIncrement>
+          <name>TX_CH2_MEM[%s]</name>
+          <description>Pulse code %s of TX channel 2</description>
+          <addressOffset>0x0980</addressOffset>
+          <size>0x20</size>
+        </register>
+        <register>
+          <dim>48</dim>
+          <dimIncrement>4</dimIncrement>
+          <name>TX_CH3_MEM[%s]</name>
+          <description>Pulse code %s of TX channel 3</description>
+          <addressOffset>0x0a40</addressOffset>
+          <size>0x20</size>
+        </register>
+        <register>
+          <dim>48</dim>
+          <dimIncrement>4</dimIncrement>
+          <name>RX_CH0_MEM[%s]</name>
+          <description>Pulse code %s of RX channel 4</description>
+          <addressOffset>0x0b00</addressOffset>
+          <size>0x20</size>
+        </register>
+        <register>
+          <dim>48</dim>
+          <dimIncrement>4</dimIncrement>
+          <name>RX_CH1_MEM[%s]</name>
+          <description>Pulse code %s of RX channel 5</description>
+          <addressOffset>0x0bc0</addressOffset>
+          <size>0x20</size>
+        </register>
+        <register>
+          <dim>48</dim>
+          <dimIncrement>4</dimIncrement>
+          <name>RX_CH2_MEM[%s]</name>
+          <description>Pulse code %s of RX channel 6</description>
+          <addressOffset>0x0c80</addressOffset>
+          <size>0x20</size>
+        </register>
+        <register>
+          <dim>48</dim>
+          <dimIncrement>4</dimIncrement>
+          <name>RX_CH3_MEM[%s]</name>
+          <description>Pulse code %s of RX channel 7</description>
+          <addressOffset>0x0d40</addressOffset>
+          <size>0x20</size>
+        </register>
+
       </registers>
     </peripheral>
     <peripheral>

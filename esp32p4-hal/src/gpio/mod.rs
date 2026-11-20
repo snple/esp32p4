@@ -210,6 +210,17 @@ pub enum Pull {
     Down,
 }
 
+/// Logic level of a signal or a pad.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum Level {
+    /// Low.
+    #[default]
+    Low,
+    /// High.
+    High,
+}
+
 /// Output drive strength (approximate).
 ///
 /// The values map directly to `IO_MUX_GPIOx.FUN_DRV`.

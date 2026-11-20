@@ -976,7 +976,7 @@ pub struct RMT {
 
 unsafe impl Send for RMT {}
 
-peripheral!(RMT, rmt::RegisterBlock, 0x500d4000);
+peripheral!(RMT, rmt::RegisterBlock, 0x500a2000);
 
 /// Remote Control
 pub mod rmt;
