@@ -14,7 +14,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | [`esp32p4-rt`](esp32p4-rt/) | **运行时**：`_start`、trap 入口、`link.x`、CSR/汇编封装 |
 | [`esp32p4-macro`](esp32p4-macro/) | **过程宏**：`#[main]` |
 | [`esp32p4-hal`](esp32p4-hal/) | **HAL**：时钟树、GPIO / IO MUX、UART、I2C 主机、ADC、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
-| [`esp32p4-usb`](esp32p4-usb/) | **USB 设备栈**：DWC OTG 全速/高速控制器（slave 模式、轮询）、标准请求与描述符、CDC-ACM 虚拟串口、自定义类 |
+| [`esp32p4-usb`](esp32p4-usb/) | **USB 设备栈**：DWC OTG 全速/高速控制器（slave 模式、轮询）；协议层复用跨仓库共享的 [`usb-stack`](../../rp2350/usb-stack)（设备状态机、标准请求、CDC-ACM/HID 等 class） |
 | [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、UART 回环、I2C 扫描、ADC 采样、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC |
 | [`xtask`](xtask/) | 构建辅助：`cargo xtask gen-pac` |
 
@@ -210,7 +210,7 @@ let allocator = UsbBusAllocator::new(UsbFs::new(FsResources {
     gpio: &dp.GPIO,
     io_mux: &dp.IO_MUX,
 }));
-let mut serial = CdcAcm::new(&allocator, 64);          // 全速 bulk 包 64 字节
+let mut serial = CdcAcm::new(&allocator);              // bulk 包大小取 UsbBus::MAX_PACKET_SIZE
 let mut device = UsbDeviceBuilder::new(&allocator, 0x303a, 0x1001)
     .manufacturer("Espressif")
     .product("ESP32-P4 CDC")
@@ -225,14 +225,17 @@ loop {
 }
 ```
 
-层次：
+层次（上三层来自共享 crate `usb-stack`，本仓库只提供最底层驱动）：
 
 ```text
-class::cdc_acm::CdcAcm        你的 UsbClass：接口描述符 + 端点回调
-device::UsbDevice             枚举状态机、标准请求、EP0 控制传输
-bus::UsbBus                   allocate / poll / read / write
-p4::UsbFs / p4::UsbHs         DWC OTG 寄存器、FIFO 分配、复位与枚举
+class::cdc_acm::CdcAcm        usb-stack：接口描述符 + 端点回调
+device::UsbDevice             usb-stack：枚举状态机、标准请求、EP0 控制传输
+bus::UsbBus                   usb-stack：allocate / poll / read / write
+p4::UsbFs / p4::UsbHs         esp32p4-usb：DWC OTG 寄存器、FIFO 分配、复位与枚举
 ```
+
+`UsbFs`/`UsbHs` 通过 `UsbBus::MAX_PACKET_SIZE`（64 / 512）告诉 class 该用多大的
+bulk 包，因此同一个 `CdcAcm` 在全速和高速控制器上都能直接用。
 
 要点：
 

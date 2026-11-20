@@ -62,7 +62,7 @@
 //!     gpio: &dp.GPIO,
 //!     io_mux: &dp.IO_MUX,
 //! }));
-//! let mut serial = CdcAcm::new(&allocator, 64);
+//! let mut serial = CdcAcm::new(&allocator);
 //! let mut device = UsbDeviceBuilder::new(&allocator, 0x303a, 0x1001)
 //!     .product("ESP32-P4 serial")
 //!     .build();
@@ -81,6 +81,7 @@ use crate::dwc::{
 };
 use crate::endpoint::{Direction, EndpointAddress, EndpointType};
 use crate::error::{UsbError, UsbResult};
+use crate::log::{debug, warn};
 
 /// Register base of the full-speed OTG core (`USB_OTG11`).
 pub const USB_OTG_FS_BASE: usize = 0x5004_0000;
@@ -95,7 +96,7 @@ pub const USB_OTG_HS_BASE: usize = 0x5000_0000;
 pub const MAX_SUPPORTED_ENDPOINTS: usize = 8;
 
 /// Largest packet an endpoint can be configured for (high-speed bulk).
-pub const MAX_PACKET_SIZE: usize = 512;
+pub const MAX_ENDPOINT_PACKET_SIZE: usize = 512;
 
 /// Total staging space for received packets, in bytes.
 ///
@@ -291,7 +292,7 @@ impl Core {
         interval: u8,
     ) -> UsbResult<EndpointAddress> {
         let _ = interval;
-        if max_packet == 0 || max_packet as usize > MAX_PACKET_SIZE {
+        if max_packet == 0 || max_packet as usize > MAX_ENDPOINT_PACKET_SIZE {
             return Err(UsbError::BufferOverflow);
         }
         if matches!(ep_type, EndpointType::Isochronous { .. }) {
@@ -1104,6 +1105,8 @@ impl UsbFs {
 }
 
 impl UsbBus for UsbFs {
+    const MAX_PACKET_SIZE: u16 = 64;
+
     fn alloc_ep(
         &mut self,
         direction: Direction,
@@ -1243,6 +1246,8 @@ impl UsbHs {
 }
 
 impl UsbBus for UsbHs {
+    const MAX_PACKET_SIZE: u16 = 512;
+
     fn alloc_ep(
         &mut self,
         direction: Direction,

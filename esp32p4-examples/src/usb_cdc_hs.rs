@@ -42,7 +42,7 @@ fn main() -> ! {
         lp_sys: &dp.LP_SYS,
     }));
 
-    let mut serial = CdcAcm::new(&allocator, MAX_PACKET);
+    let mut serial = CdcAcm::new(&allocator);
     let mut device = UsbDeviceBuilder::new(&allocator, 0x303a, 0x1002)
         .manufacturer("Espressif")
         .product("ESP32-P4 CDC (high speed)")
