@@ -1,6 +1,7 @@
 //! Brings up an SD card on the SDHOST controller and checks it end to end.
 //!
-//! The card slot on the P4 Function-EV board uses the controller's own SD pins:
+//! The card slot on the P4 Function-EV board uses the controller's own SD pins
+//! plus one switch for the card's supply:
 //!
 //! ```text
 //!   GPIO43  CLK
@@ -9,12 +10,17 @@
 //!   GPIO40  DAT1
 //!   GPIO41  DAT2
 //!   GPIO42  DAT3
+//!   GPIO45  card power switch, low = on
 //! ```
 //!
-//! The example identifies the card, prints what came out of CID/CSD, reads the
-//! first block (the partition table sector, which any formatted card has), then
-//! writes a block near the end of the card and reads it back to compare. A
-//! failure panics with the reason.
+//! The example powers the card through `GPIO45`, identifies it, prints what came
+//! out of CID/CSD, reads the first block (the partition table sector, which any
+//! formatted card has), then writes two blocks at the end of the card and reads
+//! them back to compare. A failure panics with the reason.
+//!
+//! Pulling `GPIO45` high cuts the card's supply, which is what a low-power build
+//! wants while the slot is unused: identification has to start over after the
+//! card is powered again, but everything else comes back unchanged.
 
 #![no_std]
 #![no_main]
@@ -28,11 +34,14 @@ use defmt_rtt as _;
 defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
 use esp32p4_hal::delay::Delay;
-use esp32p4_hal::gpio::Pins;
+use esp32p4_hal::gpio::{PinOps, Pins};
 use esp32p4_hal::main;
 use esp32p4_hal::pac::Peripherals;
 use esp32p4_hal::sdhost::{BLOCK_SIZE, SdCard, SdHost};
 use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
+
+/// Card power switch; low powers the card, high cuts it.
+const SD_POWER: u32 = 45;
 
 /// Card slot pins.
 const SD_CLK: u32 = 43;
@@ -48,6 +57,15 @@ fn main() -> ! {
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
     let delay = Delay::init(dp.SYSTIMER);
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
+
+    // Power the card first: the on-chip LDO in `SdHost::init` supplies the
+    // interface, this switch supplies the card itself, and the card needs a
+    // moment before the first command.
+    let mut power = pins.pin::<SD_POWER>();
+    power.set_function_gpio();
+    power.set_output_enabled(true);
+    power.set_low();
+    delay.delay_ms(20);
 
     let host = SdHost::init(dp.SDHOST, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST, &dp.PMU);
     host.set_pins(

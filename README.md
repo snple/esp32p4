@@ -861,6 +861,12 @@ DesignWare MSHC）：[`SdHost`](esp32p4-hal/src/sdhost.rs) 负责控制器（时
 - 位宽 1/4 位，卡时钟由 160 MHz PLL 分频得到（识别 400 kHz，之后 25 MHz）。
 
 ```rust
+// 卡座电源：低电平通电（板上有 10K 下拉，这里显式驱动以免依赖复位默认值）。
+let mut power = pins.pin::<45>();
+power.set_function_gpio();
+power.set_output_enabled(true);
+power.set_low();
+
 let host = SdHost::init(dp.SDHOST, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST, &dp.PMU);
 host.set_pins(
     pins.pin::<43>(),
@@ -881,8 +887,11 @@ CID/CSD、读第 0 块（`0x55AA` 引导签名），再在卡尾写两个块并�
 - **槽位的引脚走 IO MUX，不是 GPIO 矩阵**：P4 的两个卡槽路径不同，槽 0（片上 SD 焊盘）
   用固定的 `SD1_*` 焊盘功能，槽 1 才走矩阵。命令里的 `CARD_NUMBER` 也要选对（这里是 0）。
   走错路径时命令发得出去、卡却不回响应；
-- **SD 口的供电来自片上 LDO 通道 4**：不打开 `PMU.EXT_LDO_P1_0P2A`（3.3 V 直连）时，
-  所有命令都超时，看起来像接线错误；
+- **供电分两路，缺一路都不行**：卡座本身的电源由板上的开关管给，栅极接 GPIO45 并带
+  10K 下拉，所以**低电平才是通电**、高电平切断（下拉让复位后的默认状态就是通电）；
+  SD 接口的电平域则由片上 LDO 通道 4 供，`SdHost::init` 里打开
+  `PMU.EXT_LDO_P1_0P2A`（3.3 V 直连）。缺任意一路，所有命令都超时，看起来像接线错误。
+  断电再上电后卡会重新上电复位，需要重新走一遍识别；
 - **`COMMAND_DONE` 比响应早到**：中断位置起来时 `RESP0..3` 还是上一条命令的内容，必须等到
   `STATUS.RESPONSE_INDEX` 变成刚发的命令号再读，否则每条响应都会晚一条命令；
 - **多块写不能用硬件的自动 CMD12**：`SEND_AUTO_STOP` 置位时数据阶段永远等不到 `DATA_OVER`
