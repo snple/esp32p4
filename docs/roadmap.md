@@ -23,6 +23,10 @@
 | `uart` | [uart.rs](../esp32p4-hal/src/uart.rs) | UART0–4：轮询收发、帧格式、流控、按源中断、GPIO 矩阵引脚路由 |
 | `i2c` | [i2c.rs](../esp32p4-hal/src/i2c.rs) | I2C0/1 主机：任意 SCL、7 位地址、写/读/写读、总线恢复、按源中断 |
 | `adc` | [adc.rs](../esp32p4-hal/src/adc.rs) | ADC1/2 单次转换与 eFuse 校准、HP 数字控制器样式表扫描（定时器 + GDMA-AHB）、IIR 滤波器与阈值监控器 |
+| `ledc` | [ledc.rs](../esp32p4-hal/src/ledc.rs) | 4 定时器 + 8 通道 PWM、小数分频、相位偏移、16 段占空比渐变 |
+| `rmt` | [rmt.rs](../esp32p4-hal/src/rmt.rs) | 4 发 4 收、脉冲 RAM 波形收发、载波、空闲阈值与接收滤波 |
+| `pcnt` | [pcnt.rs](../esp32p4-hal/src/pcnt.rs) | 4 单元 × 2 通道脉冲计数、边沿/控制动作、滤波、限值与五个观察点 |
+| `mcpwm` | [mcpwm.rs](../esp32p4-hal/src/mcpwm.rs) | 2 控制器 × 3 定时器/操作器、比较器、输出动作与死区（输出待验证） |
 | `tsens` | [tsens.rs](../esp32p4-hal/src/tsens.rs) | `LP_TSENS` 温度传感器：上电与时钟、5 档自动选择、毫摄氏度读数、硬件监测阈值与中断 |
 | `sdhost` | [sdhost.rs](../esp32p4-hal/src/sdhost.rs) | SD 卡主机（`SDHOST`）：识别（CMD0/8/2/3/9/7、ACMD41/6）、CSD 容量解码、1/4 位总线、内部 DMA 的块读写 |
 | `spi` | [spi.rs](../esp32p4-hal/src/spi.rs) | GP-SPI2/3 主机与从机：CPU 传输（64 B 缓冲）、时钟模式 0–3、位序、硬件 CS 时序、任意引脚路由 |
@@ -93,6 +97,14 @@
    **TSENS** 已实现（见上面 `tsens` 一行）：5 个档位的自动选择、毫摄氏度换算、硬件
    自动监测与越界中断；ETM 任务/事件与 LP 核侧的唤醒路径未接。
 7. **PWM 家族：LEDC、MCPWM、RMT、PCNT**：调光、电机、WS2812/红外、编码器。
+   ~~**LEDC**~~、~~**RMT**~~、~~**PCNT**~~ 已完成：
+   - LEDC：4 定时器 × 8 通道、小数分频、相位偏移、16 段占空比渐变，上板回读波形验证
+     （占空比误差 < 0.6 %，渐变 100 步到达 4000/4095）；
+   - RMT：TX/RX 全通道、脉冲 RAM（NONFIFO）、载波、空闲阈值与接收滤波，GPIO2 上 WS2812
+     自发自收逐脉冲比对通过；顺带修正了 SVD 的 RMT 基址与缺失的 RAM 寄存器；
+   - PCNT：4 单元 × 2 通道、边沿/控制动作、滤波、限值与五个观察点，用 LEDC 方波计数验证。
+   **MCPWM** 只完成了配置侧（定时器/比较器/发生器/死区），上板配置正确但输出电平没有到达
+   焊盘，需要继续查（先怀疑时钟门控或输出使能路径）；故障检测、捕获、载波与 ETM 未接。
 8. **TWAI（CAN-FD ×3）、I2S0/1/2（音频）、SDIO slave**。
    ~~USB OTG host~~ 已完成：`esp32p4-usb` 的 `host` 模块（枚举、控制/bulk/interrupt
    传输、HID boot 键盘、HUB）加 `esp32p4-usb` 的 DWC 主机模式驱动；高速 HUB

@@ -52,6 +52,10 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `sd` | SDHOST 上的 SD 卡：识别、读 CID/CSD 与容量、读第 0 块、双块写入后回读比对 |
 | `adc_scan` | ADC1 样式表扫描：两个通道经 GDMA-AHB 交替采样 32 个样本，打印样本数与读数 |
 | `tsens` | 温度传感器：每秒打印一次芯片温度，自动选择测量档位 |
+| `ledc` | LEDC：GPIO2 上扫 0/25/50/75/100 % 占空比并回读波形，再用 100 步渐变拉到满占空比 |
+| `rmt` | RMT：GPIO2 上自发自收一段 WS2812 波形，逐脉冲比对电平与时长 |
+| `pcnt` | PCNT：用 LEDC 的 10 kHz 方波计数，验证限值回绕、标志锁存与暂停/恢复 |
+| `mcpwm` | MCPWM0：20 kHz 三档占空比配置，打印比较值、计数器与 RMT 实测高电平（输出尚未在板上出现，见下文） |
 
 ## 快速开始
 
@@ -995,6 +999,102 @@ loop {
 并且五个档位各自换算出的温度互相吻合（24.0 / 24.0 / 23.8 / 24.4 / 24.6 °C），说明档位
 的 DAC 值与 offset 表是对的；把窗口设成永远越界时监测中断能正确置位并报告是「超过上限」。
 
+## LED PWM（LEDC）
+
+[`ledc`](esp32p4-hal/src/ledc.rs) 是 LEDC：4 个定时器（`XTAL_40M` / `FOSC_20M` / `REF_80M`
+时钟、8 位小数分频、1–20 位分辨率）驱动 8 个通道，通道可选任意定时器，支持相位偏移、
+空闲电平和 16 段占空比渐变。
+
+```rust
+let ledc = Ledc::init(dp.LEDC, &dp.HP_SYS_CLKRST);
+ledc.configure_timer(TimerIndex::Zero, TimerConfig::new(5_000, 13)).unwrap();
+
+let mut pin = pins.pin::<2>();
+pin.route_output_signal(OutputSignal::LEDC_LS_SIG_OUT_PAD_OUT0);
+
+ledc.configure_channel(ChannelIndex::Zero, ChannelConfig::new(TimerIndex::Zero));
+ledc.set_duty_fraction(ChannelIndex::Zero, 1, 4); // 25 %
+ledc.start(TimerIndex::Zero);
+```
+
+两个只有上板才暴露的位：
+
+- **`TIMER_RST` 复位后是「复位中」**：只清 `TIMER_PAUSE` 不会让计数器跑，`start` 必须同时
+  清 `TIMER_RST`；
+- **`DUTY_START_CHn` 是占空比生效的闸门**：只写 `DUTY_CHn` 不会到达比较器，静态占空比
+  也必须置位它（配渐变时它同时是渐变开关）。
+
+示例 [`ledc`](esp32p4-examples/src/ledc.rs) 在 GPIO2 上把 PWM 打回自己的输入缓冲：1 kHz、
+12 位，实测 25/50/75/100 % 的高电平占比是 24.93/49.97/74.47/99.98 %；100 步、每步一个周期
+的渐变在约 100 ms 内把占空比从 0 拉到 4000/4095，关掉输出后引脚停在 idle 电平。
+
+## RMT（红外/WS2812 波形）
+
+[`rmt`](esp32p4-hal/src/rmt.rs) 管 4 个发送通道（0–3）与 4 个接收通道（4–7）。384 字的
+脉冲 RAM 存 16 位编码（bit15 电平、bit14:0 时钟数），duration 为 0 表示结束。
+
+```rust
+let rmt = Rmt::init(dp.RMT, &dp.HP_SYS_CLKRST);
+rmt.set_clock_source(&dp.HP_SYS_CLKRST, ClockSource::Xtal40m, 2)?; // 20 MHz tick
+
+rmt.configure_tx(TxChannelIndex::Zero, &TxConfig::new(1))?;
+rmt.configure_rx(RxChannelIndex::Zero, &RxConfig::new(1, 1_000))?;
+rmt.send(TxChannelIndex::Zero, &pulses, 10_000)?;
+```
+
+驱动按 ESP-IDF 的做法直接读写脉冲 RAM（NONFIFO，`SYS_CONF.APB_FIFO_MASK=1`），不走 APB
+FIFO。上板踩到的坑（都已写进注释）：
+
+- **SVD 里 RMT 在 `0x500D_4000`，TRM 说那是保留地址**，实际在 `0x500A_2000`；同时脉冲
+  RAM 完全没有寄存器，补了 `TX_CHn_MEM`/`RX_CHn_MEM` 之后才能访问；
+- **`SYS_CONF` 前面还有一级时钟 mux**：它复位在 80 MHz 节点上，只改 PCR 的
+  `RMT_CLK_SRC_SEL` 会让 tick 频率和配置完全对不上，两处都要写；
+- **接收载波解调复位时是开的**：默认阈值会把所有输入脉冲当载波滤掉，接收器只报 idle 超时，
+  `configure_rx` 必须显式关掉；
+- **接收期间 RAM 归接收器**（`MEM_OWNER`），读完要交回总线，否则读写互相干扰；
+- **一段波形的最后一个脉冲通常读不到**：idle 间隔结束接收时那个电平还在计数。
+
+示例 [`rmt`](esp32p4-examples/src/rmt.rs) 让 TX 通道 0 与 RX 通道 0 共用 GPIO2，发一段
+48 个编码的 WS2812 数据，回读的 47 个完整脉冲电平与时长全部一致。
+
+## 脉冲计数（PCNT）
+
+[`pcnt`](esp32p4-hal/src/pcnt.rs) 是 4 个独立单元，每个单元两个通道加一个 16 位有符号
+计数器：脉冲边沿动作、控制电平动作、单元级毛刺滤波、上下限回绕、两个阈值与零点观察点。
+
+```rust
+let pcnt = Pcnt::init(dp.PCNT, &dp.HP_SYS_CLKRST);
+pcnt.configure_channel(UnitIndex::Zero, pcnt::ChannelIndex::Zero, ChannelConfig::rising_edge());
+pcnt.set_limits(UnitIndex::Zero, 0, 800);
+pcnt.enable(UnitIndex::Zero, Trigger::HIGH_LIMIT);
+```
+
+- **脉冲模式与控制模式的三档编码不同**：脉冲是 `0=保持/1=加/2=减`，控制是
+  `0=加/1=减/2=保持`，所以分成 `EdgeAction` 与 `ControlMode` 两个枚举；
+- 上下限是**回绕**而不是饱和，限值窗太窄会把计数变成锯齿；
+- `PULSE_CNT_RST` 是普通读写位，清零要「置位再清除」，否则计数器会一直被按在 0。
+
+示例 [`pcnt`](esp32p4-examples/src/pcnt.rs) 用 LEDC 的 10 kHz 方波在 GPIO2 上计数：100 ms
+数到 1000 个边沿，800 步回绕后计数停在 201；暂停时保持在 0，恢复后 10 ms 内再数 100 个。
+
+## 电机控制 PWM（MCPWM）
+
+[`mcpwm`](esp32p4-hal/src/mcpwm.rs) 覆盖两个控制器（`Mcpwm0`/`Mcpwm1`）的定时器、操作器
+与死区：时钟源与群分频、每定时器预分频与计数模式、比较器 A/B、按事件的输出动作
+（保持/低/高/翻转），以及 `GeneratorConfig::edge_aligned` / `::complementary` 两个常用组合。
+
+- **`TIMER_START` 是 3 位命令而不是运行标志**：`2` 才是「启动并持续运行」，`1` 是
+  「到下一个周期结束时停」，看起来像启动其实永远不计数；
+- 发生器的 `UT*`/`DT*` 动作按**计数方向**区分（向上/向下），不是信号边沿；边沿对齐只需要
+  写 `UT*`；
+- 死区发生器复位时是旁路的，配置 `DeadTime` 才会启用。
+
+**当前状态**：配置侧在板上验证通过（40 MHz 下 20 kHz 得到 period 1999，25/50/75 % 对应
+比较值 499/999/1499，动作与定时器状态回读一致，计数器在跑），但**输出电平没有出现在焊盘
+上**——包括用 `GEN_A_NCIFORCE` 强制输出，换 GPIO2/GPIO10 都一样。示例
+[`mcpwm`](esp32p4-examples/src/mcpwm.rs) 因此只打印不 assert。故障检测、捕获、载波与 ETM
+也还没接。
+
 ## eFuse 与芯片版本
 
 [`efuse`](esp32p4-hal/src/efuse.rs) 只读 BLOCK0/1 的寄存器快照（bootloader 已在复位时加载）：
@@ -1300,6 +1400,10 @@ espflash save-image --chip esp32p4 \
   可选中钟源、按源中断；引脚经 GPIO 矩阵任意路由
 - I2C0/I2C1 主机：100/400 kHz 及任意 SCL、7 位地址、写/读/写读、总线恢复、
   NACK/仲裁/超时错误与按源中断
+- SPI2/SPI3 主机与从机（四种时钟模式、64 字节缓冲）、SD 卡主机（识别、容量、DMA 块读写）、
+  ADC1/2 单次转换与 HP 数字控制器扫描（含 IIR 滤波与阈值监控器）、温度传感器
+- PWM 家族：LEDC（4 定时器 × 8 通道、渐变）、RMT（4 发 4 收脉冲波形）、PCNT（4 单元计数）、
+  MCPWM（定时器/比较器/发生器/死区，输出待验证）
 - CLIC 中断框架（direct 模式、按 CPU 线分发、trap 保存 FPU 上下文）与 EMAC/SYSTIMER
   中断驱动
 - `defmt` 日志支持（`Format` 实现 + 关键路径日志 + 基于 `mstatus.MIE` 的
