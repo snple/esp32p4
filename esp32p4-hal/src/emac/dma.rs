@@ -46,7 +46,6 @@ const TDES0_TCH: u32 = 1 << 20;
 /// Status a transmit descriptor leaves with while the MAC owns it.
 const TDES0_TX_READY: u32 = TDES0_FS | TDES0_LS | TDES0_IC | TDES0_TCH;
 
-
 // ── RDES0 bits ───────────────────────────────────────────────────────────────
 
 const RDES0_OWN: u32 = 1 << 31;
@@ -170,7 +169,6 @@ impl RDes {
     fn owned_by_dma(&self) -> bool {
         self.rdes0.get() & RDES0_OWN != 0
     }
-
 }
 
 impl Default for RDes {
@@ -372,7 +370,6 @@ impl<'a> TxRing<'a> {
     pub(super) fn has_capacity(&self) -> bool {
         !self.desc(self.index.get()).owned_by_dma()
     }
-
 }
 
 /// Receive ring.

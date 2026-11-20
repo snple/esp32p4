@@ -2763,6 +2763,10 @@
         <register>
           <dim>2</dim>
           <dimIncrement>0xC0</dimIncrement>
+          <!-- The array holds Tx channels 1 and 2 (0x190 / 0x250); channel 0 is
+               the plain OUT_CONF0_CH0 above. The vendor SVD omits dimIndex,
+               which would make the elements ch0/ch1 and collide with channel 0. -->
+          <dimIndex>1-2</dimIndex>
           <name>OUT_CONF0_CH%s</name>
           <description>Configure 0 register of Tx channel 1</description>
           <addressOffset>0x190</addressOffset>

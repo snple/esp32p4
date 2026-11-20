@@ -180,3 +180,43 @@ pub unsafe fn resume(state: Suspended) {
         Cache_Resume_L1_CORE0_ICache(state.core0_icache);
     }
 }
+
+// ============================================================================
+// Direct aliases
+// ============================================================================
+
+/// HP L2MEM through the cache.
+pub const L2MEM_START: usize = 0x4ff0_0000;
+/// End of the HP L2MEM window.
+pub const L2MEM_END: usize = 0x4ffc_0000;
+/// PSRAM through the cache, i.e. [`crate::mmu::CACHED_BASE`].
+pub const PSRAM_START: usize = crate::mmu::CACHED_BASE;
+/// End of the PSRAM window.
+pub const PSRAM_END: usize =
+    crate::mmu::CACHED_BASE + crate::mmu::PAGE_COUNT * crate::mmu::PAGE_SIZE;
+/// Distance between a cached window and its direct alias.
+pub const ALIAS_OFFSET: usize = 0x4000_0000;
+
+/// The same memory, reached without going through the cache.
+///
+/// Both internal SRAM (`0x4FF0_0000`) and the PSRAM mapping (`0x4800_0000`) are
+/// cached at their normal address and reachable directly at `+0x4000_0000`
+/// (TRM 9.3.1). Handing a bus master the direct address keeps it off the cache
+/// hierarchy entirely: its reads and writes land in memory, not in a cache
+/// line, so neither side can see a stale copy and no maintenance is needed.
+///
+/// Addresses outside the two cached windows — already-direct aliases, the
+/// uncached peripherals, LP memory — are returned unchanged.
+///
+/// The returned pointer refers to the same physical memory as `addr`; using
+/// both views of one buffer at the same time is what the caches would not
+/// tolerate, so pick one view per buffer.
+#[inline]
+pub fn uncached_alias(addr: *mut u8) -> *mut u8 {
+    let value = addr as usize;
+    if (L2MEM_START..L2MEM_END).contains(&value) || (PSRAM_START..PSRAM_END).contains(&value) {
+        (value + ALIAS_OFFSET) as *mut u8
+    } else {
+        addr
+    }
+}

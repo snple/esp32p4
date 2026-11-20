@@ -185,6 +185,7 @@ pub mod adc;
 pub mod cache;
 pub mod clock;
 pub mod delay;
+pub mod dma;
 pub mod efuse;
 pub mod emac;
 pub mod gpio;

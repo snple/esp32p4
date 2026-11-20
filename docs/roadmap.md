@@ -22,6 +22,7 @@
 | `gpio` | [gpio/](../esp32p4-hal/src/gpio) | 引脚电气配置、GPIO 读写、四路中断、完整的 HP GPIO 交换矩阵信号路由，以及每个焊盘的直接 IO MUX 功能表（`pins`） |
 | `uart` | [uart.rs](../esp32p4-hal/src/uart.rs) | UART0–4：轮询收发、帧格式、流控、按源中断、GPIO 矩阵引脚路由 |
 | `i2c` | [i2c.rs](../esp32p4-hal/src/i2c.rs) | I2C0/1 主机：任意 SCL、7 位地址、写/读/写读、总线恢复、按源中断 |
+| `dma` | [dma/](../esp32p4-hal/src/dma) | GDMA-AHB：3 组收发通道、描述符链/环、外设选择、存储到存储拷贝、按源中断、优先级与突发 |
 | `spin` | [spin.rs](../esp32p4-hal/src/spin.rs) | 有界自旋助手（`spin_wait` / `try_spin_wait`），驱动轮询的统一上界 |
 | `interrupt` | [interrupt.rs](../esp32p4-hal/src/interrupt.rs) | CLIC 线与矩阵、`claim`/`InterruptHandler` |
 | `emac` / `net` | [emac/](../esp32p4-hal/src/emac) / [net.rs](../esp32p4-hal/src/net.rs) | RMII + MDIO + DMA，smoltcp 同步栈 |
@@ -53,9 +54,17 @@
 2. ~~**I2C0/1 + LP I2C**：主机模式（7/10 bit 地址、时钟拉伸、超时），轮询与中断。~~
    已完成 `I2C0/1` 主机（7 位地址、时钟拉伸由硬件处理 + 软件截止时间）；10 位地址、
    从机模式与 LP I2C 待补。
-3. **GDMA（`DMA`，即 GDMA；另有 `AHB_DMA`/`AXI_DMA`）**：描述符环、外设握手、
-   字节序/位宽配置。UART/SPI/I2S/ADC 的“能用”与“好用”之间就差这一块；
-   `emac` 有自己的 DMA，不必依赖它。
+3. ~~**GDMA**：描述符环、外设握手、字节序/位宽配置。~~
+   已完成 GDMA-AHB（PAC 的 `AHB_DMA`）：`dma` 模块的通道句柄、`Chain` 描述符链/环、
+   `AhbDma::copy` 的存储到存储路径，以及中断、优先级、突发与 ETM 开关；上板 200 轮
+   SRAM→SRAM 校验通过，未开 burst 时约 23 MB/s。剩下：
+   - **GDMA-AXI**（`AXI_DMA`）：LCD/CAM、SPI2/3、PARLIO、AES、SHA 用的是它，
+     描述符 8 字节对齐、多一段外部存储窗口、突发长度可选；
+   - **`DMA`（`DW_GDMA`）**：JPEG/摄像头所用的纯存储搬运引擎，与 GDMA 无关；
+   - **外设握手驱动**：UART 的 DMA 经 UHCI（UART0/1），另有 I2S、ADC 连续采样、RMT；
+     通道与 `Peripheral` 选择已经就位，缺的是这些外设自己的驱动；
+   - **cached PSRAM 缓冲区**：引擎能写对，但 `cache` 侧的失效目前对 PSRAM 窗口无效，
+     CPU 回读取不到 DMA 写入的数据（片内 SRAM 没有这个问题）。
 4. **GPSPI2/3（SPI master/slave）+ SDHOST**：SD 卡、传感器、外部模块。
 5. ~~**ADC**：电压/电池采样。~~ 已完成 `ADC1`/`ADC2` 的 one-shot 读取（每通道衰减、
    eFuse 工厂校准与毫伏换算）；HP 数字控制器（pattern 表 + DMA）与 LP 核侧的 LP ADC 待补。
@@ -94,7 +103,7 @@ I3C、UHCI、SOC_ETM（事件矩阵）、APM/访问权限、eFuse 编程、运�
 | 2 | ~~UART（UART0–4）~~ | 已完成：`uart` 回环示例通过，README 与模块文档更新 |
 | 3 | ~~eFuse / 芯片版本~~ | 已完成：`clock` 与 `psram` 按版本判断，不再需要手工 `Sources` |
 | 4 | ~~I2C（I2C0/1）~~ | 已完成：`i2c_scan` 示例通过；LP I2C 待 LP 引脚模型 |
-| 5 | GDMA | 描述符环 + UART/SPI 的 DMA 路径 |
+| 5 | ~~GDMA-AHB~~ | 已完成：`dma_mem2mem` 示例逐字节校验通过；AXI/DW_GDMA 与外设握手驱动见第 3 节 |
 | 6 | SPI/SD、ADC/TSENS、PWM 家族 | 各自示例 |
 | 7 | 低功耗（PMU / LP 核 / WDT / brownout） | 睡眠-唤醒示例 |
 

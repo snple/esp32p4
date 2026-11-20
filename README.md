@@ -13,9 +13,9 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | [`esp32p4-pac`](esp32p4-pac/) | **PAC**：由 `esp32p4.svd` 生成，提供寄存器块、字段常量和访问器。勿手改 |
 | [`esp32p4-rt`](esp32p4-rt/) | **运行时**：`_start`、trap 入口、`link.x`、CSR/汇编封装 |
 | [`esp32p4-macro`](esp32p4-macro/) | **过程宏**：`#[main]` |
-| [`esp32p4-hal`](esp32p4-hal/) | **HAL**：时钟树、GPIO / IO MUX、UART、I2C 主机、ADC、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
+| [`esp32p4-hal`](esp32p4-hal/) | **HAL**：时钟树、GPIO / IO MUX、UART、I2C 主机、ADC、GDMA（GDMA-AHB）与描述符链、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
 | [`esp32p4-usb`](esp32p4-usb/) | **USB 栈**：DWC OTG 全速/高速控制器的设备模式与主机模式驱动（slave 模式、轮询）；协议层全部在跨仓库共享的 [`usb-stack`](../../rp2350/usb-stack)（设备状态机、标准请求、class、主机枚举与控制/bulk/interrupt 传输、HID 键盘） |
-| [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、UART 回环、I2C 扫描、ADC 采样、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC、USB HID 主机 |
+| [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、UART 回环、I2C 扫描、ADC 采样、GDMA 存储到存储拷贝、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC、USB HID 主机 |
 | [`xtask`](xtask/) | 构建辅助：`cargo xtask gen-pac` |
 
 依赖方向是单向的：`macro` / `rt` → `pac` → `esp32p4` / `esp32p4-usb` → `examples`。
@@ -47,6 +47,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `uart` | `UART1` 内部回环自检：三组数据原样收发，并打印波特率与帧格式 |
 | `i2c_scan` | `I2C0` 扫描 7 位地址空间，逐个探测并打印应答的从机 |
 | `adc` | 报告 eFuse 校准是否可用，并在四档衰减下采样 13 个 ADC 焊盘 |
+| `dma_mem2mem` | GDMA-AHB 的存储到存储拷贝：单描述符 64 B 与四描述符 16 KB 两种链路，逐字节校验并打印吞吐 |
 
 ## 快速开始
 
@@ -760,6 +761,48 @@ let millivolts = adc.read_millivolts(&input);
 示例 [`adc`](esp32p4-examples/src/adc.rs) 先报告校准是否可用，再把 13 个 ADC 焊盘在四档
 衰减下各采两次。实测同一浮空焊盘在四档衰减下换算出的电压互相吻合（例如 743/716/668/606
 mV，差异来自采样把焊盘电容一点点放掉），说明衰减与校准系数是对得上的。
+
+## GDMA
+
+[`dma`](esp32p4-hal/src/dma/mod.rs) 是 GDMA-AHB（PAC 里的 `AHB_DMA`，基址 `0x5008_5000`）。
+P4 上还有两套 DMA 不在本模块范围：GDMA-AXI（`AXI_DMA`，LCD/CAM、SPI2/3、PARLIO、AES、SHA）
+和 DesignWare 的 `DMA`（JPEG/摄像头用的纯存储搬运引擎）。
+
+- 3 组发送/接收通道：`TxChannel<0..2>` / `RxChannel<0..2>`，每个通道可选接
+  I3C / UHCI（UART0/1 的 DMA 前端）/ I2S0–2 / ADC / RMT，或用 `Dummy-n` 与配对的另一个
+  通道做存储到存储；
+- 描述符 3 个字（`size`/`length`/EOF/owner + buffer + next）；[`Chain`] 把一个缓冲区按
+  4095 字节切成描述符链或环（`mount` / `mount_eof` / `mount_ring`），
+  `Descriptor::length()` 读回引擎写入的有效字节数；
+- `AhbDma::copy` 在通道对 1 或 2 上做阻塞式存储到存储拷贝，自带 cache 维护与截止时间；
+- 中断按源单独 `enable_interrupt`/`interrupt_pending`/`clear_interrupt`，另有优先级、
+  数据/描述符突发、ETM 启动与 owner 检查。
+
+```rust
+let dma = AhbDma::init(dp.AHB_DMA, &dp.HP_SYS_CLKRST);
+let descriptors: [Descriptor; 4] = [const { Descriptor::new() }; 4];
+
+let src = [0x5au8; 4096];
+let mut dst = [0u8; 4096];
+dma.copy(MemChannel::Ch1, &src, &mut dst, &descriptors).unwrap();
+```
+
+示例 [`dma_mem2mem`](esp32p4-examples/src/dma_mem2mem.rs) 每秒跑两遍：单描述符 64 B 与
+四描述符 16380 B，逐字节校验。硬件实测 200 轮无描述符错误、无数据不符，未开突发时约
+23 MB/s。
+
+两个只在硬件上才暴露的点：
+
+- **描述符要用非缓存别名访问**：P4 的片内 SRAM（`0x4FF0_0000`）和 PSRAM
+  （`0x4800_0000`）都过 cache，CPU 写进缓存里的描述符引擎读不到 —— 实测引擎直接回
+  `DescriptorError`。`Chain::mount` 因此用 `+0x4000_0000` 的直通别名（
+  [`cache::uncached_alias`](esp32p4-hal/src/cache.rs)）读写描述符的字，并在挂载前清一次
+  对应的缓存行；写进描述符的 `next` 仍是普通地址，因为引擎只认访问窗口内的地址；
+- **访问窗口**：`AhbDma::init` 把可访问区间配成 `0x4000_0000..0x4FFC_0000`（与 ESP-IDF
+  一致），描述符与缓冲区都要落在里面。直通别名（`0x8FF0_0000`、`0x8800_0000`）在窗口外，
+  引擎会拒绝，所以 DMA 缓冲区放片内 SRAM 或 cached PSRAM 窗口。片内 SRAM 的读写
+  `copy` 已经处理好 cache；cached PSRAM 虽然引擎能写对，但本仓库的 `cache` 维护还回读不到
+  引擎写的数据（见 [roadmap](docs/roadmap.md)），暂按片内 SRAM 使用。
 
 ## eFuse 与芯片版本
 

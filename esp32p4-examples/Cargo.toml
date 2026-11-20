@@ -142,3 +142,8 @@ required-features = ["defmt"]
 name = "adc"
 path = "src/adc.rs"
 required-features = ["defmt"]
+
+[[bin]]
+name = "dma_mem2mem"
+path = "src/dma_mem2mem.rs"
+required-features = ["defmt"]

@@ -542,8 +542,11 @@ impl<'d, const RX: usize, const TX: usize> Emac<'d, RX, TX> {
     /// [`Emac::init`] and stays monotonic however often it is sampled.
     pub fn stats(&self) -> Stats {
         let missed = self.emac.dmamissedfr.read_bits();
-        self.rx_missed
-            .set(self.rx_missed.get().wrapping_add(missed & MISSED_FRAME_MASK));
+        self.rx_missed.set(
+            self.rx_missed
+                .get()
+                .wrapping_add(missed & MISSED_FRAME_MASK),
+        );
         self.rx_fifo_overflows.set(
             self.rx_fifo_overflows
                 .get()

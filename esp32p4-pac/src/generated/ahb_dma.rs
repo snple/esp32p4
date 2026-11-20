@@ -15524,7 +15524,7 @@ impl InPeriSelCh1 {
     }
 }
 
-/// OUT_CONF0_CH0 Register
+/// OUT_CONF0_CH1 Register
 ///
 /// Configure 0 register of Tx channel 1
 ///
@@ -15561,11 +15561,11 @@ impl InPeriSelCh1 {
 ///
 ///   This bit is used to reset AHB_DMA channel 1 Tx FSM and Tx FIFO pointer.
 #[repr(transparent)]
-pub struct OutConf0Ch01 {
+pub struct OutConf0Ch1 {
     value: crate::common::VolatileCell<u32>,
 }
 
-impl core::ops::Deref for OutConf0Ch01 {
+impl core::ops::Deref for OutConf0Ch1 {
     type Target = crate::common::VolatileCell<u32>;
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
@@ -15573,7 +15573,7 @@ impl core::ops::Deref for OutConf0Ch01 {
     }
 }
 
-impl OutConf0Ch01 {
+impl OutConf0Ch1 {
     // ======== Field Constants ========
 
     /// **OUT_ETM_EN_CH**
@@ -15788,16 +15788,16 @@ impl OutConf0Ch01 {
     }
 }
 
-/// OUT_CONF0_CH0 value type for batch read/modify/write operations
+/// OUT_CONF0_CH1 value type for batch read/modify/write operations
 ///
-/// Use `outconf0ch01.read_val()` to read the register into this struct,
-/// modify fields with builder methods, then write back with `outconf0ch01.write_val(val)`.
+/// Use `outconf0ch1.read_val()` to read the register into this struct,
+/// modify fields with builder methods, then write back with `outconf0ch1.write_val(val)`.
 #[derive(Clone, Copy)]
-pub struct OutConf0Ch01Val {
+pub struct OutConf0Ch1Val {
     bits: u32,
 }
 
-impl OutConf0Ch01Val {
+impl OutConf0Ch1Val {
     /// Create from raw bits
     #[inline(always)]
     pub const fn from_bits(bits: u32) -> Self {
@@ -15821,7 +15821,7 @@ impl OutConf0Ch01Val {
     /// Set this bit to 1 to enable etm control mode, dma Tx channel 1 is triggered by etm task.
     #[inline(always)]
     pub const fn out_etm_en_ch(&self) -> bool {
-        (self.bits & OutConf0Ch01::OUT_ETM_EN_CH_MASK) != 0
+        (self.bits & OutConf0Ch1::OUT_ETM_EN_CH_MASK) != 0
     }
 
     /// Read **OUT_DATA_BURST_EN_CH** `[5:5]`
@@ -15829,7 +15829,7 @@ impl OutConf0Ch01Val {
     /// Set this bit to 1 to enable INCR burst transfer for Tx channel 1 transmitting data when accessing internal SRAM.
     #[inline(always)]
     pub const fn out_data_burst_en_ch(&self) -> bool {
-        (self.bits & OutConf0Ch01::OUT_DATA_BURST_EN_CH_MASK) != 0
+        (self.bits & OutConf0Ch1::OUT_DATA_BURST_EN_CH_MASK) != 0
     }
 
     /// Read **OUTDSCR_BURST_EN_CH** `[4:4]`
@@ -15837,7 +15837,7 @@ impl OutConf0Ch01Val {
     /// Set this bit to 1 to enable INCR burst transfer for Tx channel 1 reading link descriptor when accessing internal SRAM.
     #[inline(always)]
     pub const fn outdscr_burst_en_ch(&self) -> bool {
-        (self.bits & OutConf0Ch01::OUTDSCR_BURST_EN_CH_MASK) != 0
+        (self.bits & OutConf0Ch1::OUTDSCR_BURST_EN_CH_MASK) != 0
     }
 
     /// Read **OUT_EOF_MODE_CH** `[3:3]`
@@ -15845,7 +15845,7 @@ impl OutConf0Ch01Val {
     /// EOF flag generation mode when transmitting data. 1: EOF flag for Tx channel 1 is generated when data need to transmit has been popped from FIFO in AHB_DMA
     #[inline(always)]
     pub const fn out_eof_mode_ch(&self) -> bool {
-        (self.bits & OutConf0Ch01::OUT_EOF_MODE_CH_MASK) != 0
+        (self.bits & OutConf0Ch1::OUT_EOF_MODE_CH_MASK) != 0
     }
 
     /// Read **OUT_AUTO_WRBACK_CH** `[2:2]`
@@ -15853,7 +15853,7 @@ impl OutConf0Ch01Val {
     /// Set this bit to enable automatic outlink-writeback when all the data in tx buffer has been transmitted.
     #[inline(always)]
     pub const fn out_auto_wrback_ch(&self) -> bool {
-        (self.bits & OutConf0Ch01::OUT_AUTO_WRBACK_CH_MASK) != 0
+        (self.bits & OutConf0Ch1::OUT_AUTO_WRBACK_CH_MASK) != 0
     }
 
     /// Read **OUT_LOOP_TEST_CH** `[1:1]`
@@ -15861,7 +15861,7 @@ impl OutConf0Ch01Val {
     /// reserved
     #[inline(always)]
     pub const fn out_loop_test_ch(&self) -> bool {
-        (self.bits & OutConf0Ch01::OUT_LOOP_TEST_CH_MASK) != 0
+        (self.bits & OutConf0Ch1::OUT_LOOP_TEST_CH_MASK) != 0
     }
 
     /// Read **OUT_RST_CH** `[0:0]`
@@ -15869,7 +15869,7 @@ impl OutConf0Ch01Val {
     /// This bit is used to reset AHB_DMA channel 1 Tx FSM and Tx FIFO pointer.
     #[inline(always)]
     pub const fn out_rst_ch(&self) -> bool {
-        (self.bits & OutConf0Ch01::OUT_RST_CH_MASK) != 0
+        (self.bits & OutConf0Ch1::OUT_RST_CH_MASK) != 0
     }
 
     /// Set **OUT_ETM_EN_CH** `[6:6]`
@@ -15879,9 +15879,9 @@ impl OutConf0Ch01Val {
     pub const fn with_out_etm_en_ch(self, value: bool) -> Self {
         Self {
             bits: if value {
-                self.bits | OutConf0Ch01::OUT_ETM_EN_CH_MASK
+                self.bits | OutConf0Ch1::OUT_ETM_EN_CH_MASK
             } else {
-                self.bits & !OutConf0Ch01::OUT_ETM_EN_CH_MASK
+                self.bits & !OutConf0Ch1::OUT_ETM_EN_CH_MASK
             },
         }
     }
@@ -15893,9 +15893,9 @@ impl OutConf0Ch01Val {
     pub const fn with_out_data_burst_en_ch(self, value: bool) -> Self {
         Self {
             bits: if value {
-                self.bits | OutConf0Ch01::OUT_DATA_BURST_EN_CH_MASK
+                self.bits | OutConf0Ch1::OUT_DATA_BURST_EN_CH_MASK
             } else {
-                self.bits & !OutConf0Ch01::OUT_DATA_BURST_EN_CH_MASK
+                self.bits & !OutConf0Ch1::OUT_DATA_BURST_EN_CH_MASK
             },
         }
     }
@@ -15907,9 +15907,9 @@ impl OutConf0Ch01Val {
     pub const fn with_outdscr_burst_en_ch(self, value: bool) -> Self {
         Self {
             bits: if value {
-                self.bits | OutConf0Ch01::OUTDSCR_BURST_EN_CH_MASK
+                self.bits | OutConf0Ch1::OUTDSCR_BURST_EN_CH_MASK
             } else {
-                self.bits & !OutConf0Ch01::OUTDSCR_BURST_EN_CH_MASK
+                self.bits & !OutConf0Ch1::OUTDSCR_BURST_EN_CH_MASK
             },
         }
     }
@@ -15921,9 +15921,9 @@ impl OutConf0Ch01Val {
     pub const fn with_out_eof_mode_ch(self, value: bool) -> Self {
         Self {
             bits: if value {
-                self.bits | OutConf0Ch01::OUT_EOF_MODE_CH_MASK
+                self.bits | OutConf0Ch1::OUT_EOF_MODE_CH_MASK
             } else {
-                self.bits & !OutConf0Ch01::OUT_EOF_MODE_CH_MASK
+                self.bits & !OutConf0Ch1::OUT_EOF_MODE_CH_MASK
             },
         }
     }
@@ -15935,9 +15935,9 @@ impl OutConf0Ch01Val {
     pub const fn with_out_auto_wrback_ch(self, value: bool) -> Self {
         Self {
             bits: if value {
-                self.bits | OutConf0Ch01::OUT_AUTO_WRBACK_CH_MASK
+                self.bits | OutConf0Ch1::OUT_AUTO_WRBACK_CH_MASK
             } else {
-                self.bits & !OutConf0Ch01::OUT_AUTO_WRBACK_CH_MASK
+                self.bits & !OutConf0Ch1::OUT_AUTO_WRBACK_CH_MASK
             },
         }
     }
@@ -15949,9 +15949,9 @@ impl OutConf0Ch01Val {
     pub const fn with_out_loop_test_ch(self, value: bool) -> Self {
         Self {
             bits: if value {
-                self.bits | OutConf0Ch01::OUT_LOOP_TEST_CH_MASK
+                self.bits | OutConf0Ch1::OUT_LOOP_TEST_CH_MASK
             } else {
-                self.bits & !OutConf0Ch01::OUT_LOOP_TEST_CH_MASK
+                self.bits & !OutConf0Ch1::OUT_LOOP_TEST_CH_MASK
             },
         }
     }
@@ -15963,36 +15963,36 @@ impl OutConf0Ch01Val {
     pub const fn with_out_rst_ch(self, value: bool) -> Self {
         Self {
             bits: if value {
-                self.bits | OutConf0Ch01::OUT_RST_CH_MASK
+                self.bits | OutConf0Ch1::OUT_RST_CH_MASK
             } else {
-                self.bits & !OutConf0Ch01::OUT_RST_CH_MASK
+                self.bits & !OutConf0Ch1::OUT_RST_CH_MASK
             },
         }
     }
 }
 
-impl Default for OutConf0Ch01Val {
+impl Default for OutConf0Ch1Val {
     fn default() -> Self {
         Self::reset_val()
     }
 }
 
-impl OutConf0Ch01 {
+impl OutConf0Ch1 {
     /// Read the register into a value struct
     #[inline(always)]
-    pub fn read_val(&self) -> OutConf0Ch01Val {
-        OutConf0Ch01Val::from_bits(self.value.read_bits())
+    pub fn read_val(&self) -> OutConf0Ch1Val {
+        OutConf0Ch1Val::from_bits(self.value.read_bits())
     }
 
     /// Write a value struct to the register
     #[inline(always)]
-    pub fn write_val(&self, val: OutConf0Ch01Val) {
+    pub fn write_val(&self, val: OutConf0Ch1Val) {
         self.value.write_bits(val.bits())
     }
 
     /// Modify the register using a value struct
     #[inline(always)]
-    pub fn modify_val<F: FnOnce(OutConf0Ch01Val) -> OutConf0Ch01Val>(&self, f: F) {
+    pub fn modify_val<F: FnOnce(OutConf0Ch1Val) -> OutConf0Ch1Val>(&self, f: F) {
         self.write_val(f(self.read_val()))
     }
 }
@@ -19774,7 +19774,7 @@ impl InPeriSelCh2 {
     }
 }
 
-/// OUT_CONF0_CH1 Register
+/// OUT_CONF0_CH2 Register
 ///
 /// Configure 0 register of Tx channel 1
 ///
@@ -19811,11 +19811,11 @@ impl InPeriSelCh2 {
 ///
 ///   This bit is used to reset AHB_DMA channel 1 Tx FSM and Tx FIFO pointer.
 #[repr(transparent)]
-pub struct OutConf0Ch1 {
+pub struct OutConf0Ch2 {
     value: crate::common::VolatileCell<u32>,
 }
 
-impl core::ops::Deref for OutConf0Ch1 {
+impl core::ops::Deref for OutConf0Ch2 {
     type Target = crate::common::VolatileCell<u32>;
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
@@ -19823,7 +19823,7 @@ impl core::ops::Deref for OutConf0Ch1 {
     }
 }
 
-impl OutConf0Ch1 {
+impl OutConf0Ch2 {
     // ======== Field Constants ========
 
     /// **OUT_ETM_EN_CH**
@@ -20038,16 +20038,16 @@ impl OutConf0Ch1 {
     }
 }
 
-/// OUT_CONF0_CH1 value type for batch read/modify/write operations
+/// OUT_CONF0_CH2 value type for batch read/modify/write operations
 ///
-/// Use `outconf0ch1.read_val()` to read the register into this struct,
-/// modify fields with builder methods, then write back with `outconf0ch1.write_val(val)`.
+/// Use `outconf0ch2.read_val()` to read the register into this struct,
+/// modify fields with builder methods, then write back with `outconf0ch2.write_val(val)`.
 #[derive(Clone, Copy)]
-pub struct OutConf0Ch1Val {
+pub struct OutConf0Ch2Val {
     bits: u32,
 }
 
-impl OutConf0Ch1Val {
+impl OutConf0Ch2Val {
     /// Create from raw bits
     #[inline(always)]
     pub const fn from_bits(bits: u32) -> Self {
@@ -20071,7 +20071,7 @@ impl OutConf0Ch1Val {
     /// Set this bit to 1 to enable etm control mode, dma Tx channel 1 is triggered by etm task.
     #[inline(always)]
     pub const fn out_etm_en_ch(&self) -> bool {
-        (self.bits & OutConf0Ch1::OUT_ETM_EN_CH_MASK) != 0
+        (self.bits & OutConf0Ch2::OUT_ETM_EN_CH_MASK) != 0
     }
 
     /// Read **OUT_DATA_BURST_EN_CH** `[5:5]`
@@ -20079,7 +20079,7 @@ impl OutConf0Ch1Val {
     /// Set this bit to 1 to enable INCR burst transfer for Tx channel 1 transmitting data when accessing internal SRAM.
     #[inline(always)]
     pub const fn out_data_burst_en_ch(&self) -> bool {
-        (self.bits & OutConf0Ch1::OUT_DATA_BURST_EN_CH_MASK) != 0
+        (self.bits & OutConf0Ch2::OUT_DATA_BURST_EN_CH_MASK) != 0
     }
 
     /// Read **OUTDSCR_BURST_EN_CH** `[4:4]`
@@ -20087,7 +20087,7 @@ impl OutConf0Ch1Val {
     /// Set this bit to 1 to enable INCR burst transfer for Tx channel 1 reading link descriptor when accessing internal SRAM.
     #[inline(always)]
     pub const fn outdscr_burst_en_ch(&self) -> bool {
-        (self.bits & OutConf0Ch1::OUTDSCR_BURST_EN_CH_MASK) != 0
+        (self.bits & OutConf0Ch2::OUTDSCR_BURST_EN_CH_MASK) != 0
     }
 
     /// Read **OUT_EOF_MODE_CH** `[3:3]`
@@ -20095,7 +20095,7 @@ impl OutConf0Ch1Val {
     /// EOF flag generation mode when transmitting data. 1: EOF flag for Tx channel 1 is generated when data need to transmit has been popped from FIFO in AHB_DMA
     #[inline(always)]
     pub const fn out_eof_mode_ch(&self) -> bool {
-        (self.bits & OutConf0Ch1::OUT_EOF_MODE_CH_MASK) != 0
+        (self.bits & OutConf0Ch2::OUT_EOF_MODE_CH_MASK) != 0
     }
 
     /// Read **OUT_AUTO_WRBACK_CH** `[2:2]`
@@ -20103,7 +20103,7 @@ impl OutConf0Ch1Val {
     /// Set this bit to enable automatic outlink-writeback when all the data in tx buffer has been transmitted.
     #[inline(always)]
     pub const fn out_auto_wrback_ch(&self) -> bool {
-        (self.bits & OutConf0Ch1::OUT_AUTO_WRBACK_CH_MASK) != 0
+        (self.bits & OutConf0Ch2::OUT_AUTO_WRBACK_CH_MASK) != 0
     }
 
     /// Read **OUT_LOOP_TEST_CH** `[1:1]`
@@ -20111,7 +20111,7 @@ impl OutConf0Ch1Val {
     /// reserved
     #[inline(always)]
     pub const fn out_loop_test_ch(&self) -> bool {
-        (self.bits & OutConf0Ch1::OUT_LOOP_TEST_CH_MASK) != 0
+        (self.bits & OutConf0Ch2::OUT_LOOP_TEST_CH_MASK) != 0
     }
 
     /// Read **OUT_RST_CH** `[0:0]`
@@ -20119,7 +20119,7 @@ impl OutConf0Ch1Val {
     /// This bit is used to reset AHB_DMA channel 1 Tx FSM and Tx FIFO pointer.
     #[inline(always)]
     pub const fn out_rst_ch(&self) -> bool {
-        (self.bits & OutConf0Ch1::OUT_RST_CH_MASK) != 0
+        (self.bits & OutConf0Ch2::OUT_RST_CH_MASK) != 0
     }
 
     /// Set **OUT_ETM_EN_CH** `[6:6]`
@@ -20129,9 +20129,9 @@ impl OutConf0Ch1Val {
     pub const fn with_out_etm_en_ch(self, value: bool) -> Self {
         Self {
             bits: if value {
-                self.bits | OutConf0Ch1::OUT_ETM_EN_CH_MASK
+                self.bits | OutConf0Ch2::OUT_ETM_EN_CH_MASK
             } else {
-                self.bits & !OutConf0Ch1::OUT_ETM_EN_CH_MASK
+                self.bits & !OutConf0Ch2::OUT_ETM_EN_CH_MASK
             },
         }
     }
@@ -20143,9 +20143,9 @@ impl OutConf0Ch1Val {
     pub const fn with_out_data_burst_en_ch(self, value: bool) -> Self {
         Self {
             bits: if value {
-                self.bits | OutConf0Ch1::OUT_DATA_BURST_EN_CH_MASK
+                self.bits | OutConf0Ch2::OUT_DATA_BURST_EN_CH_MASK
             } else {
-                self.bits & !OutConf0Ch1::OUT_DATA_BURST_EN_CH_MASK
+                self.bits & !OutConf0Ch2::OUT_DATA_BURST_EN_CH_MASK
             },
         }
     }
@@ -20157,9 +20157,9 @@ impl OutConf0Ch1Val {
     pub const fn with_outdscr_burst_en_ch(self, value: bool) -> Self {
         Self {
             bits: if value {
-                self.bits | OutConf0Ch1::OUTDSCR_BURST_EN_CH_MASK
+                self.bits | OutConf0Ch2::OUTDSCR_BURST_EN_CH_MASK
             } else {
-                self.bits & !OutConf0Ch1::OUTDSCR_BURST_EN_CH_MASK
+                self.bits & !OutConf0Ch2::OUTDSCR_BURST_EN_CH_MASK
             },
         }
     }
@@ -20171,9 +20171,9 @@ impl OutConf0Ch1Val {
     pub const fn with_out_eof_mode_ch(self, value: bool) -> Self {
         Self {
             bits: if value {
-                self.bits | OutConf0Ch1::OUT_EOF_MODE_CH_MASK
+                self.bits | OutConf0Ch2::OUT_EOF_MODE_CH_MASK
             } else {
-                self.bits & !OutConf0Ch1::OUT_EOF_MODE_CH_MASK
+                self.bits & !OutConf0Ch2::OUT_EOF_MODE_CH_MASK
             },
         }
     }
@@ -20185,9 +20185,9 @@ impl OutConf0Ch1Val {
     pub const fn with_out_auto_wrback_ch(self, value: bool) -> Self {
         Self {
             bits: if value {
-                self.bits | OutConf0Ch1::OUT_AUTO_WRBACK_CH_MASK
+                self.bits | OutConf0Ch2::OUT_AUTO_WRBACK_CH_MASK
             } else {
-                self.bits & !OutConf0Ch1::OUT_AUTO_WRBACK_CH_MASK
+                self.bits & !OutConf0Ch2::OUT_AUTO_WRBACK_CH_MASK
             },
         }
     }
@@ -20199,9 +20199,9 @@ impl OutConf0Ch1Val {
     pub const fn with_out_loop_test_ch(self, value: bool) -> Self {
         Self {
             bits: if value {
-                self.bits | OutConf0Ch1::OUT_LOOP_TEST_CH_MASK
+                self.bits | OutConf0Ch2::OUT_LOOP_TEST_CH_MASK
             } else {
-                self.bits & !OutConf0Ch1::OUT_LOOP_TEST_CH_MASK
+                self.bits & !OutConf0Ch2::OUT_LOOP_TEST_CH_MASK
             },
         }
     }
@@ -20213,36 +20213,36 @@ impl OutConf0Ch1Val {
     pub const fn with_out_rst_ch(self, value: bool) -> Self {
         Self {
             bits: if value {
-                self.bits | OutConf0Ch1::OUT_RST_CH_MASK
+                self.bits | OutConf0Ch2::OUT_RST_CH_MASK
             } else {
-                self.bits & !OutConf0Ch1::OUT_RST_CH_MASK
+                self.bits & !OutConf0Ch2::OUT_RST_CH_MASK
             },
         }
     }
 }
 
-impl Default for OutConf0Ch1Val {
+impl Default for OutConf0Ch2Val {
     fn default() -> Self {
         Self::reset_val()
     }
 }
 
-impl OutConf0Ch1 {
+impl OutConf0Ch2 {
     /// Read the register into a value struct
     #[inline(always)]
-    pub fn read_val(&self) -> OutConf0Ch1Val {
-        OutConf0Ch1Val::from_bits(self.value.read_bits())
+    pub fn read_val(&self) -> OutConf0Ch2Val {
+        OutConf0Ch2Val::from_bits(self.value.read_bits())
     }
 
     /// Write a value struct to the register
     #[inline(always)]
-    pub fn write_val(&self, val: OutConf0Ch1Val) {
+    pub fn write_val(&self, val: OutConf0Ch2Val) {
         self.value.write_bits(val.bits())
     }
 
     /// Modify the register using a value struct
     #[inline(always)]
-    pub fn modify_val<F: FnOnce(OutConf0Ch1Val) -> OutConf0Ch1Val>(&self, f: F) {
+    pub fn modify_val<F: FnOnce(OutConf0Ch2Val) -> OutConf0Ch2Val>(&self, f: F) {
         self.write_val(f(self.read_val()))
     }
 }
@@ -31517,7 +31517,7 @@ pub struct RegisterBlock {
     _reserved3: [u8; 44],
     /// 0x0190
     /// Configure 0 register of Tx channel 1
-    pub out_conf0_ch01: OutConf0Ch01,
+    pub out_conf0_ch1: OutConf0Ch1,
     /// 0x0194
     /// Configure 1 register of Tx channel 0
     pub out_conf1_ch1: OutConf1Ch1,
@@ -31597,7 +31597,7 @@ pub struct RegisterBlock {
     _reserved5: [u8; 44],
     /// 0x0250
     /// Configure 0 register of Tx channel 1
-    pub out_conf0_ch1: OutConf0Ch1,
+    pub out_conf0_ch2: OutConf0Ch2,
     /// 0x0254
     /// Configure 1 register of Tx channel 0
     pub out_conf1_ch2: OutConf1Ch2,
