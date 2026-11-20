@@ -94,12 +94,19 @@ let keyboard = Keyboard::open(&device)?;
   devices with interface association descriptors, CDC-ACM, HID, GS_USB,
   i2c-tiny-usb and UAC 1.0 class drivers
 - Host: root port reset and enumeration, control/bulk/interrupt transfers at low,
-  full and high speed, descriptor parsing, string decoding and a HID boot
-  keyboard driver
+  full and high speed, descriptor parsing, string decoding, a HID boot
+  keyboard driver and USB 2.0 hubs (FS/LS devices behind a high-speed hub need
+  `new_fsls_only`, see below)
 - `defmt` (off by default) — log through `defmt`
 
-Host mode does not support hubs, isochronous transfers or SRP/HNP; the chip has
-no VBUS switch, so the board has to power the port.
+Host mode supports hubs, including cascades on a full-speed link. A full-speed
+hub works on the full-speed core and on the high-speed core when it is
+initialised with `UsbHostHs::new_fsls_only`; high-speed devices behind a
+high-speed hub work with the ordinary `UsbHostHs::new`. A FS/LS device behind a
+high-speed hub would need the hub's transaction translator, which this driver
+does not implement, so it is rejected with `HostError::Unsupported`. Isochronous
+transfers and SRP/HNP are not implemented either; the chip has no VBUS switch,
+so the board has to power the port and the hub.
 
 ## License
 

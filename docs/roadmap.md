@@ -63,7 +63,9 @@
 6. **PWM 家族：LEDC、MCPWM、RMT、PCNT**：调光、电机、WS2812/红外、编码器。
 7. **TWAI（CAN-FD ×3）、I2S0/1/2（音频）、SDIO slave**。
    ~~USB OTG host~~ 已完成：`esp32p4-usb` 的 `host` 模块（枚举、控制/bulk/interrupt
-   传输、HID boot 键盘）加 `esp32p4-usb` 的 DWC 主机模式驱动；HUB、等时传输仍是缺口。
+   传输、HID boot 键盘、HUB）加 `esp32p4-usb` 的 DWC 主机模式驱动；高速 HUB
+   后面的 FS/LS 拆分事务（TT）与等时传输仍是缺口，可用 `UsbHostHs::new_fsls_only`
+   规避 TT。
 
 ## 4. 第 2 层：系统与电源
 

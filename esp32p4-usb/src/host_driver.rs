@@ -20,6 +20,15 @@
 //! generous: a reset that lasts a few milliseconds longer than the specification
 //! requires is harmless.
 //!
+//! # Hubs
+//!
+//! The driver programs `HCCHAR.LSPDDev` for a low-speed device behind a hub, so
+//! a full-speed hub and its low-speed devices work on either core. It does not
+//! implement split transactions, so a FS/LS device behind a high-speed hub is
+//! rejected with [`HostError::Unsupported`](crate::host::HostError::Unsupported).
+//! [`UsbHostHs::new_fsls_only`] avoids the problem by keeping the high-speed
+//! core at FS/LS, which makes the hub enumerate at full speed.
+//!
 //! # Example
 //!
 //! ```ignore
@@ -152,11 +161,13 @@ struct Core {
     max_packet: u16,
     /// Channels the core actually implements.
     channel_count: usize,
+    /// The high-speed core is limited to full and low speed.
+    fsls_only: bool,
     state: RefCell<State>,
 }
 
 impl Core {
-    fn new(kind: Kind) -> Self {
+    fn new(kind: Kind, fsls_only: bool) -> Self {
         let dwc = Dwc::new(kind.base());
         let channel_count = dwc.channel_count().min(MAX_CHANNELS);
         let core = Self {
@@ -164,6 +175,7 @@ impl Core {
             kind,
             max_packet: kind.max_packet(),
             channel_count,
+            fsls_only,
             state: RefCell::new(State::new()),
         };
         core.init();
@@ -230,6 +242,13 @@ impl Core {
             dwc.modify(reg::HFIR, hfir::FRINT_MASK, hfir::FRINT_48M);
         }
 
+        // A high-speed core can be limited to FS/LS. That is what makes a hub
+        // usable without a transaction translator: the hub enumerates at full
+        // speed and its downstream FS/LS devices need no split transactions.
+        if self.fsls_only {
+            dwc.modify(reg::HCFG, hcfg::FSLSSUPP, hcfg::FSLSSUPP);
+        }
+
         // A-session: the chip has no OTG pins, so present the levels of a host
         // that supplies VBUS itself instead of waiting for a session that can
         // never start.
@@ -278,6 +297,8 @@ impl Core {
             enabled,
             speed: if enabled {
                 speed_from(hprt)
+            } else if self.fsls_only {
+                Speed::Full
             } else {
                 self.kind.speed()
             },
@@ -289,6 +310,12 @@ impl Core {
         let dwc = self.dwc;
         if !self.port_status().connected {
             return Err(HostError::Disconnected);
+        }
+
+        // Select FS/LS-only before the reset, so the core never starts the
+        // high-speed chirp handshake.
+        if self.fsls_only {
+            dwc.modify(reg::HCFG, hcfg::FSLSSUPP, hcfg::FSLSSUPP);
         }
 
         self.update_port(|value| value | hprt::PRTRST);
@@ -370,15 +397,25 @@ impl Core {
         if endpoint.max_packet == 0 || endpoint.max_packet > self.max_packet {
             return Err(HostError::Overflow);
         }
+        // Split transactions (a FS/LS device behind a high-speed hub) need the
+        // channel's split register; this driver does not implement them.
+        if endpoint.route.and_then(|route| route.translator).is_some() {
+            return Err(HostError::Unsupported);
+        }
 
         self.halt(channel);
 
-        let hcchar = (u32::from(endpoint.max_packet) & hcchar::MPS_MASK)
+        let mut hcchar = (u32::from(endpoint.max_packet) & hcchar::MPS_MASK)
             | (u32::from(endpoint.address.number()) << hcchar::EPNUM_SHIFT)
             | ep_type
             // MC/EC must not stay at its reserved zero value.
             | (1 << hcchar::EC_SHIFT)
             | (u32::from(device.raw()) << hcchar::DEVADDR_SHIFT);
+        // A low-speed device behind a hub needs the low-speed signalling bit.
+        // On the root port the core reads the speed from `HPRT` itself.
+        if endpoint.route.is_some() && endpoint.speed == Speed::Low {
+            hcchar |= hcchar::LSPDDEV;
+        }
         let index = channel.index();
         self.dwc.write(reg::hcchar(index), hcchar);
         self.dwc.write(reg::hctsiz(index), hctsiz::PID_DATA0);
@@ -698,7 +735,7 @@ impl UsbHostFs {
         route_otg_input!(resources.gpio.func114_in_sel_cfg, false); // SESSEND
 
         Self {
-            core: Core::new(Kind::Full),
+            core: Core::new(Kind::Full, false),
         }
     }
 
@@ -725,6 +762,27 @@ impl UsbHostHs {
     /// Panics when called twice, or when the device driver already owns the
     /// core.
     pub fn new(resources: HsResources<'_>) -> Self {
+        Self::with_mode(resources, false)
+    }
+
+    /// Power up the high-speed core as a full/low-speed only host.
+    ///
+    /// The core stops chirping and never negotiates high speed, so every
+    /// device (a hub included) enumerates at full speed and its downstream
+    /// FS/LS devices need no split transactions. This is how a hub works on
+    /// this port without a transaction translator; the cost is that a
+    /// high-speed device falls back to full speed, or does not work at all if
+    /// it has no full-speed mode.
+    ///
+    /// # Panics
+    ///
+    /// Panics when called twice, or when the device driver already owns the
+    /// core.
+    pub fn new_fsls_only(resources: HsResources<'_>) -> Self {
+        Self::with_mode(resources, true)
+    }
+
+    fn with_mode(resources: HsResources<'_>, fsls_only: bool) -> Self {
         assert!(
             !HS_TAKEN.swap(true, Ordering::Relaxed),
             "the OTG HS core is already in use"
@@ -734,7 +792,7 @@ impl UsbHostHs {
         resources.set_pull_downs(true);
 
         Self {
-            core: Core::new(Kind::High),
+            core: Core::new(Kind::High, fsls_only),
         }
     }
 

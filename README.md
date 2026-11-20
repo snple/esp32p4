@@ -38,6 +38,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `usb_cdc` | 全速 OTG（GPIO26/27）上的 CDC-ACM 虚拟串口，回显主机发来的字节 |
 | `usb_cdc_hs` | 高速 OTG（内部 UTMI+ PHY）上的 CDC-ACM，512 字节 bulk 包 |
 | `usb_host_hid` | 全速 OTG 作主机：枚举 USB 键盘，打印按键的 HID usage code |
+| `usb_host_hub` | 全速 OTG 作主机：枚举 HUB，端口上电/复位后枚举下游键盘并读按键 |
 | `timer` | `TIMG0` 的两路通用定时器：100 ms 周期中断闪灯，外加 1 s 的倒计时闹钟 |
 | `alarm` | `SYSTIMER` 比较器：250 ms 周期闹钟 + 5 s 一次性 deadline，主循环用 `sleep_until` 睡到下一个检查点 |
 | `watchdog` | `TIMG0` 的 MWDT：1 s 超时复位系统，主循环每 100 ms `feed()` 一次 |
@@ -345,8 +346,16 @@ loop {
   把 `LP_SYS + 0x204` 的 bit1/2 **置位**——主机要 15 kΩ 下拉，设备模式则清零。
 - **VBUS 由板子提供**：`HPRT.PrtPwr` 只是告诉核心「端口已上电」，芯片本身没有
   5 V 开关；板上没有 VBUS 开关时请用带电源的 HUB。
-- **限制**：只有根端口，不支持 HUB 级联；等时传输、多包流水（transfer level）
-  未实现；主机口不支持 SRP/HNP（芯片的 ID/VBUS 悬空）。
+- **HUB 支持**：`usb-stack` 的 `host::class::hub` 负责 HUB 类请求（读 HUB 描述符、
+  端口上电、端口状态/复位、子设备枚举），`host::AddressPool` 分配 1–126 的地址。
+  全速口直接支持 FS HUB 及其 FS/LS 下游设备（LS 下游由驱动置
+  `HCCHAR.LSPDDev`）。高速口没有实现 TT 拆分事务（`HCSPLT` 在 P4 的寄存器定义里
+  也未公开），所以 FS/LS 设备接在高速 HUB 后面会得到 `HostError::Unsupported`；
+  改用 `UsbHostHs::new_fsls_only` 让高速核以 FS/LS-only 主机工作，HUB 就会以全速
+  枚举，下游 FS/LS 设备无需拆分事务（与 ESP-IDF 的 `fsls_only` 相同）。HS HUB 后面
+  的 HS 设备仍可用普通 `UsbHostHs::new`。
+- **限制**：HUB 可级联（全速链路上）；等时传输、多包流水（transfer level）未
+  实现；主机口不支持 SRP/HNP（芯片的 ID/VBUS 悬空）。
 
 ## 以太网 MAC
 

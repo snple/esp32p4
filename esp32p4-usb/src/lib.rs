@@ -77,8 +77,24 @@
 //! - Device: endpoint handles for custom classes (`bulk`, `interrupt`,
 //!   `isochronous`)
 //! - Host: root port reset and enumeration at low, full and high speed, control,
-//!   bulk and interrupt transfers, descriptor parsing and a HID boot keyboard
-//!   driver ([`host::class::hid::Keyboard`])
+//!   bulk and interrupt transfers, descriptor parsing, a HID boot keyboard
+//!   driver ([`host::class::hid::Keyboard`]) and hubs
+//!   ([`host::class::hub::Hub`])
+//!
+//! ## Hosts and hubs
+//!
+//! Both cores enumerate a hub and the devices behind it. The full-speed core is
+//! the simple case: it already runs at FS, so a FS hub and its FS/LS devices
+//! need no special handling beyond the low-speed signalling bit the driver sets
+//! for a LS device behind a hub.
+//!
+//! The high-speed core has no transaction translator in this driver (and the
+//! IP does not document the split-transaction register), so a FS/LS device
+//! behind a high-speed hub cannot be reached. Either put the hub on the
+//! full-speed port, or power the high-speed core with
+//! [`UsbHostHs::new_fsls_only`]: it then never chirps, the hub enumerates at
+//! full speed, and downstream FS/LS devices work without splits. High-speed
+//! devices behind a high-speed hub work as long as the core runs at high speed.
 //!
 //! ## Example
 //!
