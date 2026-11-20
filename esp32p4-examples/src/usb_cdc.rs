@@ -26,7 +26,7 @@ use esp32p4_hal::main;
 use esp32p4_hal::pac::Peripherals;
 use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
 use esp32p4_usb::class::cdc_acm::CdcAcm;
-use esp32p4_usb::p4::{FsResources, UsbFs};
+use esp32p4_usb::{FsResources, UsbFs};
 use esp32p4_usb::{UsbBusAllocator, UsbDeviceBuilder};
 
 /// Bulk packet size of a full-speed endpoint.

@@ -1,36 +1,8 @@
 //! Device-mode driver for the ESP32-P4's two DWC OTG cores.
 //!
-//! ```text
-//!                     ┌──────────────────────────────┐
-//!   USB_OTG11 (FS) ───┤ D+/D- on GPIO27/26 (PHY 2)   │  full speed, 12 Mbit/s
-//!   USB_OTG20 (HS) ───┤ internal UTMI+ PHY           │  high speed, 480 Mbit/s
-//!                     └──────────────────────────────┘
-//! ```
-//!
-//! Both cores are Synopsys DesignWare OTG controllers driven in **slave mode**:
-//! the CPU pushes and pops every packet through the FIFOs, there is no DMA and
-//! no interrupt — [`UsbBus::poll`] collects the events.
-//!
-//! # Full-speed port
-//!
-//! The full-speed core has no pads of its own: it is wired to one of the chip's
-//! two full-speed PHYs through the GPIO matrix, and it needs five OTG status
-//! inputs (`IDDIG`, `AVALID`, `BVALID`, `VBUSVALID`, `SESSEND`). [`UsbFs::new`]
-//! forces those inputs to the values of a self-powered peripheral on a powered
-//! bus, so the core sees a valid B-session without extra wiring.
-//!
-//! By default the OTG FS core uses PHY 2 (GPIO26/27) while the USB Serial/JTAG
-//! controller uses PHY 1 (GPIO24/25). If an application uses both ports it can
-//! swap them with `esp32p4_hal::usb_serial_jtag::UsbSerialJtag::select_phy`; this
-//! driver follows whichever PHY the swap logic assigns, it does not touch it.
-//!
-//! # High-speed port
-//!
-//! The high-speed core drives an internal UTMI+ PHY, so no GPIOs are involved.
-//! Device mode needs the PHY's 15 kΩ pull-downs off; on chip revisions 3.0 and
-//! later those resistors are controlled by software through `LP_SYS` (see
-//! [`HsResources`]), while earlier revisions leave them to the OTG core, which
-//! ignores the write.
+//! [`UsbFs`] and [`UsbHs`] implement [`UsbBus`] on top of one shared `Core`:
+//! every packet is moved by the CPU through the controller's FIFOs, and
+//! [`UsbBus::poll`] collects the events the core latched.
 //!
 //! # Limitations
 //!
@@ -52,7 +24,7 @@
 //!
 //! ```ignore
 //! use esp32p4_usb::class::cdc_acm::CdcAcm;
-//! use esp32p4_usb::p4::{FsResources, UsbFs};
+//! use esp32p4_usb::{FsResources, UsbFs};
 //! use esp32p4_usb::{UsbBusAllocator, UsbDeviceBuilder};
 //!
 //! let allocator = UsbBusAllocator::new(UsbFs::new(FsResources {
@@ -69,10 +41,7 @@
 //! ```
 
 use core::cell::RefCell;
-use core::sync::atomic::{AtomicBool, Ordering};
-
-use esp32p4_pac::usb_wrap::RegisterBlock as UsbWrap;
-use esp32p4_pac::{GPIO, HP_SYS, HP_SYS_CLKRST, IO_MUX, LP_AON_CLKRST, LP_SYS};
+use core::sync::atomic::Ordering;
 
 use crate::bus::{PollResult, UsbBus};
 use crate::dwc::{
@@ -82,11 +51,8 @@ use crate::dwc::{
 use crate::endpoint::{Direction, EndpointAddress, EndpointType};
 use crate::error::{UsbError, UsbResult};
 use crate::log::{debug, warn};
-
-/// Register base of the full-speed OTG core (`USB_OTG11`).
-pub const USB_OTG_FS_BASE: usize = 0x5004_0000;
-/// Register base of the high-speed OTG core (`USB_OTG20`).
-pub const USB_OTG_HS_BASE: usize = 0x5000_0000;
+use crate::resources::Kind;
+use crate::resources::{FS_TAKEN, FsResources, HS_TAKEN, HsResources, route_otg_input};
 
 /// Highest endpoint number the driver manages.
 ///
@@ -118,40 +84,73 @@ const EMPTY: u16 = u16::MAX;
 const FS_EXTRA_RX_WORDS: u16 = 30;
 const HS_EXTRA_RX_WORDS: u16 = 47;
 
-/// The USB PHY block, which is not part of the SVD.
-const USBPHY_BASE: usize = 0x5009_c000;
-/// `USBPHY.FC_06`: line-state helpers used by the UTMI+ PHY.
-const USBPHY_FC_06: usize = 0x18;
-/// `LP_SYS.HP_USB_OTGHS_PHY_CTRL`, present from chip revision 3.0 on.
-const LP_SYS_HS_PHY_CTRL: usize = 0x204;
-const HS_PHY_CTRL_DP_PULLDOWN: u32 = 1 << 1;
-const HS_PHY_CTRL_DM_PULLDOWN: u32 = 1 << 2;
+/// Implement [`UsbBus`] for a core by forwarding to its [`Core`].
+macro_rules! impl_usb_bus {
+    ($type:ty, $max_packet:expr) => {
+        impl UsbBus for $type {
+            const MAX_PACKET_SIZE: u16 = $max_packet;
 
-/// Drive a GPIO-matrix peripheral input with a constant level.
-///
-/// Every `GPIO_FUNCn_IN_SEL_CFG` register has its own type in the PAC, so the
-/// operation is a macro instead of a generic function.
-macro_rules! route_otg_input {
-    ($register:expr, $high:expr) => {{
-        let register = &$register;
-        // Route through the GPIO matrix and pick a constant instead of a pad.
-        register.set_sel();
-        register.clr_in_inv_sel();
-        register.write_in_sel(if $high { 0x3f } else { 0x3e });
-    }};
-}
+            fn alloc_ep(
+                &mut self,
+                direction: Direction,
+                address: Option<EndpointAddress>,
+                ep_type: EndpointType,
+                max_packet_size: u16,
+                interval: u8,
+            ) -> UsbResult<EndpointAddress> {
+                self.core
+                    .alloc_ep(direction, address, ep_type, max_packet_size, interval)
+            }
 
-/// Switch a pad to its analog PHY function with maximum drive strength.
-///
-/// IO MUX function 0 is the analog function on every pad; for GPIO26/27 that is
-/// `USB1P1_N1` / `USB1P1_P1`. The PAC gives each pad its own type, hence the
-/// macro.
-macro_rules! configure_usb_pad {
-    ($pad:expr) => {{
-        let pad = &$pad;
-        pad.write_mcu_sel(0);
-        pad.write_fun_drv(3);
-    }};
+            fn enable(&mut self) {
+                self.core.enable();
+            }
+
+            fn reset(&self) {
+                self.core.reset();
+            }
+
+            fn set_device_address(&self, address: u8) {
+                self.core.set_device_address(address);
+            }
+
+            fn poll(&self) -> PollResult {
+                self.core.poll()
+            }
+
+            fn write(&self, address: EndpointAddress, data: &[u8]) -> UsbResult<usize> {
+                self.core.write(address, data)
+            }
+
+            fn read(&self, address: EndpointAddress, buffer: &mut [u8]) -> UsbResult<usize> {
+                self.core.read(address, buffer)
+            }
+
+            fn set_stalled(&self, address: EndpointAddress, stalled: bool) {
+                self.core.set_stalled(address, stalled);
+            }
+
+            fn is_stalled(&self, address: EndpointAddress) -> bool {
+                self.core.is_stalled(address)
+            }
+
+            fn suspend(&self) {
+                self.core.suspend();
+            }
+
+            fn resume(&self) {
+                self.core.resume();
+            }
+
+            fn force_reset(&self) -> UsbResult<()> {
+                self.core.force_reset()
+            }
+
+            // The DWC answers the status stage at the new address, so the
+            // address has to be programmed before the ZLP goes out.
+            const SET_ADDRESS_BEFORE_STATUS: bool = true;
+        }
+    };
 }
 
 /// Per-endpoint configuration captured at allocation time.
@@ -219,43 +218,10 @@ impl State {
     }
 }
 
-/// Which OTG core a [`Core`] drives.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Speed {
-    Full,
-    High,
-}
-
-impl Speed {
-    /// `DCFG.DevSpd`: `0b11` selects the 48 MHz full-speed PHY, `0b00` the
-    /// UTMI+ high-speed PHY.
-    fn devspd(self) -> u32 {
-        match self {
-            Self::Full => 0b11,
-            Self::High => 0b00,
-        }
-    }
-
-    /// Extra RX FIFO words (status entries plus slack).
-    fn extra_rx_words(self) -> u16 {
-        match self {
-            Self::Full => FS_EXTRA_RX_WORDS,
-            Self::High => HS_EXTRA_RX_WORDS,
-        }
-    }
-
-    fn base(self) -> usize {
-        match self {
-            Self::Full => USB_OTG_FS_BASE,
-            Self::High => USB_OTG_HS_BASE,
-        }
-    }
-}
-
 /// Shared device-mode implementation for both OTG cores.
 struct Core {
     dwc: Dwc,
-    speed: Speed,
+    kind: Kind,
     fifo_depth: u16,
     /// Words reserved for IN endpoint TX FIFOs.
     tx_fifo_words: u16,
@@ -267,12 +233,12 @@ struct Core {
 }
 
 impl Core {
-    fn new(speed: Speed) -> Self {
-        let dwc = Dwc::new(speed.base());
+    fn new(kind: Kind) -> Self {
+        let dwc = Dwc::new(kind.base());
         let fifo_depth = dwc.fifo_depth();
         Self {
             dwc,
-            speed,
+            kind,
             fifo_depth,
             tx_fifo_words: 0,
             rx_fifo_words: 0,
@@ -351,7 +317,7 @@ impl Core {
             .tx_fifo_words
             .saturating_add(words)
             .saturating_add(self.rx_fifo_words)
-            .saturating_add(self.speed.extra_rx_words());
+            .saturating_add(extra_rx_words(self.kind));
         if used > self.fifo_depth {
             return Err(UsbError::EndpointMemoryOverflow);
         }
@@ -405,11 +371,12 @@ impl Core {
 
         // Device mode with the right PHY.
         let mut usbcfg = gusbcfg::FDMOD;
-        match self.speed {
-            // The full-speed core uses its embedded full-speed PHY.
-            Speed::Full => usbcfg |= gusbcfg::PHYSEL,
+        if self.kind.is_high() {
             // The high-speed core has a UTMI+ PHY. Keep 8-bit data width.
-            Speed::High => usbcfg |= gusbcfg::PHYIF,
+            usbcfg |= gusbcfg::PHYIF;
+        } else {
+            // The full-speed core uses its embedded full-speed PHY.
+            usbcfg |= gusbcfg::PHYSEL;
         }
         // USB turnaround time. Only host mode uses it, but esp-hal programs 5
         // for both P4 cores, so keep the same value.
@@ -423,7 +390,10 @@ impl Core {
         dwc.write(reg::GAHBCFG, 0);
 
         // Device speed and address 0.
-        dwc.write(reg::DCFG, self.speed.devspd() << dcfg::DEVSPD_SHIFT);
+        dwc.write(
+            reg::DCFG,
+            device_speed_bits(self.kind) << dcfg::DEVSPD_SHIFT,
+        );
 
         // Force a valid B-session. The board does not feed VBUS into the PHY,
         // and a bus-powered device cannot be running without the cable anyway,
@@ -464,9 +434,9 @@ impl Core {
         dwc.clear(reg::DCTL, SFTRST_DISCON);
         debug!(
             "USB: {} core up, {} FIFO words",
-            match self.speed {
-                Speed::Full => "full-speed",
-                Speed::High => "high-speed",
+            match self.kind {
+                Kind::Full => "full-speed",
+                Kind::High => "high-speed",
             },
             self.fifo_depth
         );
@@ -475,7 +445,7 @@ impl Core {
     /// Program the RX/TX FIFO sizes.
     fn configure_fifos(&self, state: &State) {
         let dwc = self.dwc;
-        let rx_words = self.rx_fifo_words + self.speed.extra_rx_words();
+        let rx_words = self.rx_fifo_words + extra_rx_words(self.kind);
         dwc.write(reg::GRXFSIZ, rx_words as u32);
 
         let mut top = rx_words as u32;
@@ -619,7 +589,7 @@ impl Core {
     /// full-speed device; the core reports that in `DSTS` and expects the speed
     /// field to follow. The full-speed core only ever reports its own speed.
     fn apply_enumerated_speed(&self, speed_code: u32) {
-        if self.speed == Speed::Full {
+        if !self.kind.is_high() {
             return;
         }
         let devspd = match speed_code {
@@ -1001,37 +971,26 @@ fn nak_bit(number: usize) -> u32 {
     }
 }
 
-// ── Resource bundles ─────────────────────────────────────────────────────────
-
-/// Clock, pad and wrapper blocks the full-speed core needs.
-pub struct FsResources<'a> {
-    /// `HP_SYS_CLKRST`: bus clock gate.
-    pub clkrst: &'a HP_SYS_CLKRST,
-    /// `LP_AON_CLKRST`: PHY clock gate and module reset.
-    pub lp_aon_clkrst: &'a LP_AON_CLKRST,
-    /// `USB_WRAP`: PHY/pad control.
-    pub usb_wrap: &'a UsbWrap,
-    /// `GPIO`: routes the OTG status inputs.
-    pub gpio: &'a GPIO,
-    /// `IO_MUX`: switches GPIO26/27 to the PHY function.
-    pub io_mux: &'a IO_MUX,
+/// `DCFG.DevSpd`: `0b11` selects the 48 MHz full-speed PHY, `0b00` the UTMI+
+/// high-speed PHY.
+#[inline]
+fn device_speed_bits(kind: Kind) -> u32 {
+    match kind {
+        Kind::Full => 0b11,
+        Kind::High => 0b00,
+    }
 }
 
-/// Clock and PHY blocks the high-speed core needs.
-pub struct HsResources<'a> {
-    /// `HP_SYS_CLKRST`: bus clock gate.
-    pub clkrst: &'a HP_SYS_CLKRST,
-    /// `LP_AON_CLKRST`: PHY reference clock and resets.
-    pub lp_aon_clkrst: &'a LP_AON_CLKRST,
-    /// `HP_SYS`: `OTG_SUSPENDM`, needed for VBUS detection.
-    pub hp_sys: &'a HP_SYS,
-    /// `LP_SYS`: host/device pull-down control on newer revisions.
-    pub lp_sys: &'a LP_SYS,
+/// Extra RX FIFO words the core needs on top of the OUT packet space.
+#[inline]
+fn extra_rx_words(kind: Kind) -> u16 {
+    match kind {
+        Kind::Full => FS_EXTRA_RX_WORDS,
+        Kind::High => HS_EXTRA_RX_WORDS,
+    }
 }
 
 // ── USB FS ───────────────────────────────────────────────────────────────────
-
-static FS_TAKEN: AtomicBool = AtomicBool::new(false);
 
 /// The full-speed OTG core (`USB_OTG11`).
 pub struct UsbFs {
@@ -1043,42 +1002,14 @@ impl UsbFs {
     ///
     /// # Panics
     ///
-    /// Panics when called twice: the controller is a singleton, and two drivers
-    /// would fight over the same registers.
+    /// Panics when called twice, or when the host driver already owns the core:
+    /// they would fight over the same registers.
     pub fn new(resources: FsResources<'_>) -> Self {
         assert!(
             !FS_TAKEN.swap(true, Ordering::Relaxed),
             "UsbFs::new called twice: the OTG FS core is already in use"
         );
-
-        let clkrst = resources.clkrst;
-        let lp_aon = resources.lp_aon_clkrst;
-
-        // Bus clock, PHY clock, then a reset pulse.
-        clkrst.soc_clk_ctrl1.set_reg_usb_otg11_sys_clk_en();
-        lp_aon
-            .lp_aonclkrst_hp_usb_clkrst_ctrl0
-            .set_lp_aonclkrst_usb_otg11_48m_clk_en();
-        lp_aon
-            .lp_aonclkrst_hp_usb_clkrst_ctrl1
-            .set_lp_aonclkrst_rst_en_usb_otg11();
-        for _ in 0..64 {
-            core::hint::spin_loop();
-        }
-        lp_aon
-            .lp_aonclkrst_hp_usb_clkrst_ctrl1
-            .clr_lp_aonclkrst_rst_en_usb_otg11();
-
-        // Wrapper: internal PHY, pads on, clocks forced on so register access
-        // never depends on the automatic clock gating.
-        let otg_conf = &resources.usb_wrap.otg_conf;
-        otg_conf.set_usb_pad_enable();
-        otg_conf.clr_phy_sel();
-        otg_conf.set_clk_en();
-        otg_conf.set_ahb_clk_force_on();
-        otg_conf.set_phy_clk_force_on();
-        // The PHY owns the D+/D- pull-ups and pull-downs in device mode.
-        otg_conf.clr_pad_pull_override();
+        resources.power_up();
 
         // The OTG core takes its session inputs from the GPIO matrix; present
         // the levels of a self-powered peripheral on a powered bus.
@@ -1088,13 +1019,8 @@ impl UsbFs {
         route_otg_input!(resources.gpio.func113_in_sel_cfg, true); // VBUSVALID
         route_otg_input!(resources.gpio.func114_in_sel_cfg, false); // SESSEND
 
-        // GPIO26/27 are the OTG FS data pads; IO MUX function 0 is the analog
-        // PHY function (`USB1P1_N1` / `USB1P1_P1`).
-        configure_usb_pad!(resources.io_mux.gpio26);
-        configure_usb_pad!(resources.io_mux.gpio27);
-
         Self {
-            core: Core::new(Speed::Full),
+            core: Core::new(Kind::Full),
         }
     }
 
@@ -1104,73 +1030,9 @@ impl UsbFs {
     }
 }
 
-impl UsbBus for UsbFs {
-    const MAX_PACKET_SIZE: u16 = 64;
-
-    fn alloc_ep(
-        &mut self,
-        direction: Direction,
-        address: Option<EndpointAddress>,
-        ep_type: EndpointType,
-        max_packet_size: u16,
-        interval: u8,
-    ) -> UsbResult<EndpointAddress> {
-        self.core
-            .alloc_ep(direction, address, ep_type, max_packet_size, interval)
-    }
-
-    fn enable(&mut self) {
-        self.core.enable();
-    }
-
-    fn reset(&self) {
-        self.core.reset();
-    }
-
-    fn set_device_address(&self, address: u8) {
-        self.core.set_device_address(address);
-    }
-
-    fn poll(&self) -> PollResult {
-        self.core.poll()
-    }
-
-    fn write(&self, address: EndpointAddress, data: &[u8]) -> UsbResult<usize> {
-        self.core.write(address, data)
-    }
-
-    fn read(&self, address: EndpointAddress, buffer: &mut [u8]) -> UsbResult<usize> {
-        self.core.read(address, buffer)
-    }
-
-    fn set_stalled(&self, address: EndpointAddress, stalled: bool) {
-        self.core.set_stalled(address, stalled);
-    }
-
-    fn is_stalled(&self, address: EndpointAddress) -> bool {
-        self.core.is_stalled(address)
-    }
-
-    fn suspend(&self) {
-        self.core.suspend();
-    }
-
-    fn resume(&self) {
-        self.core.resume();
-    }
-
-    fn force_reset(&self) -> UsbResult<()> {
-        self.core.force_reset()
-    }
-
-    // The DWC answers the status stage at the new address, so the address has
-    // to be programmed before the ZLP goes out.
-    const SET_ADDRESS_BEFORE_STATUS: bool = true;
-}
+impl_usb_bus!(UsbFs, 64);
 
 // ── USB HS ───────────────────────────────────────────────────────────────────
-
-static HS_TAKEN: AtomicBool = AtomicBool::new(false);
 
 /// The high-speed OTG core (`USB_OTG20`).
 pub struct UsbHs {
@@ -1182,60 +1044,19 @@ impl UsbHs {
     ///
     /// # Panics
     ///
-    /// Panics when called twice.
+    /// Panics when called twice, or when the host driver already owns the core.
     pub fn new(resources: HsResources<'_>) -> Self {
         assert!(
             !HS_TAKEN.swap(true, Ordering::Relaxed),
             "UsbHs::new called twice: the OTG HS core is already in use"
         );
+        resources.power_up();
+        // Device mode must not drive the 15 kΩ pull-downs: the pull-up on D+ is
+        // what tells the host that something was plugged in.
+        resources.set_pull_downs(false);
 
-        let clkrst = resources.clkrst;
-        let lp_aon = resources.lp_aon_clkrst;
-
-        // Bus clock and PHY reference clock, then reset the core and its PHY.
-        clkrst.soc_clk_ctrl1.set_reg_usb_otg20_sys_clk_en();
-        lp_aon
-            .lp_aonclkrst_hp_usb_clkrst_ctrl1
-            .set_lp_aonclkrst_usb_otg20_phyref_clk_en();
-        lp_aon
-            .lp_aonclkrst_hp_usb_clkrst_ctrl1
-            .set_lp_aonclkrst_rst_en_usb_otg20();
-        lp_aon
-            .lp_aonclkrst_hp_usb_clkrst_ctrl1
-            .set_lp_aonclkrst_rst_en_usb_otg20_phy();
-        for _ in 0..64 {
-            core::hint::spin_loop();
-        }
-        lp_aon
-            .lp_aonclkrst_hp_usb_clkrst_ctrl1
-            .clr_lp_aonclkrst_rst_en_usb_otg20();
-        lp_aon
-            .lp_aonclkrst_hp_usb_clkrst_ctrl1
-            .clr_lp_aonclkrst_rst_en_usb_otg20_phy();
-
-        // Without `OTG_SUSPENDM` the PHY never reports a disconnect.
-        resources.hp_sys.usbotg20_ctrl.set_otg_suspendm();
-        // Start out with the "in suspend" flag clear so the PMU wake-up logic
-        // does not think the port is idle.
-        resources.lp_sys.usb_ctrl.clr_usbotg20_in_suspend();
-
-        // Low-speed support: parallel mode plus the keep-alive timer. Both bits
-        // are what ESP-IDF programs as well; the remaining defaults are kept.
-        let fc_06 = (USBPHY_BASE + USBPHY_FC_06) as *mut u32;
-        // SAFETY: `USBPHY` is a fixed MMIO block.
-        unsafe { fc_06.write_volatile(fc_06.read_volatile() | (1 << 0) | (1 << 3)) };
-
-        // Device mode: the 15 kΩ pull-downs have to be off. From chip revision
-        // 3.0 they are software controlled; older revisions leave them to the
-        // OTG core and ignore the write.
-        let phy_ctrl = (LP_SYS::PTR as usize + LP_SYS_HS_PHY_CTRL) as *mut u32;
-        // SAFETY: fixed MMIO inside the LP_SYS block.
-        unsafe {
-            let bits = phy_ctrl.read_volatile();
-            phy_ctrl.write_volatile(bits & !(HS_PHY_CTRL_DP_PULLDOWN | HS_PHY_CTRL_DM_PULLDOWN));
-        }
         Self {
-            core: Core::new(Speed::High),
+            core: Core::new(Kind::High),
         }
     }
 
@@ -1245,64 +1066,4 @@ impl UsbHs {
     }
 }
 
-impl UsbBus for UsbHs {
-    const MAX_PACKET_SIZE: u16 = 512;
-
-    fn alloc_ep(
-        &mut self,
-        direction: Direction,
-        address: Option<EndpointAddress>,
-        ep_type: EndpointType,
-        max_packet_size: u16,
-        interval: u8,
-    ) -> UsbResult<EndpointAddress> {
-        self.core
-            .alloc_ep(direction, address, ep_type, max_packet_size, interval)
-    }
-
-    fn enable(&mut self) {
-        self.core.enable();
-    }
-
-    fn reset(&self) {
-        self.core.reset();
-    }
-
-    fn set_device_address(&self, address: u8) {
-        self.core.set_device_address(address);
-    }
-
-    fn poll(&self) -> PollResult {
-        self.core.poll()
-    }
-
-    fn write(&self, address: EndpointAddress, data: &[u8]) -> UsbResult<usize> {
-        self.core.write(address, data)
-    }
-
-    fn read(&self, address: EndpointAddress, buffer: &mut [u8]) -> UsbResult<usize> {
-        self.core.read(address, buffer)
-    }
-
-    fn set_stalled(&self, address: EndpointAddress, stalled: bool) {
-        self.core.set_stalled(address, stalled);
-    }
-
-    fn is_stalled(&self, address: EndpointAddress) -> bool {
-        self.core.is_stalled(address)
-    }
-
-    fn suspend(&self) {
-        self.core.suspend();
-    }
-
-    fn resume(&self) {
-        self.core.resume();
-    }
-
-    fn force_reset(&self) -> UsbResult<()> {
-        self.core.force_reset()
-    }
-
-    const SET_ADDRESS_BEFORE_STATUS: bool = true;
-}
+impl_usb_bus!(UsbHs, 512);

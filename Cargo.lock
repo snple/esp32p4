@@ -214,7 +214,7 @@ version = "0.1.0"
 
 [[package]]
 name = "esp32p4-usb"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "defmt",
  "esp32p4-pac",
@@ -402,9 +402,7 @@ checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
 
 [[package]]
 name = "usb-stack"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8a3567087def2e49f446bd144db2d02c2f61c1ad12bde58fdd0f93aedf38b9d"
+version = "0.2.0"
 dependencies = [
  "defmt",
 ]

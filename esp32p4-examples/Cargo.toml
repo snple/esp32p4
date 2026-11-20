@@ -119,6 +119,11 @@ name = "usb_cdc_hs"
 path = "src/usb_cdc_hs.rs"
 
 [[bin]]
+name = "usb_host_hid"
+path = "src/usb_host_hid.rs"
+required-features = ["defmt"]
+
+[[bin]]
 name = "uart"
 path = "src/uart.rs"
 required-features = ["defmt"]

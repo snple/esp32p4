@@ -14,8 +14,8 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | [`esp32p4-rt`](esp32p4-rt/) | **运行时**：`_start`、trap 入口、`link.x`、CSR/汇编封装 |
 | [`esp32p4-macro`](esp32p4-macro/) | **过程宏**：`#[main]` |
 | [`esp32p4-hal`](esp32p4-hal/) | **HAL**：时钟树、GPIO / IO MUX、UART、I2C 主机、ADC、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
-| [`esp32p4-usb`](esp32p4-usb/) | **USB 设备栈**：DWC OTG 全速/高速控制器（slave 模式、轮询）；协议层复用跨仓库共享的 [`usb-stack`](../../rp2350/usb-stack)（设备状态机、标准请求、CDC-ACM/HID 等 class） |
-| [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、UART 回环、I2C 扫描、ADC 采样、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC |
+| [`esp32p4-usb`](esp32p4-usb/) | **USB 栈**：DWC OTG 全速/高速控制器的设备模式与主机模式驱动（slave 模式、轮询）；协议层全部在跨仓库共享的 [`usb-stack`](../../rp2350/usb-stack)（设备状态机、标准请求、class、主机枚举与控制/bulk/interrupt 传输、HID 键盘） |
+| [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、UART 回环、I2C 扫描、ADC 采样、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC、USB HID 主机 |
 | [`xtask`](xtask/) | 构建辅助：`cargo xtask gen-pac` |
 
 依赖方向是单向的：`macro` / `rt` → `pac` → `esp32p4` / `esp32p4-usb` → `examples`。
@@ -37,6 +37,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `usb_serial` | 通过 USB Serial/JTAG 打印并回显，同时翻转 GPIO2（两个驱动共享 `HP_SYS_CLKRST`） |
 | `usb_cdc` | 全速 OTG（GPIO26/27）上的 CDC-ACM 虚拟串口，回显主机发来的字节 |
 | `usb_cdc_hs` | 高速 OTG（内部 UTMI+ PHY）上的 CDC-ACM，512 字节 bulk 包 |
+| `usb_host_hid` | 全速 OTG 作主机：枚举 USB 键盘，打印按键的 HID usage code |
 | `timer` | `TIMG0` 的两路通用定时器：100 ms 周期中断闪灯，外加 1 s 的倒计时闹钟 |
 | `alarm` | `SYSTIMER` 比较器：250 ms 周期闹钟 + 5 s 一次性 deadline，主循环用 `sleep_until` 睡到下一个检查点 |
 | `watchdog` | `TIMG0` 的 MWDT：1 s 超时复位系统，主循环每 100 ms `feed()` 一次 |
@@ -188,19 +189,25 @@ let n = serial.read(&mut buf);    // 主机发来的字节；没有就返回 0
 `main` 开头调用 `UsbSerialJtag::init`；时钟未打开时 logger 丢弃日志，而不是去访问
 未上时钟的寄存器。
 
-## USB OTG（设备模式）
+## USB OTG
 
-P4 有两个独立的 DesignWare OTG 控制器，`esp32p4-usb` 把它们都做成**设备模式**、
-**slave 模式**（CPU 搬 FIFO，无 DMA）、**轮询**（无中断、无 async）的驱动：
+P4 有两个独立的 DesignWare OTG 控制器，`esp32p4-usb` 用同一套寄存器定义
+（`src/dwc.rs`）驱动它们，**slave 模式**（CPU 搬 FIFO，无 DMA）、**轮询**
+（无中断、无 async），既能当设备也能当主机：
 
-| 控制器 | 基地址 | 速率 | PHY |
-|--------|--------|------|-----|
-| `USB_OTG11` | `0x5004_0000` | 全速 12 Mbit/s | 内部全速 PHY，D+/D- 在 GPIO27/26 |
-| `USB_OTG20` | `0x5000_0000` | 高速 480 Mbit/s | 内部 UTMI+ PHY，不占 GPIO |
+| 控制器 | 基地址 | 速率 | PHY | 驱动 |
+|--------|--------|------|-----|------|
+| `USB_OTG11` | `0x5004_0000` | 全速 12 Mbit/s | 内部全速 PHY，D+/D- 在 GPIO27/26 | `UsbFs` / `UsbHostFs` |
+| `USB_OTG20` | `0x5000_0000` | 高速 480 Mbit/s | 内部 UTMI+ PHY，不占 GPIO | `UsbHs` / `UsbHostHs` |
+
+同一时刻一个核只能归一侧所有：设备驱动与主机驱动共用「核是否被占用」的标记，
+重复初始化会 panic。
+
+### 设备模式
 
 ```rust
 use esp32p4_usb::class::cdc_acm::CdcAcm;
-use esp32p4_usb::p4::{FsResources, UsbFs};
+use esp32p4_usb::{FsResources, UsbFs};
 use esp32p4_usb::{UsbBusAllocator, UsbDeviceBuilder};
 
 let allocator = UsbBusAllocator::new(UsbFs::new(FsResources {
@@ -231,7 +238,7 @@ loop {
 class::cdc_acm::CdcAcm        usb-stack：接口描述符 + 端点回调
 device::UsbDevice             usb-stack：枚举状态机、标准请求、EP0 控制传输
 bus::UsbBus                   usb-stack：allocate / poll / read / write
-p4::UsbFs / p4::UsbHs         esp32p4-usb：DWC OTG 寄存器、FIFO 分配、复位与枚举
+UsbFs / UsbHs                 esp32p4-usb：DWC OTG 寄存器、FIFO 分配、复位与枚举
 ```
 
 `UsbFs`/`UsbHs` 通过 `UsbBus::MAX_PACKET_SIZE`（64 / 512）告诉 class 该用多大的
@@ -266,6 +273,80 @@ bulk 包，因此同一个 `CdcAcm` 在全速和高速控制器上都能直接�
   调 `UsbSerialJtag::select_phy`，OTG 驱动不碰这个选择。
 - **限制**：事务级传输（一次 `read`/`write` 一个包），等时端点不支持
   （分配时返回 `Unsupported`）——等时还需要按帧翻转 PID、丢弃未发出的包。
+
+### 主机模式
+
+主机侧同样是 slave + 轮询，也分两层，且协议层与设备侧一样放在共享 crate
+`usb-stack` 的 `host` 模块里，本仓库只提供控制器实现：
+
+```text
+host::class::hid::Keyboard     HID boot 键盘（其余 class 自备）
+host::Device / host::Pipe      枚举、控制传输、bulk / interrupt 传输
+host::HostController           trait：port_status / reset_port / alloc_channel / configure / setup / transfer_in / transfer_out
+UsbHostFs / UsbHostHs     DWC OTG 主机模式驱动（本仓库）
+```
+
+`usb-stack` 本身按方向分层：`device`（总线 trait、控制管道、状态机、class）与
+`host`（枚举、控制传输、管道、HID），两端共用的词汇表放在根模块
+`endpoint` / `descriptor` / `request`——其中 `request::Request` 既解析设备收到的
+8 字节 SETUP 包，也负责主机侧构造与编码。
+
+```rust
+use esp32p4_usb::host::Host;
+use esp32p4_usb::host::class::hid::Keyboard;
+use esp32p4_usb::{FsResources, UsbHostFs};
+
+let controller = UsbHostFs::new(FsResources {          // 与设备模式共用资源结构体
+    clkrst: &dp.HP_SYS_CLKRST,
+    lp_aon_clkrst: &dp.LP_AON_CLKRST,
+    usb_wrap: &dp.USB_WRAP,
+    gpio: &dp.GPIO,
+    io_mux: &dp.IO_MUX,
+});
+let host = Host::new(&controller);
+
+let device = host.enumerate()?;                       // 复位端口 + 枚举（地址 1）
+device.set_configuration(1)?;
+let keyboard = Keyboard::open(&device)?;               // SET_PROTOCOL / SET_IDLE + 打开中断端点
+
+let mut previous = Default::default();
+loop {
+    if let Ok(report) = keyboard.read() {             // 设备没变化时返回 Timeout
+        for key in report.new_keys(&previous) {
+            defmt::info!("key {}", key);
+        }
+        previous = report;
+    }
+}
+```
+
+`Host::enumerate` 做的是一套固定序列：复位端口 → `GET_DESCRIPTOR(DEVICE, 8)`
+拿到 `bMaxPacketSize0` → `SET_ADDRESS` → 重新读设备描述符 → 读配置描述符
+（先读 9 字节头拿 `wTotalLength`）→ 返回 `Device`。之后 `Device::control`
+可以发任意控制请求，`Device::open` 把某个端点变成 `Pipe`。
+
+要点：
+
+- **通道与 PID**：每个端点占一个 host channel（`HCCHAR`），驱动按事务编程
+  `HCTSIZ` 并置 `ChEna`，等核心 `ChHltd` 后再读 `HCINT`。数据翻转由协议层自己
+  记账（`Toggle`），不依赖核心跨传输保存 PID，因此换地址、重配通道都不会错位。
+- **NAK 与错误**：NAK 在驱动内重试（`NAK_RETRIES`，约 100 ms，HID 轮询就靠它），
+  事务错误重试 3 次；STALL 直接返回 `HostError::Stall`，由调用方发
+  `CLEAR_FEATURE(ENDPOINT_HALT)`（`Device::clear_halt`）并重置翻转。
+- **FIFO 划分**：RX = 2 个最大包 + 8、非周期 TX = 1 个最大包 + 8、周期 TX =
+  1 个最大包 + 8；HS 上共 536 ≤ 896 words。每个 OUT 事务前先 flush 对应 TX
+  FIFO，避免上一次失败残留的包被当成新数据。
+- **全速口的主机配置**：OTG 输入改接成 A 设备电平（`IDDIG=0`、`AVALID=1`、
+  `VBUSVALID=1`、`BVALID=0`、`SESSEND=0`），并打开 `USB_WRAP` 的
+  `srp_sessend_override`，让 PHY 认为 VBUS 正常；`GOTGCTL` 用 `AVALIDOV` /
+  `VBVALIDOV` 固定会话，`GUSBCFG.FHMOD=1` 强制主机模式。
+  低速设备接在端口上时把 `HCFG.FSLSPclkSel`/`HFIR.FrInt` 切换到 6 MHz。
+- **高速口的主机配置**：`GUSBCFG` 选 UTMI+（`PHYIF=1`、`TOCAL=5`），并且必须
+  把 `LP_SYS + 0x204` 的 bit1/2 **置位**——主机要 15 kΩ 下拉，设备模式则清零。
+- **VBUS 由板子提供**：`HPRT.PrtPwr` 只是告诉核心「端口已上电」，芯片本身没有
+  5 V 开关；板上没有 VBUS 开关时请用带电源的 HUB。
+- **限制**：只有根端口，不支持 HUB 级联；等时传输、多包流水（transfer level）
+  未实现；主机口不支持 SRP/HNP（芯片的 ID/VBUS 悬空）。
 
 ## 以太网 MAC
 

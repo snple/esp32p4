@@ -1,36 +1,84 @@
 //! # esp32p4-usb
 //!
-//! USB 2.0 device stack for the ESP32-P4's two on-chip OTG controllers.
+//! USB 2.0 device and host stack for the ESP32-P4's two on-chip OTG
+//! controllers.
 //!
-//! The MCU-independent part of the stack (bus trait, control pipe, device
-//! state machine, CDC-ACM and HID classes) lives in the shared
-//! [`usb-stack`](https://docs.rs/usb-stack) crate and is re-exported here;
-//! this crate adds the Synopsys DesignWare OTG driver.
+//! Everything above the peripheral driver — the device stack (bus trait, control
+//! pipe, state machine, classes) and the host stack (enumeration, control
+//! transfers, bulk and interrupt pipes, HID) — lives in the shared
+//! [`usb-stack`](https://docs.rs/usb-stack) crate and is re-exported here; this
+//! crate adds the Synopsys DesignWare OTG drivers for both directions.
 //!
 //! ```text
-//!   application / class          class::cdc_acm, your own UsbClass
-//!   ────────────────────────     (usb-stack)
-//!   device::UsbDevice            enumeration, standard requests, EP0
-//!   ────────────────────────     (usb-stack)
-//!   bus::UsbBus                  trait: allocate, poll, read, write
-//!   ────────────────────────     (usb-stack)
-//!   p4::UsbFs / p4::UsbHs        DWC OTG slave-mode driver (this crate)
+//!   device mode                        host mode
+//!   ────────────────────────           ────────────────────────
+//!   class::cdc_acm, UsbClass           host::class::hid::Keyboard
+//!   device::UsbDevice                  host::Device / host::Pipe
+//!   bus::UsbBus                        host::HostController
+//!   ────────────────────────           ────────────────────────
+//!   (usb-stack, re-exported)           (usb-stack, re-exported)
+//!   UsbFs / UsbHs                      UsbHostFs / UsbHostHs
+//!   ────────────────────────           ────────────────────────
+//!   (this crate)                       (this crate)
 //! ```
 //!
-//! The stack is fully synchronous: there is no interrupt handler, no DMA and no
-//! `async`. [`UsbDevice::poll`](usb_stack::device::UsbDevice::poll) moves
+//! Both directions are fully synchronous: there is no interrupt handler, no DMA
+//! and no `async`. [`UsbDevice::poll`](usb_stack::device::UsbDevice::poll) moves
 //! packets in and out of the controller's FIFOs and dispatches them to the
-//! classes, so it has to be called from the main loop every few milliseconds.
+//! classes, so it has to be called from the main loop every few milliseconds;
+//! the host driver blocks in [`Host::enumerate`](host::Host::enumerate) and in
+//! the pipe transfers until the transaction completes.
+//!
+//! A core belongs to one direction at a time: the device and host drivers share
+//! the "core taken" flag, so initialising both panics.
+//!
+//! # The two OTG cores
+//!
+//! | Core | Base | Speed | PHY | Drivers |
+//! |------|------|-------|-----|---------|
+//! | `USB_OTG11` | `0x5004_0000` | 12 Mbit/s | internal full-speed PHY, D+/D- on GPIO27/26 | [`UsbFs`] / [`UsbHostFs`] |
+//! | `USB_OTG20` | `0x5000_0000` | 480 Mbit/s | internal UTMI+ PHY, no GPIOs | [`UsbHs`] / [`UsbHostHs`] |
+//!
+//! Both are Synopsys DesignWare OTG controllers driven in **slave mode**: the
+//! CPU pushes and pops every packet through the FIFOs, there is no DMA and no
+//! interrupt.
+//!
+//! ## Full-speed port
+//!
+//! The full-speed core has no pads of its own: it is wired to one of the chip's
+//! two full-speed PHYs through the GPIO matrix, and it needs five OTG status
+//! inputs (`IDDIG`, `AVALID`, `BVALID`, `VBUSVALID`, `SESSEND`). Both drivers
+//! force those inputs to a constant session — B-device for the peripheral role,
+//! A-device for the host role — since the board has no OTG wiring.
+//!
+//! By default the OTG FS core uses PHY 2 (GPIO26/27) while the USB Serial/JTAG
+//! controller uses PHY 1 (GPIO24/25). If an application uses both ports it can
+//! swap them with `esp32p4_hal::usb_serial_jtag::UsbSerialJtag::select_phy`; these
+//! drivers follow whichever PHY the swap logic assigns, they do not touch it.
+//!
+//! ## High-speed port
+//!
+//! The high-speed core drives an internal UTMI+ PHY, so no GPIOs are involved.
+//! `HP_SYS.OTG_SUSPENDM` has to be set or the PHY never reports a disconnect,
+//! and the 15 kΩ pull-downs on D+/D− have to follow the direction: connected in
+//! host mode, disconnected in device mode. From chip revision 3.0 they are
+//! software controlled through `LP_SYS` (see [`resources::HsResources`]);
+//! earlier revisions leave them to the OTG core, which ignores the write.
 //!
 //! ## Features
 //!
-//! - Both controllers: full speed (12 Mbit/s, GPIO26/27) and high speed
-//!   (480 Mbit/s, internal UTMI+ PHY)
-//! - Standard device requests, string/configuration descriptors, composite
-//!   devices with interface association descriptors
-//! - [`class::cdc_acm::CdcAcm`] virtual serial port (64-byte packets on the FS
-//!   core, 512-byte packets on the HS core)
-//! - Endpoint handles for custom classes (`bulk`, `interrupt`, `isochronous`)
+//! - Both controllers, both directions: full speed (12 Mbit/s, GPIO26/27) and
+//!   high speed (480 Mbit/s, internal UTMI+ PHY)
+//! - Device: standard device requests, string/configuration descriptors,
+//!   composite devices with interface association descriptors
+//! - Device: [`class::cdc_acm::CdcAcm`] virtual serial port (64-byte packets on
+//!   the FS core, 512-byte packets on the HS core), HID, GS_USB, i2c-tiny-usb
+//!   and UAC 1.0 classes
+//! - Device: endpoint handles for custom classes (`bulk`, `interrupt`,
+//!   `isochronous`)
+//! - Host: root port reset and enumeration at low, full and high speed, control,
+//!   bulk and interrupt transfers, descriptor parsing and a HID boot keyboard
+//!   driver ([`host::class::hid::Keyboard`])
 //!
 //! ## Example
 //!
@@ -38,7 +86,7 @@
 //! use esp32p4_hal::main;
 //! use esp32p4_hal::pac::Peripherals;
 //! use esp32p4_usb::class::cdc_acm::CdcAcm;
-//! use esp32p4_usb::p4::{FsResources, UsbFs};
+//! use esp32p4_usb::{FsResources, UsbFs};
 //! use esp32p4_usb::{UsbBusAllocator, UsbDeviceBuilder};
 //!
 //! #[main]
@@ -73,23 +121,41 @@
 /// Logging facade (re-exported from [`usb_stack`]).
 pub use usb_stack::log;
 
-// ── Shared stack ──────────────────────────────────────────────────────────────
+// ── Shared stack (usb-stack) ─────────────────────────────────────────────────
 
-pub use usb_stack::{bus, class, control, descriptor, device, endpoint, error};
+pub use usb_stack::{BULK_MAX_PACKET_SIZE, CONTROL_MAX_PACKET_SIZE};
+pub use usb_stack::{descriptor, endpoint, request};
 
-pub use usb_stack::{
-    BULK_MAX_PACKET_SIZE, CONTROL_MAX_PACKET_SIZE, DescriptorWriter, DeviceInfo, DeviceState,
-    Direction, Endpoint, EndpointAddress, EndpointIn, EndpointOut, EndpointType, In,
-    InterfaceNumber, IsoSynchronization, IsoUsage, Out, PollResult, StringIndex, UsbBus,
-    UsbBusAllocator, UsbClass, UsbDevice, UsbDeviceBuilder, UsbError, UsbResult,
+// Device side: bus trait, control pipe, state machine and classes.
+pub use usb_stack::device::{
+    DescriptorWriter, DeviceInfo, DeviceState, Direction, Endpoint, EndpointAddress, EndpointIn,
+    EndpointOut, EndpointType, In, InterfaceNumber, IsoSynchronization, IsoUsage, Out, PollResult,
+    StringIndex, UsbBus, UsbBusAllocator, UsbClass, UsbDevice, UsbDeviceBuilder, UsbError,
+    UsbResult,
 };
+pub use usb_stack::device::{bus, class, control, error};
+pub use usb_stack::request::{Feature, Recipient, Request, RequestType, StandardRequest};
+
+// Host side: port/channel trait, enumeration, pipes and the HID keyboard.
+pub use usb_stack::host;
 
 // ── ESP32-P4 implementation ───────────────────────────────────────────────────
 
+// DesignWare OTG register map, shared by both directions.
 mod dwc;
-pub mod p4;
+// Clock, PHY and pad plumbing, shared by both drivers.
+pub mod resources;
+// The drivers. The protocol layers they implement are the `device` and `host`
+// modules re-exported above, so these stay private and only their types are
+// exported from the crate root.
+mod device_driver;
+mod host_driver;
 
-pub use p4::{FsResources, HsResources, UsbFs, UsbHs};
+pub use device_driver::{
+    MAX_ENDPOINT_PACKET_SIZE, MAX_SUPPORTED_ENDPOINTS, OUT_STAGING_BYTES, UsbFs, UsbHs,
+};
+pub use host_driver::{UsbHostFs, UsbHostHs};
+pub use resources::{FsResources, HsResources, USB_OTG_FS_BASE, USB_OTG_HS_BASE};
 
 /// Maximum packet size of a full-speed bulk or interrupt endpoint.
 pub const FS_MAX_PACKET_SIZE: u16 = 64;

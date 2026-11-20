@@ -1,11 +1,11 @@
 [package]
 name = "esp32p4-usb"
-version = "0.1.1"
+version = "0.2.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "USB device stack for the ESP32-P4 on-chip OTG controllers"
+description = "USB device and host stack for the ESP32-P4 on-chip OTG controllers"
 readme = "README.md"
 keywords = ["esp32p4", "usb", "embedded", "no-std", "otg"]
 categories = ["embedded", "hardware-support", "no-std"]

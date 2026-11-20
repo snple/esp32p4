@@ -1,10 +1,10 @@
-//! DesignWare Core (DWC) USB 2.0 OTG registers — device-mode subset.
+//! DesignWare Core (DWC) USB 2.0 OTG registers.
 //!
 //! The DWC register map is not part of the chip's SVD (the IP vendor keeps the
 //! detailed description under NDA), so it cannot be generated into
 //! [`esp32p4_pac`]. The layout below is written by hand from the register
 //! structures used by ESP-IDF (`soc/usb_dwc_struct.h`), limited to the registers
-//! a device-mode, slave-mode (CPU-driven FIFO) driver needs.
+//! a slave-mode (CPU-driven FIFO) driver needs in device and host mode.
 //!
 //! # Address map
 //!
@@ -19,12 +19,22 @@
 //! # FIFO windows
 //!
 //! ```text
-//!   base + 0x1000 * (n + 1)   push into IN endpoint n's TX FIFO
-//!   base + 0x1000             pop from the shared RX FIFO
+//!                    device mode                  host mode
+//!   base + 0x1000    IN endpoint 0 TX FIFO        non-periodic TX FIFO
+//!   base + 0x1000*n  IN endpoint n-1 TX FIFO      -
+//!   base + 0x2000    IN endpoint 1 TX FIFO        periodic TX FIFO
 //! ```
 //!
-//! Every access is a 32-bit word; a packet shorter than four bytes still
-//! occupies one word, and the byte count comes from the RX status entry.
+//! Reads always pop the shared RX FIFO, whatever window they address. Every
+//! access is a 32-bit word; a packet shorter than four bytes still occupies one
+//! word, and the byte count comes from the RX status entry.
+//!
+//! # Host channels
+//!
+//! Host mode replaces endpoints with sixteen channels, each with the same
+//! register block layout at `0x500 + 0x20 * n`. A transfer is programmed through
+//! `HCCHARn`/`HCTSIZn` and started by setting `ChEna`; the core halts the
+//! channel again when the transfer completes.
 
 // The module spells out the device-mode register map, including bits the driver
 // does not need yet; keeping them documents the hardware and makes the next
@@ -62,6 +72,31 @@ pub(crate) mod reg {
     pub const DOEPMSK: usize = 0x814;
     pub const DAINT: usize = 0x818;
     pub const DAINTMSK: usize = 0x81c;
+
+    /// `GNPTXFSIZ` in host mode: the non-periodic TX FIFO start and depth.
+    pub const GNPTXFSIZ: usize = 0x028;
+    /// `GNPTXSTS` in host mode.
+    pub const GNPTXSTS: usize = 0x02c;
+    /// `HPTXFSIZ` in host mode.
+    pub const HPTXFSIZ: usize = 0x100;
+
+    pub const HCFG: usize = 0x400;
+    pub const HFIR: usize = 0x404;
+    pub const HFNUM: usize = 0x408;
+    /// `HPTXSTS` in host mode.
+    pub const HPTXSTS: usize = 0x410;
+    pub const HAINT: usize = 0x414;
+    pub const HAINTMSK: usize = 0x418;
+    pub const HPRT: usize = 0x440;
+
+    /// Host channel 0 control register; channel `n` is at `HCCHAR0 + 0x20 * n`.
+    pub const HCCHAR0: usize = 0x500;
+    /// Host channel 0 interrupt register.
+    pub const HCINT0: usize = 0x508;
+    /// Host channel 0 interrupt mask register.
+    pub const HCINTMSK0: usize = 0x50c;
+    /// Host channel 0 transfer-size register.
+    pub const HCTSIZ0: usize = 0x510;
 
     /// IN endpoint 0 control register; endpoint `n` is at `DIEPCTL0 + 0x20 * n`.
     pub const DIEPCTL0: usize = 0x900;
@@ -129,10 +164,42 @@ pub(crate) mod reg {
         debug_assert!(n >= 1);
         DIEPTXF + 4 * (n - 1)
     }
+
+    /// Address of `HCCHAR<n>`.
+    #[inline]
+    pub const fn hcchar(n: usize) -> usize {
+        HCCHAR0 + 0x20 * n
+    }
+
+    /// Address of `HCINT<n>`.
+    #[inline]
+    pub const fn hcint(n: usize) -> usize {
+        HCINT0 + 0x20 * n
+    }
+
+    /// Address of `HCINTMSK<n>`.
+    #[inline]
+    pub const fn hcintmsk(n: usize) -> usize {
+        HCINTMSK0 + 0x20 * n
+    }
+
+    /// Address of `HCTSIZ<n>`.
+    #[inline]
+    pub const fn hctsiz(n: usize) -> usize {
+        HCTSIZ0 + 0x20 * n
+    }
 }
 
 /// `GOTGCTL` bits.
 pub(crate) mod gotgctl {
+    /// Software override of the VBUS-valid input.
+    pub const VBVALIDOVEN: u32 = 1 << 2;
+    /// Value driven while [`VBVALIDOVEN`] is set.
+    pub const VBVALIDOVVAL: u32 = 1 << 3;
+    /// Software override of the A-session-valid input.
+    pub const AVALIDOVEN: u32 = 1 << 4;
+    /// Value driven while [`AVALIDOVEN`] is set.
+    pub const AVALIDOVVAL: u32 = 1 << 5;
     /// Software override of the B-session-valid input.
     pub const BVALIDOVEN: u32 = 1 << 6;
     /// Value driven while [`BVALIDOVEN`] is set.
@@ -204,19 +271,31 @@ pub(crate) mod grstctl {
 pub(crate) mod gintsts {
     /// 0 = device mode, 1 = host mode.
     pub const CURMOD: u32 = 1 << 0;
+    /// Start of frame.
+    pub const SOF: u32 = 1 << 3;
     pub const RXFLVL: u32 = 1 << 4;
+    /// Non-periodic TX FIFO empty.
+    pub const NPTXFEMP: u32 = 1 << 5;
     pub const ERLYSUSP: u32 = 1 << 10;
     pub const USBSUSP: u32 = 1 << 11;
     pub const USBRST: u32 = 1 << 12;
     pub const ENUMDNE: u32 = 1 << 13;
     pub const IEPINT: u32 = 1 << 18;
     pub const OEPINT: u32 = 1 << 19;
+    /// Host port interrupt, decoded through `HPRT`.
+    pub const PRTINT: u32 = 1 << 24;
+    /// One or more host channels have a pending interrupt (`HAINT`).
+    pub const HCHINT: u32 = 1 << 25;
+    /// Periodic TX FIFO empty.
+    pub const PTXFEMP: u32 = 1 << 26;
+    /// Device disconnected from the host port.
+    pub const DISCONNINT: u32 = 1 << 29;
     pub const WKUPINT: u32 = 1 << 31;
 }
 
 /// `GRXSTSP` fields (device mode).
 pub(crate) mod grxstsp {
-    /// Endpoint number, `[3:0]`.
+    /// Endpoint number, `[3:0]`. In host mode this field is the channel number.
     pub const EPNUM_MASK: u32 = 0xf;
     /// Byte count of the packet, `[14:4]`.
     pub const BCNT_SHIFT: u32 = 4;
@@ -228,14 +307,24 @@ pub(crate) mod grxstsp {
     pub const PKTSTS_SHIFT: u32 = 17;
     pub const PKTSTS_MASK: u32 = 0xf << PKTSTS_SHIFT;
 
-    /// OUT data packet received.
+    /// OUT data packet received (device mode).
     pub const PKTSTS_OUT_DATA: u32 = 0b0010;
-    /// OUT transfer completed.
+    /// IN data packet received (host mode); same encoding as
+    /// [`PKTSTS_OUT_DATA`].
+    pub const PKTSTS_IN_DATA: u32 = 0b0010;
+    /// OUT transfer completed (device mode).
     pub const PKTSTS_OUT_DONE: u32 = 0b0011;
-    /// SETUP transaction completed.
+    /// SETUP transaction completed (device mode).
     pub const PKTSTS_SETUP_DONE: u32 = 0b0100;
-    /// SETUP data packet received.
+    /// SETUP data packet received (device mode).
     pub const PKTSTS_SETUP_DATA: u32 = 0b0110;
+
+    /// IN transfer completed (host mode).
+    pub const PKTSTS_IN_DONE: u32 = 0b0011;
+    /// Data toggle error (host mode).
+    pub const PKTSTS_DTGLERR: u32 = 0b0101;
+    /// Channel halted (host mode).
+    pub const PKTSTS_CHHLTD: u32 = 0b0111;
 }
 
 /// `GRXFSIZ` / `DIEPTXF` fields.
@@ -255,6 +344,9 @@ pub(crate) mod ghwcfg2 {
     /// Full-speed PHY type, `[9:8]`: 0 = none, 1 = full-speed serial.
     pub const FSPHYTYPE_SHIFT: u32 = 8;
     pub const FSPHYTYPE_MASK: u32 = 0x3 << FSPHYTYPE_SHIFT;
+    /// Number of host channels minus one, `[30:27]`.
+    pub const NUMHSTCHNL_SHIFT: u32 = 27;
+    pub const NUMHSTCHNL_MASK: u32 = 0xf << NUMHSTCHNL_SHIFT;
 }
 
 /// `GHWCFG3` fields.
@@ -433,6 +525,184 @@ pub(crate) mod pcgcctl {
     pub const GATEHCLK: u32 = 1 << 1;
 }
 
+// ── Host mode ────────────────────────────────────────────────────────────────
+
+/// `HCFG` bits.
+pub(crate) mod hcfg {
+    /// PHY clock select, `[1:0]`: `0b01` = 48 MHz, `0b10` = 6 MHz (low speed
+    /// behind the PHY's implicit 8× divider).
+    pub const FSLSPCLKSEL_MASK: u32 = 0x3;
+    pub const FSLSPCLKSEL_48M: u32 = 0b01;
+    pub const FSLSPCLKSEL_6M: u32 = 0b10;
+    /// The core is limited to full and low speed.
+    pub const FSLSSUPP: u32 = 1 << 2;
+    /// Scatter/gather DMA instead of buffer DMA. Left clear: slave mode.
+    pub const DESCDMA: u32 = 1 << 23;
+    /// Periodic scheduler enable. Left clear: periodic requests are queued as
+    /// soon as software starts the channel.
+    pub const PERSCHEDENA: u32 = 1 << 26;
+}
+
+/// `HFIR` fields.
+pub(crate) mod hfir {
+    /// Frame interval in PHY clocks (48 000 = 1 ms at 48 MHz).
+    pub const FRINT_MASK: u32 = 0xffff;
+    pub const FRINT_48M: u32 = 48_000;
+    pub const FRINT_6M: u32 = 6_000;
+}
+
+/// `HFNUM` fields.
+pub(crate) mod hfnum {
+    /// Current frame number, `[15:0]`.
+    pub const FRNUM_MASK: u32 = 0xffff;
+    /// Time remaining in the current frame, `[31:16]`.
+    pub const FRREM_SHIFT: u32 = 16;
+    pub const FRREM_MASK: u32 = 0xffff << FRREM_SHIFT;
+}
+
+/// `HPRT` bits.
+pub(crate) mod hprt {
+    /// A device is attached.
+    pub const PRTCONNSTS: u32 = 1 << 0;
+    /// Connect status changed (write one to clear).
+    pub const PRTCONNDET: u32 = 1 << 1;
+    /// Port enabled (write one to disable).
+    pub const PRTENA: u32 = 1 << 2;
+    /// Port enabled or disabled (write one to clear).
+    pub const PRTENCHNG: u32 = 1 << 3;
+    /// Overcurrent active (read only).
+    pub const PRTOVRCURRACT: u32 = 1 << 4;
+    /// Overcurrent changed (write one to clear).
+    pub const PRTOVRCURRCHNG: u32 = 1 << 5;
+    /// Port resume signalling.
+    pub const PRTRES: u32 = 1 << 6;
+    /// Port suspended.
+    pub const PRTSUSP: u32 = 1 << 7;
+    /// Port reset.
+    pub const PRTRST: u32 = 1 << 8;
+    /// Line state, `[11:10]`.
+    pub const PRTLNSTS_SHIFT: u32 = 10;
+    pub const PRTLNSTS_MASK: u32 = 0x3 << PRTLNSTS_SHIFT;
+    /// Port power.
+    pub const PRTPWR: u32 = 1 << 12;
+    /// Test control, `[16:13]`.
+    pub const PRTTSTCTL_SHIFT: u32 = 13;
+    /// Port speed, `[18:17]`: 0 = high, 1 = full, 2 = low.
+    pub const PRTSPD_SHIFT: u32 = 17;
+    pub const PRTSPD_MASK: u32 = 0x3 << PRTSPD_SHIFT;
+    /// Bits that are cleared by writing one; a read-modify-write must clear
+    /// them so the write does not acknowledge events it did not observe.
+    pub const W1C_MASK: u32 = PRTCONNDET | PRTENA | PRTENCHNG | PRTOVRCURRCHNG;
+}
+
+/// `HAINT` / `HAINTMSK` fields.
+pub(crate) mod haint {
+    pub const CHANNEL_MASK: u32 = 0xffff;
+}
+
+/// `HCCHAR` fields.
+pub(crate) mod hcchar {
+    /// Maximum packet size, `[10:0]`.
+    pub const MPS_MASK: u32 = 0x7ff;
+    /// Endpoint number, `[14:11]`.
+    pub const EPNUM_SHIFT: u32 = 11;
+    pub const EPNUM_MASK: u32 = 0xf << EPNUM_SHIFT;
+    /// Direction: 1 = IN.
+    pub const EPDIR: u32 = 1 << 15;
+    /// The device is low speed behind a full-speed hub. Zero for a device on
+    /// the root port, which the core already knows about.
+    pub const LSPDDEV: u32 = 1 << 17;
+    /// Endpoint type, `[19:18]`.
+    pub const EPTYPE_SHIFT: u32 = 18;
+    pub const EPTYPE_MASK: u32 = 0x3 << EPTYPE_SHIFT;
+    pub const EPTYPE_CONTROL: u32 = 0b00 << EPTYPE_SHIFT;
+    pub const EPTYPE_ISO: u32 = 0b01 << EPTYPE_SHIFT;
+    pub const EPTYPE_BULK: u32 = 0b10 << EPTYPE_SHIFT;
+    pub const EPTYPE_INTR: u32 = 0b11 << EPTYPE_SHIFT;
+    /// Multi-count / error-count, `[21:20]`. Must not stay at the reserved
+    /// value 0.
+    pub const EC_SHIFT: u32 = 20;
+    pub const EC_MASK: u32 = 0x3 << EC_SHIFT;
+    /// Device address, `[28:22]`.
+    pub const DEVADDR_SHIFT: u32 = 22;
+    pub const DEVADDR_MASK: u32 = 0x7f << DEVADDR_SHIFT;
+    /// Send an OUT token in an odd frame (isochronous only).
+    pub const ODDFRM: u32 = 1 << 29;
+    /// Disable the channel (write one, together with `CHENA`, to halt it).
+    pub const CHDIS: u32 = 1 << 30;
+    /// Channel enable.
+    pub const CHENA: u32 = 1 << 31;
+}
+
+/// `HCTSIZ` fields.
+pub(crate) mod hctsiz {
+    /// Transfer size in bytes, `[18:0]`.
+    pub const XFERSIZE_MASK: u32 = 0x7_ffff;
+    /// Packet count, `[28:19]`.
+    pub const PKTCNT_SHIFT: u32 = 19;
+    pub const PKTCNT_MASK: u32 = 0x3ff << PKTCNT_SHIFT;
+    /// Data PID, `[30:29]`.
+    pub const PID_SHIFT: u32 = 29;
+    pub const PID_MASK: u32 = 0x3 << PID_SHIFT;
+    pub const PID_DATA0: u32 = 0b00 << PID_SHIFT;
+    pub const PID_DATA1: u32 = 0b10 << PID_SHIFT;
+    pub const PID_SETUP: u32 = 0b11 << PID_SHIFT;
+    /// Do ping (high-speed OUT only).
+    pub const DOPNG: u32 = 1 << 31;
+}
+
+/// `HCINT` bits.
+pub(crate) mod hcint {
+    /// Transfer completed.
+    pub const XFERCOMPL: u32 = 1 << 0;
+    /// Channel halted.
+    pub const CHHLTD: u32 = 1 << 1;
+    /// AHB error.
+    pub const AHBERR: u32 = 1 << 2;
+    /// STALL handshake received.
+    pub const STALL: u32 = 1 << 3;
+    /// NAK handshake received.
+    pub const NACK: u32 = 1 << 4;
+    /// ACK handshake received.
+    pub const ACK: u32 = 1 << 5;
+    /// NYET handshake received.
+    pub const NYET: u32 = 1 << 6;
+    /// Transaction error: CRC, timeout, bit stuff or false EOP.
+    pub const XACTERR: u32 = 1 << 7;
+    /// Babble error.
+    pub const BBLERR: u32 = 1 << 8;
+    /// Frame overrun.
+    pub const FRMOVRUN: u32 = 1 << 9;
+    /// Data toggle error.
+    pub const DATATGLERR: u32 = 1 << 10;
+    /// Buffer not available (DMA modes only).
+    pub const BNAINTR: u32 = 1 << 11;
+    /// Excessive (three consecutive) transaction errors.
+    pub const XCS_XACT_ERR: u32 = 1 << 12;
+
+    /// Everything that ends a transaction one way or another.
+    pub const COMPLETION_MASK: u32 = XFERCOMPL | CHHLTD;
+
+    /// Errors that mean the packet did not transfer and may succeed when it is
+    /// sent again.
+    pub const RETRY_MASK: u32 = XACTERR | DATATGLERR | FRMOVRUN;
+}
+
+/// `GNPTXFSIZ` / `HPTXFSIZ` fields.
+pub(crate) mod hptxfsiz {
+    /// Start address in words, `[15:0]`.
+    pub const START_MASK: u32 = 0xffff;
+    /// Depth in words, `[31:16]`.
+    pub const DEPTH_SHIFT: u32 = 16;
+    pub const DEPTH_MASK: u32 = 0xffff << DEPTH_SHIFT;
+}
+
+/// `GNPTXSTS` / `HPTXSTS` fields.
+pub(crate) mod htxsts {
+    /// Free words in the TX FIFO, `[15:0]`.
+    pub const SPCAVAIL_MASK: u32 = 0xffff;
+}
+
 use reg::*;
 
 /// A DWC OTG controller instance.
@@ -557,6 +827,31 @@ impl Dwc {
     /// Words available in the total data FIFO.
     pub(crate) fn fifo_depth(&self) -> u16 {
         ((self.read(GHWCFG3) & ghwcfg3::DFIFO_DEPTH_MASK) >> ghwcfg3::DFIFO_DEPTH_SHIFT) as u16
+    }
+
+    /// Number of host channels the core implements.
+    pub(crate) fn channel_count(&self) -> usize {
+        let raw = self.read(GHWCFG2);
+        (((raw & ghwcfg2::NUMHSTCHNL_MASK) >> ghwcfg2::NUMHSTCHNL_SHIFT) + 1) as usize
+    }
+
+    /// The non-periodic TX FIFO push window (host mode).
+    ///
+    /// Reads through this window still pop the shared RX FIFO: the two TX FIFOs
+    /// live in the same 4 KB push regions the device mode IN endpoints use.
+    #[inline]
+    pub(crate) fn np_tx_fifo(&self) -> Fifo {
+        Fifo {
+            ptr: self.ptr(FIFO_WINDOW),
+        }
+    }
+
+    /// The periodic TX FIFO push window (host mode).
+    #[inline]
+    pub(crate) fn p_tx_fifo(&self) -> Fifo {
+        Fifo {
+            ptr: self.ptr(FIFO_WINDOW * 2),
+        }
     }
 }
 

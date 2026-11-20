@@ -26,7 +26,7 @@
 | `interrupt` | [interrupt.rs](../esp32p4-hal/src/interrupt.rs) | CLIC 线与矩阵、`claim`/`InterruptHandler` |
 | `emac` / `net` | [emac/](../esp32p4-hal/src/emac) / [net.rs](../esp32p4-hal/src/net.rs) | RMII + MDIO + DMA，smoltcp 同步栈 |
 | `psram` | [psram/](../esp32p4-hal/src/psram) | MPLL、MSPI、MMU 映射、分配器 |
-| `usb` | [esp32p4-usb](../esp32p4-usb/) | USB OTG **设备（slave）** 侧：CDC-ACM 等 |
+| `usb` | [esp32p4-usb](../esp32p4-usb/) | USB OTG 设备与主机两侧的 DWC 驱动（slave、轮询）；协议层在共享 crate `usb-stack`（device：CDC-ACM 等 class；host：枚举 + HID 键盘） |
 | `usb_serial_jtag` | [usb_serial_jtag.rs](../esp32p4-hal/src/usb_serial_jtag.rs) | USB Serial/JTAG 控制台 |
 | `system` / `startup` | [system.rs](../esp32p4-hal/src/system.rs) / [startup.rs](../esp32p4-hal/src/startup.rs) | 软复位、复位原因、看门狗与核 1 的启动清理 |
 | `cache` | [cache.rs](../esp32p4-hal/src/cache.rs) | writeback / invalidate / writeback_invalidate，L1 I/D + L2 挂起与恢复 |
@@ -61,8 +61,9 @@
    eFuse 工厂校准与毫伏换算）；HP 数字控制器（pattern 表 + DMA）与 LP 核侧的 LP ADC 待补。
    **TSENS**（`LP_TSENS`，独立的温度传感器）仍未实现。
 6. **PWM 家族：LEDC、MCPWM、RMT、PCNT**：调光、电机、WS2812/红外、编码器。
-7. **TWAI（CAN-FD ×3）、I2S0/1/2（音频）、SDIO slave、USB OTG host**：
-   `esp32p4-usb` 现在只有设备侧，host 侧缺失。
+7. **TWAI（CAN-FD ×3）、I2S0/1/2（音频）、SDIO slave**。
+   ~~USB OTG host~~ 已完成：`esp32p4-usb` 的 `host` 模块（枚举、控制/bulk/interrupt
+   传输、HID boot 键盘）加 `esp32p4-usb` 的 DWC 主机模式驱动；HUB、等时传输仍是缺口。
 
 ## 4. 第 2 层：系统与电源
 

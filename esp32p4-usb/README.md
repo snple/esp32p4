@@ -1,32 +1,40 @@
 # esp32p4-usb
 
-USB 2.0 **device** stack for the ESP32-P4's two on-chip OTG controllers.
+USB 2.0 **device and host** stack for the ESP32-P4's two on-chip OTG controllers.
 
-The MCU-independent part — bus trait, control pipe, device state machine,
-CDC-ACM and HID classes — lives in the shared [`usb-stack`](https://crates.io/crates/usb-stack)
-crate and is re-exported here. This crate adds the Synopsys DesignWare OTG
-driver:
+Both protocol layers — the device stack (bus trait, control pipe, device state
+machine, CDC-ACM and HID classes) and the host stack (enumeration, control
+transfers, bulk and interrupt pipes, HID) — live in the shared
+[`usb-stack`](https://crates.io/crates/usb-stack) crate and are re-exported here.
+What this crate adds is the Synopsys DesignWare OTG driver for both directions:
 
 ```text
-  application / class          class::cdc_acm, your own UsbClass
-  ────────────────────────     (usb-stack)
-  device::UsbDevice            enumeration, standard requests, EP0
-  ────────────────────────     (usb-stack)
-  bus::UsbBus                  trait: allocate, poll, read, write
-  ────────────────────────     (usb-stack)
-  p4::UsbFs / p4::UsbHs        DWC OTG slave-mode driver (this crate)
+  device mode                          host mode
+  ──────────────────────────           ──────────────────────────
+  class::cdc_acm, UsbClass             host::class::hid::Keyboard
+  device::UsbDevice                    host::Device / host::Pipe
+  bus::UsbBus                          host::HostController
+  ──────────────────────────           ──────────────────────────
+  (usb-stack, re-exported)             (usb-stack, re-exported)
+  UsbFs / UsbHs                        UsbHostFs / UsbHostHs
+  ──────────────────────────           ──────────────────────────
+  (this crate)                         (this crate)
 ```
 
 | Module | Contents |
 |--------|----------|
-| `p4` | `UsbFs` / `UsbHs`, the full-speed (12 Mbit/s, GPIO26/27) and high-speed (480 Mbit/s, internal UTMI+ PHY) drivers |
-| `dwc` | DesignWare OTG core register definitions |
-| everything else | re-exported from `usb-stack` |
+| crate root | the four drivers (`UsbFs` / `UsbHs`, `UsbHostFs` / `UsbHostHs`) and the `FsResources` / `HsResources` bundles they take |
+| `resources` | which core to drive, plus the clock, reset, PHY and pad set-up shared by both directions |
+| `dwc` | DesignWare OTG core register definitions, shared by both directions |
+| everything else | re-exported from `usb-stack` (`device`, `host`, `endpoint`, `descriptor`, `request`) |
 
-The driver is fully synchronous: no interrupts, no DMA, no `async`.
-[`UsbDevice::poll`] moves packets in and out of the controller FIFOs and
-dispatches them to the classes, so it has to be called from the main loop every
-few milliseconds.
+Both directions are fully synchronous: no interrupts, no DMA, no `async`. The
+device driver moves packets when `UsbDevice::poll` is called; the host driver
+blocks in `Host::enumerate`, `Device::control` and `Pipe::read`/`write` until the
+transaction completes.
+
+A core belongs to one direction at a time: the device and host drivers share the
+"core taken" flag, so initialising both panics.
 
 ## Adding it to a project
 
@@ -35,22 +43,63 @@ few milliseconds.
 esp32p4-usb = "0.1"
 ```
 
+Device mode:
+
 ```rust,ignore
 use esp32p4_hal::pac::Peripherals;
 use esp32p4_usb::class::cdc_acm::CdcAcm;
-use esp32p4_usb::p4::{FsResources, UsbFs};
+use esp32p4_usb::{FsResources, UsbFs};
 use esp32p4_usb::{UsbBusAllocator, UsbDeviceBuilder};
+
+let allocator = UsbBusAllocator::new(UsbFs::new(FsResources {
+    clkrst: &dp.HP_SYS_CLKRST,
+    lp_aon_clkrst: &dp.LP_AON_CLKRST,
+    usb_wrap: &dp.USB_WRAP,
+    gpio: &dp.GPIO,
+    io_mux: &dp.IO_MUX,
+}));
+let mut serial = CdcAcm::new(&allocator);
+let mut device = UsbDeviceBuilder::new(&allocator, 0x303a, 0x1001)
+    .product("ESP32-P4 serial")
+    .build();
+```
+
+Host mode:
+
+```rust,ignore
+use esp32p4_hal::pac::Peripherals;
+use esp32p4_usb::host::Host;
+use esp32p4_usb::host::class::hid::Keyboard;
+use esp32p4_usb::{FsResources, UsbHostFs};
+
+let controller = UsbHostFs::new(FsResources {
+    clkrst: &dp.HP_SYS_CLKRST,
+    lp_aon_clkrst: &dp.LP_AON_CLKRST,
+    usb_wrap: &dp.USB_WRAP,
+    gpio: &dp.GPIO,
+    io_mux: &dp.IO_MUX,
+});
+let host = Host::new(&controller);
+
+let device = host.enumerate()?;               // resets the port and enumerates
+device.set_configuration(1)?;
+let keyboard = Keyboard::open(&device)?;
 ```
 
 ## Features
 
-- Both controllers: full speed (GPIO26/27) and high speed (internal PHY)
-- Standard device requests, string/configuration descriptors, composite
-  devices with interface association descriptors
-- `class::cdc_acm::CdcAcm` virtual serial port — 64-byte bulk packets on the FS
-  core, 512-byte on the HS core
-- Endpoint handles for custom classes (`bulk`, `interrupt`, `isochronous`)
+- Both controllers, both directions: full speed (GPIO26/27) and high speed
+  (internal PHY)
+- Device: standard device requests, string/configuration descriptors, composite
+  devices with interface association descriptors, CDC-ACM, HID, GS_USB,
+  i2c-tiny-usb and UAC 1.0 class drivers
+- Host: root port reset and enumeration, control/bulk/interrupt transfers at low,
+  full and high speed, descriptor parsing, string decoding and a HID boot
+  keyboard driver
 - `defmt` (off by default) — log through `defmt`
+
+Host mode does not support hubs, isochronous transfers or SRP/HNP; the chip has
+no VBUS switch, so the board has to power the port.
 
 ## License
 
