@@ -54,4 +54,5 @@ smoltcp = { version = "0.14", optional = true, default-features = false, feature
 ] }
 
 [package.metadata.docs.rs]
+all-features = true
 targets = ["riscv32imafc-unknown-none-elf"]
