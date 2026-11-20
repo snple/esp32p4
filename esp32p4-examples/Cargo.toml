@@ -157,3 +157,8 @@ required-features = ["defmt"]
 name = "sd"
 path = "src/sd.rs"
 required-features = ["defmt"]
+
+[[bin]]
+name = "tsens"
+path = "src/tsens.rs"
+required-features = ["defmt"]

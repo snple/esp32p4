@@ -13,7 +13,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | [`esp32p4-pac`](esp32p4-pac/) | **PAC**：由 `esp32p4.svd` 生成，提供寄存器块、字段常量和访问器。勿手改 |
 | [`esp32p4-rt`](esp32p4-rt/) | **运行时**：`_start`、trap 入口、`link.x`、CSR/汇编封装 |
 | [`esp32p4-macro`](esp32p4-macro/) | **过程宏**：`#[main]` |
-| [`esp32p4-hal`](esp32p4-hal/) | **HAL**：时钟树、GPIO / IO MUX、UART、I2C 主机、SPI 主机/从机（GPSPI2/3）、SD 卡主机（SDHOST）、ADC、GDMA（GDMA-AHB）与描述符链、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
+| [`esp32p4-hal`](esp32p4-hal/) | **HAL**：时钟树、GPIO / IO MUX、UART、I2C 主机、SPI 主机/从机（GPSPI2/3）、SD 卡主机（SDHOST）、ADC、温度传感器、GDMA（GDMA-AHB）与描述符链、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
 | [`esp32p4-usb`](esp32p4-usb/) | **USB 栈**：DWC OTG 全速/高速控制器的设备模式与主机模式驱动（slave 模式、轮询）；协议层全部在跨仓库共享的 [`usb-stack`](../../rp2350/usb-stack)（设备状态机、标准请求、class、主机枚举与控制/bulk/interrupt 传输、HID 键盘） |
 | [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、UART 回环、I2C 扫描、SPI 主机/从机自检、SD 卡读写、ADC 采样、GDMA 存储到存储拷贝、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC、USB HID 主机 |
 | [`xtask`](xtask/) | 构建辅助：`cargo xtask gen-pac` |
@@ -50,6 +50,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `dma_mem2mem` | GDMA-AHB 的存储到存储拷贝：单描述符 64 B 与四描述符 16 KB 两种链路，逐字节校验并打印吞吐 |
 | `spi` | GP-SPI2 主机对 GP-SPI3 从机（四根飞线）：时钟模式 0–3 × 1/4/32/64 字节双向校验 |
 | `sd` | SDHOST 上的 SD 卡：识别、读 CID/CSD 与容量、读第 0 块、双块写入后回读比对 |
+| `tsens` | 温度传感器：每秒打印一次芯片温度，自动选择测量档位 |
 
 ## 快速开始
 
@@ -898,6 +899,35 @@ CID/CSD、读第 0 块（`0x55AA` 引导签名），再在卡尾写两个块并�
   （卡总线已经传完 1024 字节），改成数据阶段结束后手发 CMD12 就正常。另外 IDMAC 的描述符
   与缓冲区都过 cache，必须用 `cache::writeback`/`invalidate` 维护（直通别名在这条 DMA 上
   读不到）。
+
+## 温度传感器
+
+[`tsens`](esp32p4-hal/src/tsens.rs) 驱动低功耗域里的温度传感器（`LP_TSENS`）：
+
+- `init` 打开 `LP_PERI` 的时钟、脉冲复位，给传感器上电，等稳定后就能连续读数；
+- 传感器有 5 个测量档位（50~125 / 20~100 / -10~80 / -30~50 / -40~20 °C），档位越窄
+  精度越高。档位通过模拟块 `I2C_SAR_ADC` 的 `TSENS_DAC` 字段选择（走 `regi2c`）；
+- `update()` 读一次，若结果不在当前档位内就换档、等稳定再读，返回毫摄氏度；
+  想固定档位就用 `set_range()` + `millidegrees()`；
+- 硬件自动监测：`set_sample_rate()` / `set_thresholds()` / `set_monitoring_delta()` /
+  `enable_monitoring()` + `enable_sampling()`，越界后 `interrupt_pending()` 置位，
+  `monitoring_reason()` 告诉你越的是上限还是下限。
+
+换算用参考手册的定点公式 `T = 0.4386 × value − 27.88 × offset − 20.52`，`offset` 由档位
+决定，不需要浮点。
+
+```rust
+let mut sensor = TemperatureSensor::init(dp.LP_TSENS, &dp.LP_PERI);
+
+loop {
+    defmt::info!("{} m°C", sensor.update());
+    delay.delay_ms(1_000);
+}
+```
+
+示例 [`tsens`](esp32p4-examples/src/tsens.rs) 每秒打印一次温度。上板实测室温约 23.8 °C，
+并且五个档位各自换算出的温度互相吻合（24.0 / 24.0 / 23.8 / 24.4 / 24.6 °C），说明档位
+的 DAC 值与 offset 表是对的；把窗口设成永远越界时监测中断能正确置位并报告是「超过上限」。
 
 ## eFuse 与芯片版本
 

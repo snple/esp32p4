@@ -22,6 +22,7 @@
 | `gpio` | [gpio/](../esp32p4-hal/src/gpio) | 引脚电气配置、GPIO 读写、四路中断、完整的 HP GPIO 交换矩阵信号路由，以及每个焊盘的直接 IO MUX 功能表（`pins`） |
 | `uart` | [uart.rs](../esp32p4-hal/src/uart.rs) | UART0–4：轮询收发、帧格式、流控、按源中断、GPIO 矩阵引脚路由 |
 | `i2c` | [i2c.rs](../esp32p4-hal/src/i2c.rs) | I2C0/1 主机：任意 SCL、7 位地址、写/读/写读、总线恢复、按源中断 |
+| `tsens` | [tsens.rs](../esp32p4-hal/src/tsens.rs) | `LP_TSENS` 温度传感器：上电与时钟、5 档自动选择、毫摄氏度读数、硬件监测阈值与中断 |
 | `sdhost` | [sdhost.rs](../esp32p4-hal/src/sdhost.rs) | SD 卡主机（`SDHOST`）：识别（CMD0/8/2/3/9/7、ACMD41/6）、CSD 容量解码、1/4 位总线、内部 DMA 的块读写 |
 | `spi` | [spi.rs](../esp32p4-hal/src/spi.rs) | GP-SPI2/3 主机与从机：CPU 传输（64 B 缓冲）、时钟模式 0–3、位序、硬件 CS 时序、任意引脚路由 |
 | `dma` | [dma/](../esp32p4-hal/src/dma) | GDMA-AHB：3 组收发通道、描述符链/环、外设选择、存储到存储拷贝、按源中断、优先级与突发 |
@@ -84,7 +85,8 @@
    - **卡检测/写保护引脚**（矩阵信号已就位，驱动侧未接）。
 6. ~~**ADC**：电压/电池采样。~~ 已完成 `ADC1`/`ADC2` 的 one-shot 读取（每通道衰减、
    eFuse 工厂校准与毫伏换算）；HP 数字控制器（pattern 表 + DMA）与 LP 核侧的 LP ADC 待补。
-   **TSENS**（`LP_TSENS`，独立的温度传感器）仍未实现。
+   **TSENS** 已实现（见上面 `tsens` 一行）：5 个档位的自动选择、毫摄氏度换算、硬件
+   自动监测与越界中断；ETM 任务/事件与 LP 核侧的唤醒路径未接。
 7. **PWM 家族：LEDC、MCPWM、RMT、PCNT**：调光、电机、WS2812/红外、编码器。
 8. **TWAI（CAN-FD ×3）、I2S0/1/2（音频）、SDIO slave**。
    ~~USB OTG host~~ 已完成：`esp32p4-usb` 的 `host` 模块（枚举、控制/bulk/interrupt
