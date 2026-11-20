@@ -195,6 +195,7 @@ pub mod ledc;
 pub mod mmu;
 #[cfg(feature = "net")]
 pub mod net;
+pub mod pcnt;
 pub mod psram;
 pub mod regi2c;
 pub mod reset;
