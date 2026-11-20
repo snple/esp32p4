@@ -403,6 +403,8 @@ checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
 [[package]]
 name = "usb-stack"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c786bef0483a47759b9c634ee9af8abfbb81eeeb95966cd45f522e05e4f32b9b"
 dependencies = [
  "defmt",
 ]
