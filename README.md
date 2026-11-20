@@ -794,6 +794,43 @@ adc.scan(Unit::Adc1, &patterns, &dma.rx_channel::<1>(), &mut buffer, &mut descri
 - **让 FSM 自己管电源**：`XPD_SARn_FORCE=0`，否则 one-shot 留下的「软件强制上电」会让
   FSM 的上下电时序失效。
 
+### 滤波器与阈值监控器
+
+HP 数字控制器自带两级测量滤波器（`FILTER_CTRL0/1`）与两个阈值监控器
+（`THRES0/1_CTRL`），扫描与 one-shot 都能用：
+
+```rust
+adc.set_filter(
+    FilterIndex::Zero,
+    Unit::Adc1,
+    Some(Filter { channel: input_a.channel(), coefficient: FilterCoefficient::_4 }),
+);
+adc.set_monitor(
+    MonitorIndex::Zero,
+    Unit::Adc1,
+    Some(Monitor { channel: input_a.channel(), low: 0, high: 1000 }),
+);
+
+if let Some(bound) = adc.monitor_state(MonitorIndex::Zero) {
+    adc.clear_monitor(MonitorIndex::Zero); // 状态是锁存的，读后要手动清
+}
+```
+
+滤波器是一阶 IIR（`value = ((k-1) * previous + new) / k + 0.5`），`k` 取 2/4/8/16/64。
+两个只在硬件上才暴露的点：
+
+- **两套通道编码不一样**：滤波器的 `FILTER_CHANNELn` 是 `(unit + 1) << 3 | channel`
+  （ADC1 ch0 写 8，与 ESP-IDF 一致），监控器的 `THRESn_CHANNEL` 是 `unit << 3 | channel`
+  （ADC1 ch0 写 0）。按监控器的写法配滤波器、或反过来，寄存器不报错但功能静默失效；
+- **监控器不需要滤波器**：两者是并行的独立通路，没配 `Filter` 时监控器照样收到样本。
+  阈值是 13 位原始码（0–8191），比较结果锁存在 `int_raw` 里，`monitor_state` 读它，
+  越界后必须 `clear_monitor` 才能看到下一次状态。
+
+中断经 `ADC_INTR` 进中断矩阵，`enable_monitor_interrupt` 只负责打开传感器自己这一路的
+使能。示例 [`adc_scan`](esp32p4-examples/src/adc_scan.rs) 在扫描里同时配了滤波器和监控器，
+每轮打印监控状态（实测高压时 `Some(High)`、窗口放宽后 `None`）。滤波的平滑效果没有做
+定量验证：浮空焊盘采到的是一段缓慢漂移，产生不了可比较的阶跃。
+
 ## GDMA
 
 [`dma`](esp32p4-hal/src/dma/mod.rs) 是 GDMA-AHB（PAC 里的 `AHB_DMA`，基址 `0x5008_5000`）。

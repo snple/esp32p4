@@ -984,3 +984,222 @@ impl Adc {
         }
     }
 }
+
+// ============================================================================
+// Filters and threshold monitors
+// ============================================================================
+
+/// Which of the two measurement filters to configure.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum FilterIndex {
+    /// Filter 0.
+    Zero,
+    /// Filter 1.
+    One,
+}
+
+/// Smoothing factor of a measurement filter.
+///
+/// The filter is a first-order IIR stage: `value = ((k - 1) * previous + new) / k
+/// + 0.5`, so a larger factor smooths more and reacts slower.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum FilterCoefficient {
+    /// `k = 2`, the least smoothing.
+    _2,
+    /// `k = 4`.
+    _4,
+    /// `k = 8`.
+    _8,
+    /// `k = 16`.
+    _16,
+    /// `k = 64`, the most smoothing.
+    _64,
+}
+
+impl FilterCoefficient {
+    /// Value the register expects.
+    const fn register(self) -> u32 {
+        match self {
+            Self::_2 => 1,
+            Self::_4 => 2,
+            Self::_8 => 3,
+            Self::_16 => 4,
+            Self::_64 => 6,
+        }
+    }
+}
+
+/// Measurement filter for one channel.
+///
+/// The two filters exist so two channels can be smoothed independently; a
+/// channel can only be assigned to one of them.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct Filter {
+    /// Channel whose samples are smoothed.
+    pub channel: u8,
+    /// How strongly to smooth.
+    pub coefficient: FilterCoefficient,
+}
+
+/// Which of the two threshold monitors to configure.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum MonitorIndex {
+    /// Monitor 0.
+    Zero,
+    /// Monitor 1.
+    One,
+}
+
+/// Threshold monitor for one channel.
+///
+/// Samples outside `low..=high` latch the matching status flag and, if enabled,
+/// raise the monitor's interrupt. Filters and monitors are configured
+/// independently: a monitor works without a [`Filter`] covering its channel.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct Monitor {
+    /// Channel whose samples are compared.
+    pub channel: u8,
+    /// Lower bound, in raw counts.
+    pub low: u16,
+    /// Upper bound, in raw counts.
+    pub high: u16,
+}
+
+/// Which bound a threshold monitor tripped.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum Threshold {
+    /// The sample was above `high`.
+    High,
+    /// The sample was below `low`.
+    Low,
+}
+
+impl Adc {
+    /// Configures one measurement filter, or disables it with `None`.
+    ///
+    /// A channel can be assigned to one filter at a time; the filter smooths
+    /// every sample of that channel.
+    pub fn set_filter(&self, index: FilterIndex, unit: Unit, filter: Option<Filter>) {
+        let r = self.regs();
+        r.filter_ctrl0.set_filter_reset();
+        r.filter_ctrl0.clr_filter_reset();
+
+        let (channel, coefficient) = match filter {
+            Some(filter) => (
+                (unit.index() as u32 + 1) << 3 | u32::from(filter.channel & 0x7),
+                filter.coefficient.register(),
+            ),
+            // 0xf is the "no channel" marker ESP-IDF writes when disabling.
+            None => (0xf, 0),
+        };
+        match index {
+            FilterIndex::Zero => {
+                r.filter_ctrl0.write_filter_channel0(channel);
+                r.filter_ctrl1.write_filter_factor0(coefficient);
+            }
+            FilterIndex::One => {
+                r.filter_ctrl0.write_filter_channel1(channel);
+                r.filter_ctrl1.write_filter_factor1(coefficient);
+            }
+        }
+    }
+
+    /// Configures one threshold monitor, or disables it with `None`.
+    ///
+    /// The channel encoding puts the unit above the channel number:
+    /// `unit << 3 | channel`.
+    pub fn set_monitor(&self, index: MonitorIndex, unit: Unit, monitor: Option<Monitor>) {
+        let r = self.regs();
+        match monitor {
+            Some(monitor) => {
+                let channel = (unit.index() as u32) << 3 | u32::from(monitor.channel & 0x7);
+                match index {
+                    MonitorIndex::Zero => {
+                        r.thres0_ctrl.write_thres0_low(u32::from(monitor.low));
+                        r.thres0_ctrl.write_thres0_high(u32::from(monitor.high));
+                        r.thres0_ctrl.write_thres0_channel(channel);
+                        r.thres_ctrl.set_thres0_en();
+                    }
+                    MonitorIndex::One => {
+                        r.thres1_ctrl.write_thres1_low(u32::from(monitor.low));
+                        r.thres1_ctrl.write_thres1_high(u32::from(monitor.high));
+                        r.thres1_ctrl.write_thres1_channel(channel);
+                        r.thres_ctrl.set_thres1_en();
+                    }
+                }
+            }
+            None => match index {
+                MonitorIndex::Zero => r.thres_ctrl.clr_thres0_en(),
+                MonitorIndex::One => r.thres_ctrl.clr_thres1_en(),
+            },
+        }
+    }
+
+    /// Which bound the last comparison tripped, or `None` while it is inside
+    /// the window.
+    pub fn monitor_state(&self, index: MonitorIndex) -> Option<Threshold> {
+        let r = self.regs();
+        let (high, low) = match index {
+            MonitorIndex::Zero => (
+                r.int_raw.thres0_high_int_raw(),
+                r.int_raw.thres0_low_int_raw(),
+            ),
+            MonitorIndex::One => (
+                r.int_raw.thres1_high_int_raw(),
+                r.int_raw.thres1_low_int_raw(),
+            ),
+        };
+        match (high, low) {
+            (true, _) => Some(Threshold::High),
+            (false, true) => Some(Threshold::Low),
+            _ => None,
+        }
+    }
+
+    /// Clears the monitor's latched status.
+    pub fn clear_monitor(&self, index: MonitorIndex) {
+        let r = self.regs();
+        match index {
+            MonitorIndex::Zero => {
+                r.int_clr.trigger_thres0_high_int_clr();
+                r.int_clr.trigger_thres0_low_int_clr();
+            }
+            MonitorIndex::One => {
+                r.int_clr.trigger_thres1_high_int_clr();
+                r.int_clr.trigger_thres1_low_int_clr();
+            }
+        }
+    }
+
+    /// Enables or disables the monitor's interrupt line.
+    ///
+    /// The line itself is `ADC_INTR` in the interrupt matrix; this only unmasks
+    /// the sensor's own contribution.
+    pub fn enable_monitor_interrupt(&self, index: MonitorIndex, enable: bool) {
+        let r = self.regs();
+        match (index, enable) {
+            (MonitorIndex::Zero, true) => {
+                r.int_ena.set_thres0_high_int_ena();
+                r.int_ena.set_thres0_low_int_ena();
+            }
+            (MonitorIndex::Zero, false) => {
+                r.int_ena.clr_thres0_high_int_ena();
+                r.int_ena.clr_thres0_low_int_ena();
+            }
+            (MonitorIndex::One, true) => {
+                r.int_ena.set_thres1_high_int_ena();
+                r.int_ena.set_thres1_low_int_ena();
+            }
+            (MonitorIndex::One, false) => {
+                r.int_ena.clr_thres1_high_int_ena();
+                r.int_ena.clr_thres1_low_int_ena();
+            }
+        }
+    }
+}

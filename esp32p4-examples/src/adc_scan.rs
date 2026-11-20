@@ -21,7 +21,10 @@ use defmt_rtt as _;
 #[cfg(feature = "defmt")]
 defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
-use esp32p4_hal::adc::{Adc, AdcInput, Attenuation, Pattern, Sample, Unit};
+use esp32p4_hal::adc::{
+    Adc, AdcInput, Attenuation, Filter, FilterCoefficient, FilterIndex, Monitor, MonitorIndex,
+    Pattern, Sample, Unit,
+};
 use esp32p4_hal::delay::Delay;
 use esp32p4_hal::dma::{AhbDma, Descriptor};
 use esp32p4_hal::gpio::Pins;
@@ -59,6 +62,26 @@ fn main() -> ! {
         Pattern::new(input_a.channel(), input_a.attenuation()),
         Pattern::new(input_b.channel(), input_b.attenuation()),
     ];
+
+    // Smooth channel A and watch it with a deliberately narrow threshold
+    // window, so the example has something for the monitor to trip on.
+    adc.set_filter(
+        FilterIndex::Zero,
+        Unit::Adc1,
+        Some(Filter {
+            channel: input_a.channel(),
+            coefficient: FilterCoefficient::_4,
+        }),
+    );
+    adc.set_monitor(
+        MonitorIndex::Zero,
+        Unit::Adc1,
+        Some(Monitor {
+            channel: input_a.channel(),
+            low: 0,
+            high: 1,
+        }),
+    );
 
     let mut buffer = [Sample::ZERO; SAMPLES];
     let mut descriptors = [const { Descriptor::new() }; 1];
@@ -101,6 +124,11 @@ fn main() -> ! {
                 millivolts
             );
         }
+
+        // The monitor latches on the first sample outside its window; clearing
+        // it here just lets the next round report again.
+        defmt::info!("monitor: {:?}", adc.monitor_state(MonitorIndex::Zero));
+        adc.clear_monitor(MonitorIndex::Zero);
 
         delay.delay_ms(1_000);
     }
