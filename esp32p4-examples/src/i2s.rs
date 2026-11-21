@@ -24,7 +24,7 @@ use esp32p4_hal::delay::Delay;
 use esp32p4_hal::dma::{AhbDma, Descriptor};
 use esp32p4_hal::gpio::signal::{InputSignal, OutputSignal};
 use esp32p4_hal::gpio::{PinOps, Pins};
-use esp32p4_hal::i2s::{Error, I2s0, Interrupts, Slot, Standard, StandardConfig};
+use esp32p4_hal::i2s::{Error, I2s0, Interrupts, Slot, Standard, StandardConfig, TdmConfig};
 use esp32p4_hal::main;
 use esp32p4_hal::pac::{HP_SYS_CLKRST, Peripherals};
 use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
@@ -81,6 +81,27 @@ fn main() -> ! {
             &mut rx_buffer,
             &tx_descriptors,
             &rx_descriptors,
+        );
+        check_tdm(
+            &i2s,
+            clkrst,
+            &dma.tx_channel::<0>(),
+            &dma.rx_channel::<0>(),
+            &mut tx_buffer,
+            &mut rx_buffer,
+            &tx_descriptors,
+            &rx_descriptors,
+        );
+        check_stream(
+            &i2s,
+            clkrst,
+            &dma.tx_channel::<0>(),
+            &dma.rx_channel::<0>(),
+            &mut tx_buffer,
+            &mut rx_buffer,
+            &tx_descriptors,
+            &rx_descriptors,
+            &delay,
         );
         check_interrupts(
             &i2s,
@@ -371,6 +392,186 @@ fn check_interrupts(
         idle,
         fired,
         cleared,
+        if ok { "ok" } else { "FAIL" }
+    );
+}
+
+/// Four slots in one frame: the same path as the stereo check, with the slot
+/// count, the active mask and the wider frame registers exercised.
+#[allow(clippy::too_many_arguments)]
+fn check_tdm(
+    i2s: &I2s0,
+    clkrst: &HP_SYS_CLKRST,
+    tx: &impl esp32p4_hal::dma::TransmitChannel,
+    rx: &impl esp32p4_hal::dma::ReceiveChannel,
+    tx_buffer: &mut [u8],
+    rx_buffer: &mut [u8],
+    tx_descriptors: &[Descriptor],
+    rx_descriptors: &[Descriptor],
+) {
+    // Four 8-bit slots keep BCK at the stereo rate, which also keeps the slave's
+    // module clock (eight BCK periods minimum) inside what a 40 MHz crystal and
+    // its >= 2 divider can produce.
+    for (name, active) in [("4 slots", 0b1111u16), ("holes", 0b1010)] {
+        let master = TdmConfig {
+            sample_rate: RATE,
+            channels: 4,
+            slot_bits: 8,
+            data_bits: 8,
+            active,
+            ..Default::default()
+        };
+        let slave = TdmConfig {
+            master: false,
+            mclk_multiple: 384,
+            ..master
+        };
+
+        let tx_clock = i2s.tx_configure_tdm(clkrst, &master);
+        let rx_clock = i2s.rx_configure_tdm(clkrst, &slave);
+        i2s.share_bck_ws(true);
+
+        for (index, sample) in tx_buffer.iter_mut().enumerate() {
+            *sample = (index as u8).wrapping_mul(7);
+        }
+        rx_buffer.fill(0x5A);
+
+        let configured = tx_clock.is_ok() && rx_clock.is_ok();
+        let started = configured && i2s.rx_begin(rx, rx_buffer, rx_descriptors).is_ok();
+        i2s.reset_tx_bck_counter();
+        let sent = started && i2s.tx_write(tx, tx_buffer, tx_descriptors).is_ok();
+        let received = sent && i2s.rx_wait(rx, rx_buffer).is_ok();
+
+        // The frame stays four slots wide whatever the mask is, so BCK and the
+        // data that passes are decided separately.
+        let bck = i2s.tx_bck_count();
+        let frame_bytes = master.frame_bytes();
+        let expected_bck = (tx_buffer.len() / frame_bytes * 4 * 8) as u32;
+        let identical = received && tx_buffer == rx_buffer;
+        let lanes = tx_clock.as_ref().map(|c| c.bclk_hz).unwrap_or(0);
+        if !identical {
+            defmt::info!(
+                "tdm: configured {=bool}, started {=bool}, sent {=bool}, received {=bool}",
+                configured,
+                started,
+                sent,
+                received
+            );
+        }
+        let ok = identical && lanes == RATE * 32 && bck.abs_diff(expected_bck) <= expected_bck / 50;
+        defmt::info!(
+            "tdm {}: {=u32} Hz BCK, {=usize} bytes/frame {=usize}, data {=bool}, {=u32}/{=u32} BCK -> {}",
+            name,
+            lanes,
+            frame_bytes,
+            tx_buffer.len(),
+            identical,
+            bck,
+            expected_bck,
+            if ok { "ok" } else { "FAIL" }
+        );
+    }
+
+    // A frame with no active slot has nothing to carry, and an odd frame has no
+    // middle for the WS half-frame edge.
+    let empty_mask = i2s.tx_configure_tdm(
+        clkrst,
+        &TdmConfig {
+            active: 0,
+            ..Default::default()
+        },
+    ) == Err(Error::SlotsOutOfRange);
+    let odd_frame = i2s.tx_configure_tdm(
+        clkrst,
+        &TdmConfig {
+            channels: 3,
+            slot_bits: 17,
+            active: 0b111,
+            ..Default::default()
+        },
+    ) == Err(Error::SlotsOutOfRange);
+    defmt::info!(
+        "tdm rejects: empty mask {=bool}, odd frame {=bool} -> {}",
+        empty_mask,
+        odd_frame,
+        if empty_mask && odd_frame {
+            "ok"
+        } else {
+            "FAIL"
+        }
+    );
+}
+
+/// Two rings, one lap short. The transmitter repeats an eight-frame pattern, the
+/// receiver fills its own window over and over, and after ten milliseconds the
+/// window has to be that pattern at some phase.
+#[allow(clippy::too_many_arguments)]
+fn check_stream(
+    i2s: &I2s0,
+    clkrst: &HP_SYS_CLKRST,
+    tx: &impl esp32p4_hal::dma::TransmitChannel,
+    rx: &impl esp32p4_hal::dma::ReceiveChannel,
+    tx_buffer: &mut [u8],
+    rx_buffer: &mut [u8],
+    tx_descriptors: &[Descriptor],
+    rx_descriptors: &[Descriptor],
+    delay: &Delay,
+) {
+    const PATTERN: usize = 32;
+    let config = StandardConfig {
+        sample_rate: RATE,
+        ..Default::default()
+    };
+    let slave = StandardConfig {
+        master: false,
+        mclk_multiple: 384,
+        ..config
+    };
+
+    let configured =
+        i2s.tx_configure(clkrst, &config).is_ok() && i2s.rx_configure(clkrst, &slave).is_ok();
+    i2s.share_bck_ws(true);
+
+    let pattern = &mut tx_buffer[..PATTERN];
+    for (index, word) in pattern.as_chunks_mut::<2>().0.iter_mut().enumerate() {
+        word.copy_from_slice(&((index as u16).wrapping_mul(0x0101)).to_le_bytes());
+    }
+    rx_buffer.fill(0xA5);
+
+    // The receive ring is deliberately not a multiple of the pattern, so its
+    // laps drift and the phase is not something the test can hard-code.
+    const WINDOW: usize = 40;
+    let rx_started = configured
+        && i2s
+            .rx_stream_begin(rx, &mut rx_buffer[..WINDOW], rx_descriptors)
+            .is_ok();
+    i2s.reset_tx_bck_counter();
+    let tx_started = rx_started && i2s.tx_stream_begin(tx, pattern, tx_descriptors).is_ok();
+    delay.delay_ms(10);
+    let bck = i2s.tx_bck_count();
+    i2s.tx_stream_stop(tx);
+    i2s.rx_stream_stop(rx, &mut rx_buffer[..WINDOW]);
+    let hung = i2s.interrupts();
+
+    // 10 ms of 1.536 MHz is about 15360 bit clocks; the ring keeps them coming
+    // without anyone refilling anything.
+    let expected_bck = (RATE / 100) * 32;
+    let bck_ok = bck.abs_diff(expected_bck) <= expected_bck / 10;
+
+    // The window holds two laps of the pattern at an unknown phase, because the
+    // engine starts writing wherever the first sample lands.
+    let phase = (0..PATTERN).find(|offset| {
+        (0..PATTERN).all(|index| rx_buffer[index] == pattern[(index + offset) % PATTERN])
+    });
+    let rotated = phase.is_some();
+    let ok = tx_started && bck_ok && rotated && hung.is_empty();
+    defmt::info!(
+        "stream: tx {=bool}, {=u32}/{=u32} BCK in 10 ms, pattern phase {=?}, pending {=u32:#x} -> {}",
+        tx_started,
+        bck,
+        expected_bck,
+        phase,
+        hung.raw(),
         if ok { "ok" } else { "FAIL" }
     );
 }

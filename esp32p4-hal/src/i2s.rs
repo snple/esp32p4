@@ -14,9 +14,13 @@
 //!   peripheral — [`StandardConfig`] goes in, [`Clock`] comes out with the
 //!   resulting MCLK, BCK and sample rate
 //! - Transmit and receive with GDMA descriptor chains, cache maintenance
-//!   included ([`I2s0::tx_write`], [`I2s0::rx_read`])
+//!   included ([`I2s0::tx_write`], [`I2s0::rx_read`]), either once or as a
+//!   descriptor ring that keeps repeating
+//!   ([`I2s0::tx_stream_begin`], [`I2s0::rx_stream_begin`])
 //! - Slot formatting: mono or stereo, left/right channel only, MSB first,
 //!   WS idle polarity, data bits narrower than the slot
+//! - TDM: up to sixteen slots per frame with an active-slot mask, so the DMA
+//!   stream only carries the slots that matter ([`TdmConfig`])
 //! - Internal BCK/WS sharing for full-duplex in one controller
 //!   ([`I2s0::share_bck_ws`]), MCLK pad gate, BCK cycle counter for measuring
 //!   the real bit clock, hung-interrupt timing, per-source interrupts
@@ -89,7 +93,10 @@
 //!   checked in slave mode too ([`Error::SlaveClockTooSlow`]).
 //! - A mono stream does not shorten the frame: the hardware always runs two
 //!   slots, so BCK keeps its rate and only the bytes DMA pulls out of the buffer
-//!   halve.
+//!   halve. The same holds for TDM slots that the active mask leaves out.
+//! - `TX_TDM_SKIP_MSK_EN` is left clear: with it set the hardware shrinks the
+//!   frame to the active slots, the receive side has no matching bit, and the
+//!   two ends then disagree about the bit clock by a factor of the slot count.
 //! - The engine has to be running before the peripheral is started. Starting
 //!   the transmit half first starves it, latches `TX_HUNG`, and the FIFO then
 //!   takes data that never leaves; `tx_begin` does reset, DMA start, then
@@ -208,7 +215,124 @@ impl Default for StandardConfig {
 }
 
 impl StandardConfig {
-    fn validate(&self) -> Result<(), Error> {
+    /// Bytes one frame occupies in the DMA buffer.
+    ///
+    /// A mono stream puts one word in the frame and leaves the other slot
+    /// silent, so the frame is half as long on the DMA side while BCK keeps its
+    /// rate.
+    pub fn frame_bytes(&self) -> usize {
+        let slots = if self.slot.is_mono() { 1 } else { 2 };
+        slots * usize::from(self.slot_bits).div_ceil(8)
+    }
+
+    fn layout(&self) -> Result<Layout, Error> {
+        Layout {
+            sample_rate: self.sample_rate,
+            data_bits: self.data_bits,
+            slot_bits: self.slot_bits,
+            // A standard frame is always two slots wide; the slot choice only
+            // decides which of them carry data.
+            channels: 2,
+            active: self.slot.channel_mask() as u16,
+            standard: self.standard,
+            ws_idle_high: self.ws_idle_high,
+            mclk_multiple: self.mclk_multiple,
+            master: self.master,
+        }
+        .check()
+    }
+}
+
+/// Time-division multiplexed frame: one WS period carries up to sixteen slots.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct TdmConfig {
+    /// Sampling rate in Hz.
+    pub sample_rate: u32,
+    /// Valid bits per sample: 1 to 32.
+    pub data_bits: u8,
+    /// Bits per slot: 1 to 32, and at least `data_bits`.
+    pub slot_bits: u16,
+    /// Slots per frame: 2 to 16. Raised to cover the highest active slot.
+    pub channels: u8,
+    /// Which slots carry data; the rest stay silent and are skipped in the DMA
+    /// stream.
+    pub active: u16,
+    /// Philips or MSB aligned.
+    pub standard: Standard,
+    /// Whether WS idles high.
+    pub ws_idle_high: bool,
+    /// MCLK as a multiple of the sample rate.
+    pub mclk_multiple: u16,
+    /// Whether this half drives BCK and WS.
+    pub master: bool,
+}
+
+impl Default for TdmConfig {
+    fn default() -> Self {
+        Self {
+            sample_rate: 48_000,
+            data_bits: 16,
+            slot_bits: 16,
+            channels: 4,
+            active: 0xF,
+            standard: Standard::Philips,
+            ws_idle_high: false,
+            mclk_multiple: 256,
+            master: true,
+        }
+    }
+}
+
+impl TdmConfig {
+    /// Bytes one frame occupies in the DMA buffer: the active slots only.
+    pub fn frame_bytes(&self) -> usize {
+        let words = self.active.count_ones() as usize;
+        words * usize::from(self.slot_bits).div_ceil(8)
+    }
+
+    fn layout(&self) -> Result<Layout, Error> {
+        if self.active == 0 {
+            return Err(Error::SlotsOutOfRange);
+        }
+        // The frame has to reach the highest active slot; asking for more slots
+        // than that only lengthens the silence between frames.
+        let highest = 16 - self.active.leading_zeros() as u8;
+        let channels = self.channels.max(highest).max(2);
+        Layout {
+            sample_rate: self.sample_rate,
+            data_bits: self.data_bits,
+            slot_bits: self.slot_bits,
+            channels,
+            active: self.active,
+            standard: self.standard,
+            ws_idle_high: self.ws_idle_high,
+            mclk_multiple: self.mclk_multiple,
+            master: self.master,
+        }
+        .check()
+    }
+}
+
+/// A frame as the hardware sees it.
+///
+/// Both [`StandardConfig`] and [`TdmConfig`] reduce to this, so the register
+/// work — and the clock arithmetic — happens once.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct Layout {
+    sample_rate: u32,
+    data_bits: u8,
+    slot_bits: u16,
+    channels: u8,
+    active: u16,
+    standard: Standard,
+    ws_idle_high: bool,
+    mclk_multiple: u16,
+    master: bool,
+}
+
+impl Layout {
+    fn check(self) -> Result<Self, Error> {
         if !(1..=32).contains(&self.data_bits) || !(1..=32).contains(&self.slot_bits) {
             return Err(Error::BitsOutOfRange);
         }
@@ -218,17 +342,33 @@ impl StandardConfig {
         if self.sample_rate == 0 {
             return Err(Error::RateUnsupported);
         }
-        Ok(())
+        if !(2..=16).contains(&self.channels) || u32::from(self.active) >> self.channels != 0 {
+            return Err(Error::SlotsOutOfRange);
+        }
+        // The frame has to fit the 9-bit WS width and the 8-bit half-frame
+        // register, and its halves have to be whole words.
+        if self.frame_bits() > 512 || !self.frame_bits().is_multiple_of(2) {
+            return Err(Error::SlotsOutOfRange);
+        }
+        Ok(self)
     }
 
-    /// Bytes one frame occupies in the DMA buffer.
-    ///
-    /// A mono stream puts one word in the frame and leaves the other slot
-    /// silent, so the frame is half as long on the DMA side while BCK keeps its
-    /// rate.
-    pub fn frame_bytes(&self) -> usize {
-        let slots = if self.slot.is_mono() { 1 } else { 2 };
-        slots * usize::from(self.slot_bits).div_ceil(8)
+    /// Bits in one WS period.
+    fn frame_bits(&self) -> u32 {
+        u32::from(self.slot_bits) * u32::from(self.channels)
+    }
+
+    /// Both the WS width and the half-frame point sit in the middle of a frame.
+    fn half_frame(&self) -> u32 {
+        self.frame_bits() / 2
+    }
+
+    fn bclk_hz(&self) -> u32 {
+        self.sample_rate * self.frame_bits()
+    }
+
+    fn mclk_hz(&self) -> u32 {
+        self.sample_rate * u32::from(self.mclk_multiple)
     }
 }
 
@@ -298,6 +438,9 @@ pub enum Error {
     BitsOutOfRange,
     /// More valid bits than the slot has room for.
     DataWiderThanSlot,
+    /// The slot count, the active-slot mask or the frame length is not one the
+    /// hardware can produce.
+    SlotsOutOfRange,
     /// The clock source cannot produce this sample rate.
     RateUnsupported,
     /// A single read has to fit one descriptor, which holds 4095 bytes.
@@ -505,109 +648,122 @@ macro_rules! impl_i2s {
                     clkrst: &HP_SYS_CLKRST,
                     config: &StandardConfig,
                 ) -> Result<Clock, Error> {
-                    config.validate()?;
-                    let clock = self
-                        .program_clock(clkrst, config, MclkOwner::Transmit)?;
+                    self.tx_apply(clkrst, &config.layout()?)
+                }
+
+                /// Configures the transmit half for TDM mode.
+                pub fn tx_configure_tdm(
+                    &self,
+                    clkrst: &HP_SYS_CLKRST,
+                    config: &TdmConfig,
+                ) -> Result<Clock, Error> {
+                    self.tx_apply(clkrst, &config.layout()?)
+                }
+
+                /// Configures the receive half for standard mode and returns
+                /// the clock it will run at.
+                ///
+                /// A slave half takes BCK and WS from the master, so
+                /// [`Clock`] describes the format rather than a clock the half
+                /// generates.
+                pub fn rx_configure(
+                    &self,
+                    clkrst: &HP_SYS_CLKRST,
+                    config: &StandardConfig,
+                ) -> Result<Clock, Error> {
+                    self.rx_apply(clkrst, &config.layout()?)
+                }
+
+                /// Configures the receive half for TDM mode.
+                pub fn rx_configure_tdm(
+                    &self,
+                    clkrst: &HP_SYS_CLKRST,
+                    config: &TdmConfig,
+                ) -> Result<Clock, Error> {
+                    self.rx_apply(clkrst, &config.layout()?)
+                }
+
+                fn tx_apply(&self, clkrst: &HP_SYS_CLKRST, layout: &Layout) -> Result<Clock, Error> {
+                    let clock = self.program_clock(clkrst, layout, MclkOwner::Transmit)?;
 
                     let r = self.regs();
                     r.tx_conf.trigger_tx_reset();
                     r.tx_conf.trigger_tx_fifo_reset();
-                    if config.master {
+                    if layout.master {
                         r.tx_conf.clr_tx_slave_mod();
                     } else {
                         r.tx_conf.set_tx_slave_mod();
                     }
-                    // Standard mode is two-slot TDM: the peripheral has no
-                    // separate "std" bit, and PDM must stay off.
+                    // The peripheral has no separate "standard" bit: a
+                    // two-slot frame is TDM with two slots, and PDM must stay
+                    // off or the controller sends in neither mode.
                     r.tx_conf.set_tx_tdm_en();
                     r.tx_conf.clr_tx_pdm_en();
-                    r.tx_conf1.write_tx_bits_mod(u32::from(config.data_bits - 1));
                     r.tx_conf1
-                        .write_tx_tdm_chan_bits(u32::from(config.slot_bits - 1));
+                        .write_tx_bits_mod(u32::from(layout.data_bits - 1));
                     r.tx_conf1
-                        .write_tx_half_sample_bits(u32::from(config.slot_bits - 1));
+                        .write_tx_tdm_chan_bits(u32::from(layout.slot_bits - 1));
                     r.tx_conf1
-                        .write_tx_tdm_ws_width(u32::from(config.slot_bits - 1));
-                    match config.standard {
+                        .write_tx_half_sample_bits(layout.half_frame() - 1);
+                    r.tx_conf1
+                        .write_tx_tdm_ws_width(layout.half_frame() - 1);
+                    match layout.standard {
                         Standard::Philips => r.tx_conf.set_tx_msb_shift(),
                         Standard::MsbAligned => r.tx_conf.clr_tx_msb_shift(),
                     }
-                    if config.ws_idle_high {
+                    if layout.ws_idle_high {
                         r.tx_conf.set_tx_ws_idle_pol();
                     } else {
                         r.tx_conf.clr_tx_ws_idle_pol();
                     }
                     r.tx_conf.clr_tx_bit_order();
                     r.tx_conf.clr_tx_mono();
-                    let mask = config.slot.channel_mask();
-                    r.tx_tdm_ctrl.write_tx_tdm_tot_chan_num(1);
-                    r.tx_tdm_ctrl.set_tx_tdm_chan0_en();
-                    if mask & 0b10 != 0 {
-                        r.tx_tdm_ctrl.set_tx_tdm_chan1_en();
-                    } else {
-                        r.tx_tdm_ctrl.clr_tx_tdm_chan1_en();
-                    }
-                    if mask & 0b01 == 0 {
-                        r.tx_tdm_ctrl.clr_tx_tdm_chan0_en();
-                    }
+                    // One write describes the whole frame: the slot enables and
+                    // the slot count. `SKIP_MSK_EN` stays clear on purpose —
+                    // with it set the hardware shrinks the frame to the active
+                    // slots, which the receive side cannot express and which
+                    // would silently change the bit clock.
+                    let tdm = u32::from(layout.active) | (u32::from(layout.channels - 1) << 16);
+                    r.tx_tdm_ctrl.write_bits(tdm);
                     Ok(clock)
                 }
 
-                /// Configures the receive half for standard mode and returns
-                /// the clock it will run at.
-                ///
-                /// A slave half takes BCK and WS from the master, so its own
-                /// dividers are left alone and [`Clock`] describes the format
-                /// rather than a clock the half generates.
-                pub fn rx_configure(
-                    &self,
-                    clkrst: &HP_SYS_CLKRST,
-                    config: &StandardConfig,
-                ) -> Result<Clock, Error> {
-                    config.validate()?;
-                    let clock = self
-                        .program_clock(clkrst, config, MclkOwner::Receive)?;
+                fn rx_apply(&self, clkrst: &HP_SYS_CLKRST, layout: &Layout) -> Result<Clock, Error> {
+                    let clock = self.program_clock(clkrst, layout, MclkOwner::Receive)?;
 
                     let r = self.regs();
                     r.rx_conf.trigger_rx_reset();
                     r.rx_conf.trigger_rx_fifo_reset();
-                    if config.master {
+                    if layout.master {
                         r.rx_conf.clr_rx_slave_mod();
                     } else {
                         r.rx_conf.set_rx_slave_mod();
                     }
                     r.rx_conf.set_rx_tdm_en();
                     r.rx_conf.clr_rx_pdm_en();
-                    r.rx_conf1.write_rx_bits_mod(u32::from(config.data_bits - 1));
                     r.rx_conf1
-                        .write_rx_tdm_chan_bits(u32::from(config.slot_bits - 1));
+                        .write_rx_bits_mod(u32::from(layout.data_bits - 1));
                     r.rx_conf1
-                        .write_rx_half_sample_bits(u32::from(config.slot_bits - 1));
+                        .write_rx_tdm_chan_bits(u32::from(layout.slot_bits - 1));
                     r.rx_conf1
-                        .write_rx_tdm_ws_width(u32::from(config.slot_bits - 1));
-                    match config.standard {
+                        .write_rx_half_sample_bits(layout.half_frame() - 1);
+                    r.rx_conf1
+                        .write_rx_tdm_ws_width(layout.half_frame() - 1);
+                    match layout.standard {
                         Standard::Philips => r.rx_conf.set_rx_msb_shift(),
                         Standard::MsbAligned => r.rx_conf.clr_rx_msb_shift(),
                     }
-                    if config.ws_idle_high {
+                    if layout.ws_idle_high {
                         r.rx_conf.set_rx_ws_idle_pol();
                     } else {
                         r.rx_conf.clr_rx_ws_idle_pol();
                     }
                     r.rx_conf.clr_rx_bit_order();
                     r.rx_conf.clr_rx_mono();
-                    let mask = config.slot.channel_mask();
-                    r.rx_tdm_ctrl.write_rx_tdm_tot_chan_num(1);
-                    if mask & 0b01 != 0 {
-                        r.rx_tdm_ctrl.set_rx_tdm_pdm_chan0_en();
-                    } else {
-                        r.rx_tdm_ctrl.clr_rx_tdm_pdm_chan0_en();
-                    }
-                    if mask & 0b10 != 0 {
-                        r.rx_tdm_ctrl.set_rx_tdm_pdm_chan1_en();
-                    } else {
-                        r.rx_tdm_ctrl.clr_rx_tdm_pdm_chan1_en();
-                    }
+                    // The receive side has no skip bit: the slot enables alone
+                    // decide which slots reach the DMA.
+                    let tdm = u32::from(layout.active) | (u32::from(layout.channels - 1) << 16);
+                    r.rx_tdm_ctrl.write_bits(tdm);
                     Ok(clock)
                 }
 
@@ -756,13 +912,55 @@ macro_rules! impl_i2s {
                     if buffer.is_empty() {
                         return Err(Error::Dma(crate::dma::Error::EmptyBuffer));
                     }
-                    let chain = crate::dma::Chain::new(descriptors);
-                    // The trailing EOF is what tells the engine the phase
-                    // ended; without it the channel would wait forever.
-                    chain
-                        .mount_eof(buffer.as_ptr() as *mut u8, buffer.len())
-                        .map_err(Error::Dma)?;
+                    self.tx_launch(dma, buffer.as_ptr(), buffer.len(), descriptors, false)?;
                     self.tx_bytes.set(buffer.len() as u32);
+                    Ok(())
+                }
+
+                /// Starts a transmit stream that repeats `buffer` forever.
+                ///
+                /// The descriptors are mounted as a ring, so the engine walks
+                /// them round and round; nothing reports a frame end, which is
+                /// what a looping tone or a DMA-fed codec needs. Stop it with
+                /// [`tx_stream_stop`](Self::tx_stream_stop).
+                pub fn tx_stream_begin(
+                    &self,
+                    dma: &impl TransmitChannel,
+                    buffer: &[u8],
+                    descriptors: &[Descriptor],
+                ) -> Result<(), Error> {
+                    if buffer.is_empty() {
+                        return Err(Error::Dma(crate::dma::Error::EmptyBuffer));
+                    }
+                    self.tx_launch(dma, buffer.as_ptr(), buffer.len(), descriptors, true)
+                }
+
+                /// Stops the stream started by
+                /// [`tx_stream_begin`](Self::tx_stream_begin).
+                pub fn tx_stream_stop(&self, dma: &impl TransmitChannel) {
+                    self.tx_stop();
+                    dma.stop_chain();
+                    dma.clear_all_interrupts();
+                }
+
+                fn tx_launch(
+                    &self,
+                    dma: &impl TransmitChannel,
+                    buffer: *const u8,
+                    len: usize,
+                    descriptors: &[Descriptor],
+                    ring: bool,
+                ) -> Result<(), Error> {
+                    let chain = crate::dma::Chain::new(descriptors);
+                    if ring {
+                        chain
+                            .mount_ring(buffer as *mut u8, len)
+                            .map_err(Error::Dma)?;
+                    } else {
+                        // The trailing EOF is what tells the engine the phase
+                        // ended; without it the channel would wait forever.
+                        chain.mount_eof(buffer as *mut u8, len).map_err(Error::Dma)?;
+                    }
 
                     // A fresh half: the shifter and its FIFO are reset right
                     // before the engine is pointed at the buffer, the same order
@@ -774,7 +972,7 @@ macro_rules! impl_i2s {
                     dma.connect_to(Peripheral::$peri);
                     dma.reset_channel();
                     dma.clear_all_interrupts();
-                    crate::cache::writeback(buffer.as_ptr().cast(), buffer.len());
+                    crate::cache::writeback(buffer.cast(), len);
                     dma.start_chain(chain.head());
                     r.int_clr.trigger_tx_hung_int_clr();
                     r.int_clr.trigger_tx_done_int_clr();
@@ -830,6 +1028,41 @@ macro_rules! impl_i2s {
                     buffer: &mut [u8],
                     descriptors: &[Descriptor],
                 ) -> Result<(), Error> {
+                    self.rx_launch(dma, buffer, descriptors, false)
+                }
+
+                /// Starts a receive stream that keeps refilling `buffer`.
+                ///
+                /// The descriptors are mounted as a ring, so the engine
+                /// overwrites the buffer lap after lap; the newest samples are
+                /// always the ones just written. Stop it with
+                /// [`rx_stream_stop`](Self::rx_stream_stop).
+                pub fn rx_stream_begin(
+                    &self,
+                    dma: &impl ReceiveChannel,
+                    buffer: &mut [u8],
+                    descriptors: &[Descriptor],
+                ) -> Result<(), Error> {
+                    self.rx_launch(dma, buffer, descriptors, true)
+                }
+
+                /// Stops the stream started by
+                /// [`rx_stream_begin`](Self::rx_stream_begin) and makes the
+                /// buffer readable.
+                pub fn rx_stream_stop(&self, dma: &impl ReceiveChannel, buffer: &mut [u8]) {
+                    dma.stop_chain();
+                    self.rx_stop();
+                    dma.clear_interrupt(crate::dma::RxInterrupt::SucEof);
+                    crate::cache::invalidate(buffer.as_mut_ptr().cast(), buffer.len());
+                }
+
+                fn rx_launch(
+                    &self,
+                    dma: &impl ReceiveChannel,
+                    buffer: &mut [u8],
+                    descriptors: &[Descriptor],
+                    ring: bool,
+                ) -> Result<(), Error> {
                     if buffer.is_empty() {
                         return Err(Error::Dma(crate::dma::Error::EmptyBuffer));
                     }
@@ -844,7 +1077,11 @@ macro_rules! impl_i2s {
                     // signals the DMA when it has this many.
                     self.regs().rxeof_num.write_rx_eof_num(len as u32);
                     let chain = crate::dma::Chain::new(descriptors);
-                    chain.mount(bytes, len).map_err(Error::Dma)?;
+                    if ring {
+                        chain.mount_ring(bytes, len).map_err(Error::Dma)?;
+                    } else {
+                        chain.mount(bytes, len).map_err(Error::Dma)?;
+                    }
 
                     let r = self.regs();
                     r.rx_conf.trigger_rx_reset();
@@ -946,14 +1183,11 @@ macro_rules! impl_i2s {
                 fn program_clock(
                     &self,
                     clkrst: &HP_SYS_CLKRST,
-                    config: &StandardConfig,
+                    layout: &Layout,
                     owner: MclkOwner,
                 ) -> Result<Clock, Error> {
-                    // A standard frame is always two slots wide; a mono stream
-                    // leaves one of them idle instead of shortening the frame.
-                    let bclk_hz =
-                        config.sample_rate * u32::from(config.slot_bits) * 2;
-                    let mclk_hz = config.sample_rate * u32::from(config.mclk_multiple);
+                    let bclk_hz = layout.bclk_hz();
+                    let mclk_hz = layout.mclk_hz();
                     if bclk_hz == 0 || mclk_hz == 0 {
                         return Err(Error::RateUnsupported);
                     }
@@ -975,19 +1209,19 @@ macro_rules! impl_i2s {
                     // not touch which half owns MCLK or the BCK divider — but it
                     // still needs its own module clock, at least eight BCK
                     // periods per bit, or it cannot sample the line.
-                    if !config.master && mclk_hz < bclk_hz * 8 {
+                    if !layout.master && mclk_hz < bclk_hz * 8 {
                         return Err(Error::SlaveClockTooSlow);
                     }
                     match owner {
                         MclkOwner::Transmit => {
-                            if config.master {
+                            if layout.master {
                                 clkrst.[<$mst_reg>].[<set_ $mst>]();
                                 self.regs().tx_conf.write_tx_bck_div_num(bck_divisor - 1);
                             }
                             self.program_tx_divider(clkrst, &divisor);
                         }
                         MclkOwner::Receive => {
-                            if config.master {
+                            if layout.master {
                                 clkrst.[<$mst_reg>].[<clr_ $mst>]();
                                 self.regs().rx_conf.write_rx_bck_div_num(bck_divisor - 1);
                             }

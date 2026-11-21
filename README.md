@@ -1348,12 +1348,16 @@ i2s.tx_write(&dma.tx_channel::<0>(), &samples, &descriptors)?;
   能打出来。分频只在能整除时才接受，40 MHz 晶振下 48 kHz × 256 得到 12.2855 MHz
   （误差 −0.02 %），BCK 1.536 MHz 精确。
 - **标准模式就是双槽 TDM**：`TDM_EN` 必须置一、`PDM_EN` 必须清零，`MSB_SHIFT` 选 Philips
-  （WS 比数据早一个 BCK）还是 MSB 对齐。`Slot::{Both, Left, Right}` 决定哪一槽带数据；
-  mono 只是少搬一半数据，帧宽（也就是 BCK）不变。
+  （WS 比数据早一个 BCK）还是 MSB 对齐。`StandardConfig` 用 `Slot::{Both, Left, Right}` 决定哪
+  一槽带数据；mono 只是少搬一半数据，帧宽（也就是 BCK）不变。`TdmConfig` 把它推广到最多 16
+  槽：`channels` 是每帧槽数，`active` 是带数据的槽，没被选中的槽既不占 DMA 数据、也不改变帧宽
+  （BCK 仍是 `采样率 × channels × slot_bits`）。
 - **收发**：`tx_begin`/`tx_wait`（或合并的 `tx_write`）与 `rx_begin`/`rx_wait`（或
-  `rx_read`）负责描述符链、cache 维护、`RX_EOF_NUM` 和起停顺序；`tx_bck_count()` 是硬件
-  BCK 计数器，用来量真实位时钟；`share_bck_ws(true)` 让同一控制器的两个半区共用 BCK/WS，
-  全双工不需要把时钟引出芯片。
+  `rx_read`）负责描述符链、cache 维护、`RX_EOF_NUM` 和起停顺序；`tx_stream_begin` /
+  `rx_stream_begin` 把描述符挂成**环**，同一段缓冲反复播放（或反复覆盖），是连续播放/采集
+  的形态，用 `tx_stream_stop` / `rx_stream_stop` 停下。`tx_bck_count()` 是硬件 BCK 计数器，
+  用来量真实位时钟；`share_bck_ws(true)` 让同一控制器的两个半区共用 BCK/WS，全双工不需要把
+  时钟引出芯片。
 - **中断**：`Interrupts::{RX_DONE, TX_DONE, RX_HUNG, TX_HUNG}`，配
   `enable_interrupts` / `interrupts()` / `clear_interrupts()`，`I2s0::SOURCE` 给
   `interrupt::claim`。`set_hung_timeout` 调整从机等不到 BCK/WS 的判定时间。
@@ -1373,7 +1377,10 @@ i2s.tx_write(&dma.tx_channel::<0>(), &samples, &descriptors)?;
 - **`RX_EOF_NUM` 必须等于描述符长度**，它是外设告诉 DMA「这一帧结束」的字节数，所以单次读
   不超过一个描述符（4095 字节）；
 - `BCK_DIV_NUM` 不能为 1，也就是 BCK 分频至少 2；`mclk_multiple` 用 256 时 24 bit 槽要取 3
-  的倍数（384）才能整除。
+  的倍数（384）才能整除；
+- **`TX_TDM_SKIP_MSK_EN` 会缩短帧**：置一之后硬件只发送被选中的槽，帧宽随之变小，而接收侧没有
+  对应位——两端对 BCK 的理解就差一个槽数倍，现象是接收侧永远等不到一帧结束。这个驱动把这个位
+  一直清零，槽的空隙靠「不占 DMA 数据」实现，帧宽保持不变。
 
 **当前状态**（40 MHz 晶振，48 kHz、16 bit、Philips、256× MCLK，TX 主 / RX 从 + 内部
 BCK/WS 共享，SD 单焊盘回环）：
@@ -1384,6 +1391,9 @@ BCK/WS 共享，SD 单焊盘回环）：
 | 位时钟读数 | 1024 字节（立体声）= 8193 个 BCK（期望 8192），mono = 16385（期望 16384） |
 | 立体声回环 | 1024 字节逐字节相同 |
 | mono（仅左槽）回环 | 1024 字节逐字节相同，BCK 不变 |
+| TDM 4 槽 | 4 × 8 bit，BCK 1.536 MHz，8193/8192 个 BCK，数据逐字节相同 |
+| TDM 有空洞（`active = 0b1010`） | 每帧仍 4 槽（16393/16384 BCK），但 DMA 每帧只搬 2 字节 |
+| 环形流 | TX 环（32 字节模式）与 RX 环（40 字节窗口）各跑 10 ms：15359/15360 个 BCK，窗口内容是该模式的某个相位，无中断残留 |
 | 中断 | `TX_DONE` 触发、读取后清零 |
 | 非法配置 | 数据位宽 > 槽宽、0 bit、5 MHz、100 Hz、从机 128× 全部被拒 |
 
