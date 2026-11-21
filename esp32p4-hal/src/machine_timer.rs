@@ -1,19 +1,29 @@
-//! The CLINT's machine timer: this core's counter, comparator and interrupt.
+//! The CLINT's machine timer: one counter, one comparator per core.
 //!
-//! This is the RISC-V equivalent of ARM's SysTick, and it is entirely per core:
-//! `mtime`, `mtimecmp` and the interrupt are separate for each hart, so core 0 and
-//! core 1 keep their own time and tick independently. The two counters run at the
-//! same rate (`CPU_CLK`) and the bootloader starts them together, which is why
-//! read-only comparisons make them look like one counter — they are not. Writing
-//! one core's `mtimeload` does not move the other core's clock.
+//! This is the RISC-V equivalent of ARM's SysTick. The counter is **one** 64-bit
+//! `mtime` for the chip, driven by `CPU_CLK`; each hart has its own `mtimecmp`,
+//! its own overflow/sampling control and its own interrupt, so the two cores tick
+//! independently against the same clock. Reloading the counter from core 0 moves
+//! the clock under both cores — measured on this chip.
 //!
 //! # Where the registers are
 //!
 //! The CLINT has no PAC entry: like the CLIC, its registers sit in a core-local
 //! window at a fixed address, and each core sees its own copy at the same
 //! address. One core can also reach the *other* core's copy at
-//! `0x2001_0000 + offset` (the SVD calls that `CLINT_OTHER_CORE`), which is how a
-//! core pokes the other's `msip`.
+//! `0x2001_0000 + offset` (the SVD calls that `CLINT_OTHER_CORE`).
+//!
+//! Per-core and shared are mixed in one block:
+//!
+//! | Register | Where it is implemented |
+//! |----------|-------------------------|
+//! | `mtime` | one counter, read by both cores |
+//! | `mtimecmp` | this core's own comparator |
+//! | `mtimectl.OVF` / `mtimectl.SAM` | this core's own |
+//! | `mtimeload`, `mtimectl.EN` | **core 0's CLINT only** |
+//!
+//! That last row is why [`set_counter`](MachineTimer::set_counter) works from
+//! either core but writes core 0's window when called on core 1.
 //!
 //! | Register | Offset | Notes |
 //! |----------|--------|-------|
@@ -26,14 +36,9 @@
 //! | `mtimelo`      | `0xBFF8` | counter, low half (read-only) |
 //! | `mtimehi`      | `0xBFFC` | counter, high half (read-only) |
 //!
-//! # The one bit that is not per core
+//! # The interrupt
 //!
-//! `MTIME_EN` is implemented in core 0's `mtimectl` only, so enabling the timer
-//! works from core 0 and does nothing on core 1. Everything else — the counter
-//! value, the reload, the comparator, the overflow flag, the sampling mode — is
-//! this core's own.
-//!
-//! The interrupt is CLIC id 7, which is not one of the 32 lines the peripheral
+//! It is CLIC id 7, which is not one of the 32 lines the peripheral
 //! matrix drives, so it goes through
 //! [`crate::interrupt::set_machine_timer_handler`] rather than
 //! [`crate::interrupt::claim`].
@@ -125,9 +130,9 @@ const MTIMECTL: usize = CLINT_BASE + 0x4010;
 const MTIMECMPLO: usize = CLINT_BASE + 0x4000;
 /// `mtimecmphi` at `CLINT_BASE + 0x4004`.
 const MTIMECMPHI: usize = CLINT_BASE + 0x4004;
-const MTIMELOADLO: usize = CLINT_BASE + 0x4008;
-/// `mtimeloadhi` at `CLINT_BASE + 0x400C`.
-const MTIMELOADHI: usize = CLINT_BASE + 0x400C;
+/// Distance from a core's CLINT window to the other core's, which is where core 1
+/// finds the only `mtimeload` and `MTIME_EN`.
+const CLINT_OTHER_CORE_OFFSET: usize = 0x1_0000;
 /// `mtimelo` at `CLINT_BASE + 0xBFF8`.
 const MTIMELO: usize = CLINT_BASE + 0xBFF8;
 /// `mtimehi` at `CLINT_BASE + 0xBFFC`.
@@ -186,8 +191,8 @@ fn write(address: usize, value: u32) {
 
 /// This core's machine timer.
 ///
-/// Owning one says nothing about the other core's: every core has its own counter
-/// and comparator, and which core enabled its timer is not observable from here.
+/// Owning one says nothing about the other core's comparator, and nothing about
+/// who enabled the shared counter.
 pub struct MachineTimer {
     _private: (),
 }
@@ -290,11 +295,11 @@ impl MachineTimer {
         self.now() / self.ticks_per_us().max(1)
     }
 
-    /// This core's counter, as 64 bits of ticks since it started.
+    /// The counter, as 64 bits of ticks since it started.
     ///
     /// The two halves are sampled consistently: [`init`](Self::init) sets the
-    /// sampling mode that latches the high half when the low half is read. The
-    /// value is not comparable with the other core's counter.
+    /// sampling mode that latches the high half when the low half is read. Both
+    /// cores read the same counter, so values from them are comparable.
     #[inline]
     pub fn now(&self) -> u64 {
         let lo = u64::from(read(MTIMELO));
@@ -304,15 +309,26 @@ impl MachineTimer {
 
     /// Rewrites the counter to `ticks`.
     ///
-    /// Only this core's counter moves: ESP32-P4 gives each hart its own `mtime`,
-    /// so the other core keeps counting from wherever it was. This is also how the
-    /// multicore example proves the two are separate.
+    /// This moves the clock for both cores, since there is one counter. The write
+    /// goes to core 0's CLINT, which is the only place `mtimeload` exists; the
+    /// reload lands a few cycles later, so read back with a small delay if you
+    /// need to see it.
     ///
     /// Anything armed against an absolute deadline is now wrong: re-arm it after
     /// calling this.
     pub fn set_counter(&self, ticks: u64) {
-        write(MTIMELOADLO, ticks as u32);
-        write(MTIMELOADHI, (ticks >> 32) as u32);
+        // `mtimeload` is implemented in core 0's CLINT only, like `MTIME_EN`. Core
+        // 0 reaches it at the base address; core 1 reaches the same registers
+        // through the window the SVD calls `CLINT_OTHER_CORE`.
+        let base = if CoreId::current().as_index() == 0 {
+            CLINT_BASE
+        } else {
+            CLINT_BASE + CLINT_OTHER_CORE_OFFSET
+        };
+        // High half first, in case the hardware latches the reload when the low
+        // half is written.
+        write(base + 0x400C, (ticks >> 32) as u32);
+        write(base + 0x4008, ticks as u32);
     }
 
     /// The comparator value.

@@ -64,15 +64,36 @@ static TIMER_STEP: [AtomicU32; 2] = [const { AtomicU32::new(0) }; 2];
 const CPU_HZ: u32 = 90_000_000;
 
 /// The value core 1 writes into the counter: far below any running count, so a
-/// core that sees it knows the write reached it.
+/// core that reads it back knows the write reached the hardware.
 const RELOAD_TICKS: u64 = 1_000;
+
+/// Core 1's counter before and after core 0's reload, in halves: this target has
+/// no 64-bit atomics.
+static CORE1_BEFORE: [AtomicU32; 2] = [AtomicU32::new(u32::MAX), AtomicU32::new(u32::MAX)];
+static CORE1_AFTER: [AtomicU32; 2] = [AtomicU32::new(u32::MAX), AtomicU32::new(u32::MAX)];
+
+/// Splits `value` into the halves [`CORE1_RELOADED`] stores.
+fn store_wide(slot: &[AtomicU32; 2], value: u64) {
+    slot[0].store((value >> 32) as u32, Ordering::Release);
+    slot[1].store(value as u32, Ordering::Release);
+}
+
+/// Reassembles what [`store_wide`] stored. Safe here because the round handshake
+/// means nobody writes the slot while the other core reads it.
+fn load_wide(slot: &[AtomicU32; 2]) -> u64 {
+    let hi = slot[0].load(Ordering::Acquire);
+    let lo = slot[1].load(Ordering::Acquire);
+    (u64::from(hi) << 32) | u64::from(lo)
+}
 
 /// Round handshake: core 1 counts while this is [`PHASE_WORK`].
 const PHASE_IDLE: u32 = 0;
 const PHASE_WORK: u32 = 1;
 const PHASE_CLOCK: u32 = 3;
-/// Core 1 rewrites the counter, so core 0 can see whether the write is visible.
+/// Core 1 records its counter before core 0 reloads.
 const PHASE_RELOAD: u32 = 4;
+/// Core 1 records its counter again after the reload.
+const PHASE_RELOAD2: u32 = 5;
 const PHASE_DONE: u32 = 2;
 static PHASE: AtomicU32 = AtomicU32::new(PHASE_IDLE);
 
@@ -169,10 +190,12 @@ fn core1_main() -> ! {
             read_clock_hard(CoreId::Core1.as_index());
             PHASE.store(PHASE_DONE, Ordering::Release);
         } else if phase == PHASE_RELOAD {
-            // Move the counter to a value core 0 cannot mistake for its own
-            // sequence. If the two cores share one counter this rewinds core 0's
-            // clock too; if each has its own, core 0 keeps counting.
-            timer.set_counter(RELOAD_TICKS);
+            store_wide(&CORE1_BEFORE, timer.now());
+            PHASE.store(PHASE_DONE, Ordering::Release);
+        } else if phase == PHASE_RELOAD2 {
+            store_wide(&CORE1_AFTER, timer.now());
+            // The reload may have moved this axis, so re-arm from where it is now.
+            timer.set_target(timer.now() + u64::from(TIMER_STEP[1].load(Ordering::Acquire)));
             PHASE.store(PHASE_DONE, Ordering::Release);
         }
     }
@@ -246,7 +269,7 @@ fn main() -> ! {
         check_counters(&mc);
         check_signal();
         check_clock_reads();
-        check_separate_counters();
+        check_counter_reload();
         check_per_core_timers();
         check_identity_seen_by_core1();
         delay::delay_ms(1_000);
@@ -406,52 +429,65 @@ fn check_clock_reads() {
     );
 }
 
-/// Core 1 rewrites its counter, and core 0's clock does not notice.
+/// Core 0 reloads the counter, and both cores report what they saw.
 ///
-/// This is the experiment that separates "one counter for the chip" from "one
-/// counter per core running at the same rate": read-only comparisons cannot tell
-/// them apart, because two counters fed by the same clock and started together
-/// stay in step. Writing one from the other core is the only way to tell, and the
-/// answer for ESP32-P4 is that `mtime` is core-local — the write moves core 1's
-/// clock only.
-fn check_separate_counters() {
+/// `mtimeload` only exists in core 0's CLINT (like `MTIME_EN`), and there is one
+/// counter behind both cores: the reload has to move core 1's clock as well, which
+/// is what this checks. The reload takes a few cycles to land, so core 0 reads back
+/// after a short wait — reading immediately shows the old value and would look like
+/// the write did nothing.
+fn check_counter_reload() {
     let timer = unsafe { MachineTimer::steal() };
-    let before = timer.now();
+    store_wide(&CORE1_BEFORE, u64::MAX);
+    store_wide(&CORE1_AFTER, u64::MAX);
 
+    // Let core 1 sample its counter first, so both "before" values are close.
     PHASE.store(PHASE_RELOAD, Ordering::Release);
     let mut waited = 0u32;
-    while PHASE.load(Ordering::Acquire) != PHASE_DONE {
-        if waited == 50_000_000 {
-            break;
-        }
+    while PHASE.load(Ordering::Acquire) != PHASE_DONE && waited < 50_000_000 {
         waited += 1;
         core::hint::spin_loop();
     }
-    let finished = PHASE.load(Ordering::Acquire) == PHASE_DONE;
+    let before1 = load_wide(&CORE1_BEFORE);
+
+    let before0 = timer.now();
+    timer.set_counter(RELOAD_TICKS);
+    // The reload may land a few cycles later: give it 10 µs before reading, or a
+    // shared counter would look like it never moved.
+    esp32p4_hal::delay::delay_us(10);
+    let landed0 = timer.now();
+
+    PHASE.store(PHASE_RELOAD2, Ordering::Release);
+    waited = 0;
+    while PHASE.load(Ordering::Acquire) != PHASE_DONE && waited < 50_000_000 {
+        waited += 1;
+        core::hint::spin_loop();
+    }
+    let after1 = load_wide(&CORE1_AFTER);
     PHASE.store(PHASE_IDLE, Ordering::Release);
 
-    let after = timer.now();
-    // Core 0 kept counting: `after` is past `before`, not reset to `RELOAD_TICKS`.
-    let separate = finished && after >= before;
-
-    // Put the clock back before anything armed against it notices. If the cores
-    // share the counter this restores both; if they do not, it only rewinds core
-    // 0's, which costs at most the few microseconds this check took.
-    timer.set_counter(before);
+    // Put the clock back before anything armed against it notices.
+    timer.set_counter(before0);
     let step = u64::from(TIMER_STEP[0].load(Ordering::Acquire));
     timer.set_target(timer.now() + step);
 
+    // One counter: the reload has to show up on both cores.
+    let landed = landed0 < RELOAD_TICKS * 1_000;
+    let shared = landed && after1 < RELOAD_TICKS * 1_000;
+
     defmt::info!(
-        "separate counters: core 0 read {=u64} before, {=u64} after core 1 wrote {=u64} to its own",
-        before,
-        after,
-        RELOAD_TICKS
+        "counter reload: core 0 {=u64} then {=u64} after writing {=u64} (landed {=bool}); core 1 {=u64} then {=u64} (same counter {=bool})",
+        before0,
+        landed0,
+        RELOAD_TICKS,
+        landed,
+        before1,
+        after1,
+        shared
     );
-    report("separate counters", separate);
+    report("counter reload", landed && shared);
 }
 
-/// Each core's machine timer ticks on its own comparator.
-///
 /// Each counter and comparator is per core: core 0 asks for a tick every
 /// millisecond and
 /// core 1 every two, so twenty milliseconds of running has to produce about
