@@ -56,11 +56,20 @@ static CORE1_ID: AtomicU32 = AtomicU32::new(u32::MAX);
 /// Round handshake: core 1 counts while this is [`PHASE_WORK`].
 const PHASE_IDLE: u32 = 0;
 const PHASE_WORK: u32 = 1;
+const PHASE_CLOCK: u32 = 3;
 const PHASE_DONE: u32 = 2;
 static PHASE: AtomicU32 = AtomicU32::new(PHASE_IDLE);
 
+/// Clock reads that came back inconsistent, per core.
+static CLOCK_TORN: [AtomicU32; 2] = [const { AtomicU32::new(0) }; 2];
+/// Clock reads the two cores managed during the check.
+static CLOCK_READS: [AtomicU32; 2] = [const { AtomicU32::new(0) }; 2];
+
 /// Increments per core per round.
 const WORK: u32 = 100_000;
+
+/// Clock reads per core while both cores hammer the counter.
+const CLOCK_READS_PER_CORE: u32 = 200_000;
 
 /// CPU interrupt line core 0 takes for the inter-core poke.
 const CORE0_LINE: u8 = 20;
@@ -112,13 +121,41 @@ fn core1_main() -> ! {
     loop {
         CORE1_LOOPS.fetch_add(1, Ordering::Relaxed);
 
-        if PHASE.load(Ordering::Acquire) == PHASE_WORK {
+        let phase = PHASE.load(Ordering::Acquire);
+        if phase == PHASE_WORK {
             for _ in 0..WORK {
                 *COUNTER.lock() += 1;
             }
             PHASE.store(PHASE_DONE, Ordering::Release);
+        } else if phase == PHASE_CLOCK {
+            read_clock_hard(CoreId::Core1.as_index());
+            PHASE.store(PHASE_DONE, Ordering::Release);
         }
     }
+}
+
+/// Reads the shared clock back to back, counting reads that jump.
+///
+/// Both cores hammer the one snapshot register at the same time; the values have
+/// to stay consistent and monotonic. This cannot reproduce the rare failure mode
+/// — a snapshot torn across the low word's wrap, which needs two reads to
+/// collide within 268 seconds of each other — but it does catch a read that
+/// returns nonsense or runs backwards under contention.
+fn read_clock_hard(core: usize) {
+    let mut torn = 0u32;
+    let mut reads = 0u32;
+    let mut previous = esp32p4_hal::delay::micros();
+    for _ in 0..CLOCK_READS_PER_CORE {
+        let now = esp32p4_hal::delay::micros();
+        // 1 ms of drift between two adjacent reads would already be absurd.
+        if now < previous || now - previous > 1_000 {
+            torn += 1;
+        }
+        previous = now;
+        reads += 1;
+    }
+    CLOCK_TORN[core].store(torn, Ordering::Release);
+    CLOCK_READS[core].store(reads, Ordering::Release);
 }
 
 #[main]
@@ -159,6 +196,7 @@ fn main() -> ! {
     loop {
         check_counters(&mc);
         check_signal(&delay);
+        check_shared_clock();
         check_identity_seen_by_core1(&delay);
         delay.delay_ms(1_000);
     }
@@ -280,4 +318,39 @@ fn check_identity_seen_by_core1(delay: &Delay) {
         multicore::core_id().as_index()
     );
     report("core id", ok);
+}
+
+/// Both cores read the shared clock at once, and it stays consistent.
+fn check_shared_clock() {
+    CLOCK_TORN[0].store(0, Ordering::Release);
+    CLOCK_TORN[1].store(0, Ordering::Release);
+    CLOCK_READS[0].store(0, Ordering::Release);
+    CLOCK_READS[1].store(0, Ordering::Release);
+
+    PHASE.store(PHASE_CLOCK, Ordering::Release);
+    read_clock_hard(CoreId::Core0.as_index());
+
+    let mut waited = 0u32;
+    while PHASE.load(Ordering::Acquire) != PHASE_DONE {
+        if waited == 50_000_000 {
+            break;
+        }
+        waited += 1;
+        core::hint::spin_loop();
+    }
+    let phase = PHASE.load(Ordering::Acquire);
+    PHASE.store(PHASE_IDLE, Ordering::Release);
+
+    let torn = CLOCK_TORN[0].load(Ordering::Acquire) + CLOCK_TORN[1].load(Ordering::Acquire);
+    let reads = CLOCK_READS[0].load(Ordering::Acquire) + CLOCK_READS[1].load(Ordering::Acquire);
+    defmt::info!(
+        "shared clock: {=u32} reads from both cores, {=u32} inconsistent, core 1 finished {=bool}",
+        reads,
+        torn,
+        phase == PHASE_DONE
+    );
+    report(
+        "shared clock",
+        torn == 0 && reads >= 2 * CLOCK_READS_PER_CORE && phase == PHASE_DONE,
+    );
 }

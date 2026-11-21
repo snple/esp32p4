@@ -73,9 +73,24 @@ pub(crate) fn read_ticks() -> u64 {
         core::hint::spin_loop();
     }
 
-    let hi = systimer.unit0_value_hi.read_bits() as u64;
-    let lo = systimer.unit0_value_lo.read_bits() as u64;
-    (hi << 32) | lo
+    // The snapshot registers are one copy for the whole chip, not one per core:
+    // the other core can trigger an update between the high and the low read.
+    // That only changes the result when the two snapshots straddle the low
+    // word's 32-bit wrap — otherwise the high word is identical and mixing them
+    // is harmless — so the wrong value appears about once every 268 seconds and
+    // only when the reads collide, which is why the read is guarded rather than
+    // trusted. Reading the low word on both sides of the high word detects the
+    // collision; the retry costs a few cycles when it happens and nothing
+    // otherwise. ESP-IDF reads it the same way for the same reason.
+    let mut lo = systimer.unit0_value_lo.read_bits();
+    loop {
+        let hi = systimer.unit0_value_hi.read_bits();
+        let again = systimer.unit0_value_lo.read_bits();
+        if again == lo {
+            return (u64::from(hi) << 32) | u64::from(lo);
+        }
+        lo = again;
+    }
 }
 
 /// A span of time, counted in 16 MHz system timer ticks.

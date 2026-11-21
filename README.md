@@ -1796,6 +1796,20 @@ P4 有三个核：两个 HP RISC-V 核（同一套指令集、共享内存）和
 core 0 出复位，core 1 停在复位里；[`multicore`](esp32p4-hal/src/multicore.rs) 负责把
 它拉起来，并提供跨核通信与共享状态的锁。
 
+### 三个核的定时资源
+
+| 资源 | 归属 | 说明 |
+|------|------|------|
+| `SYSTIMER` | **全芯片一份**，两核共用 | 两个 52 位计数单元 `UNIT0/1` + 三个比较器 `COMP0/1/2`，同一份寄存器块；只有“某核被停住时是否停表”的 `TIMER_UNITn_COREx_STALL_EN` 是按核分的 |
+| CLINT machine timer | **每核一个**（core-local） | `mtime`/`mtimecmp`/`mtimectl`，中断号 7；地址与 CLIC 同在核私有的 `0x2080_0000` 窗口（`mtimecmp` = +0x4000、`mtimectl` = +0x4010、`mtime` = +0xBFF8），两核看到的是各自的副本 |
+| CLINT software interrupt | **每核一个** | `msip`（+0x0），CLIC 中断号 3 |
+| `TIMG0/1`、LEDC、RMT…… | 全芯片一份 | 普通外设，用哪个核访问由软件约定 |
+
+也就是说 `SYSTIMER` **不是** ARM 的 SysTick 那种“核内私有定时器”，它更像一个 SoC 级
+共享计数器；真正和 SysTick 对应的是 CLINT 的 machine timer。当前 HAL 统一用 `SYSTIMER`
+做时间基准（`time` / `delay` / `systimer` 三个模块），CLINT 定时器还没封装——它的中断号 7
+在 `interrupt` 里也还没占位。
+
 ```rust
 static STACK: Stack<8192> = Stack::new();
 static COUNTER: Mutex<u32> = Mutex::new(0);
@@ -1835,6 +1849,11 @@ unsafe { mc.launch_core1(core1, &STACK) };   // 返回到 core 1 已在跑
 - **触发寄存器是按“目标核”编址的**：写 `HP_SYS.CPU_INTR_FROM_CPU_0` 打的是 core 0，
   写 `..._1` 打的是 core 1。所以每个核在自己矩阵里路由的源 = 自己的编号，接收方清自己
   那一位；IDF 的 `crosscore_int` 也是这么分的（核 0 用 source 0，核 1 用 source 1）；
+- **两端共享的读数要防撕裂**。`SYSTIMER` 是**一个**外设（下面一节讲），计数器快照寄存器
+  `UNIT0_VALUE_HI/LO` 全芯片只有一份：另一核在我读 HI 与 LO 之间再触发一次
+  `TIMER_UNIT0_UPDATE`，两次快照就可能被拼在一起。只有当这两次快照跨过 LO 的 32 位回绕时
+  才会真的读错（约 268 秒一次，且要与另一次读相撞），所以 `time::read_ticks()` 用
+  LO/HI/LO 复读校验（与 IDF 的 `systimer_hal_get_counter_value` 一致），正常情况不多花时间；
 - **没有硬件自旋锁**。P4 不像 ESP32 有 `SPINLOCK` 外设，[`Mutex`](esp32p4-hal/src/multicore.rs)
   是 `AtomicBool` 的 test-and-set（acquire/release）：两核经共享 L1 是一致的、`A` 扩展
   的原子指令直达内存，所以正确；但它是**自旋**，不能持锁等另一个核；
@@ -1851,6 +1870,7 @@ unsafe { mc.launch_core1(core1, &STACK) };   // 返回到 core 1 已在跑
 | 计数 | 两核各 10 万次加锁自增，合计正好 200000（锁错就会少） |
 | 互踢 | core 0 打 core 1，core 1 的中断响应并回踢，core 0 的中断收到；handler 里还能读到挂起位 |
 | core id | core 1 自报的 core 编号是 1 |
+| 共享时钟 | 两核各 20 万次读同一个快照寄存器，值单调、无异常 |
 
 ## 重新生成 PAC
 
