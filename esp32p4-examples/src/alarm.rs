@@ -21,13 +21,13 @@ defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use esp32p4_hal::delay::Delay;
+use esp32p4_hal::delay;
 use esp32p4_hal::gpio::Pins;
 use esp32p4_hal::interrupt::{self, CpuInterrupt};
 use esp32p4_hal::main;
 use esp32p4_hal::pac::Peripherals;
 use esp32p4_hal::systimer::Systimer;
-use esp32p4_hal::time::{Duration, Instant};
+use esp32p4_hal::time::Duration;
 use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
 
 const LED_PIN: u32 = 2;
@@ -46,11 +46,10 @@ fn main() -> ! {
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
     let mut led = pins.pin::<LED_PIN>();
     led.into_output();
-    // The timer owns the peripheral and the alarms' CPU lines. The delay driver
-    // does not share a comparator with it: sleeping parks the core on the
-    // per-core machine timer, so all three comparators stay available here.
+    // The timer owns the peripheral and the alarms' CPU lines. Nothing else here
+    // touches a comparator, so all three stay available.
     let systimer = Systimer::init(dp.SYSTIMER);
-    let delay = Delay::init();
+    systimer.unit0.start();
 
     // COMP1: an interrupt every 250 ms. The hardware re-arms the comparator,
     // so the handler only has to acknowledge it (which the shim does).
@@ -60,7 +59,7 @@ fn main() -> ! {
 
     // COMP2: a single deadline 5 s out, polled from the main loop.
     let one_shot = &systimer.alarm2;
-    one_shot.set_target(Instant::now() + Duration::from_secs(5));
+    one_shot.set_target(systimer.unit0.now() + Duration::from_secs(5));
 
     unsafe { interrupt::enable() };
 
@@ -79,10 +78,10 @@ fn main() -> ! {
             one_shot.clear();
 
             #[cfg(feature = "defmt")]
-            defmt::info!("one-shot fired at {}us", Instant::now().as_ticks() / 16);
+            defmt::info!("one-shot fired at {}us", systimer.unit0.micros());
         }
 
-        // Park the core until the next check; any interrupt wakes it early.
-        delay.sleep_until(Instant::now() + Duration::from_millis(5));
+        // Throttle the polling loop; the interrupt does the real work.
+        delay::delay_ms(5);
     }
 }

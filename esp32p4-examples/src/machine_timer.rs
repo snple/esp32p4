@@ -29,7 +29,7 @@ defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use esp32p4_hal::clock::ClockTree;
-use esp32p4_hal::delay::{self, Delay};
+use esp32p4_hal::delay;
 use esp32p4_hal::interrupt::Level;
 use esp32p4_hal::machine_timer::{MachineTimer, ticks_per_ms};
 use esp32p4_hal::main;
@@ -74,10 +74,9 @@ fn on_tick() {
 fn main() -> ! {
     let dp = Peripherals::take().unwrap();
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
-    let delay = Delay::init();
     let clock = ClockTree::init(dp.HP_SYS_CLKRST, dp.LP_AON_CLKRST);
 
-    let timer = MachineTimer::init();
+    let timer = MachineTimer::init(clock.cpu_hz());
     timer.enable_interrupt(Level::LOW, on_tick);
     // SAFETY: the comparator line and its handler are installed.
     unsafe { esp32p4_hal::interrupt::enable() };
@@ -91,13 +90,13 @@ fn main() -> ! {
 
     let cpu_hz = clock.cpu_hz();
     loop {
-        check_rate(&timer, &delay, cpu_hz);
+        check_rate(&timer, cpu_hz);
         check_monotonic(&timer);
-        check_interrupt(&timer, &delay, cpu_hz);
-        check_periodic(&timer, &delay, cpu_hz);
+        check_interrupt(&timer, cpu_hz);
+        check_periodic(&timer, cpu_hz);
         check_target(&timer);
         check_overflow(&timer);
-        delay.delay_ms(1_000);
+        delay::delay_ms(1_000);
     }
 }
 
@@ -107,12 +106,12 @@ fn report(label: &str, ok: bool) {
 }
 
 /// The counter advances at `CPU_CLK`, measured against `SYSTIMER`.
-fn check_rate(timer: &MachineTimer, delay: &Delay, cpu_hz: u32) {
+fn check_rate(timer: &MachineTimer, cpu_hz: u32) {
     // A long window keeps the few microseconds of sampling skew at either end
     // below the tolerance.
     let m0 = timer.now();
     let s0 = delay::micros();
-    delay.delay_ms(50);
+    delay::delay_ms(50);
     let s1 = delay::micros();
     let m1 = timer.now();
 
@@ -150,7 +149,7 @@ fn check_monotonic(timer: &MachineTimer) {
 }
 
 /// One comparator match, and how late the handler was.
-fn check_interrupt(timer: &MachineTimer, delay: &Delay, cpu_hz: u32) {
+fn check_interrupt(timer: &MachineTimer, cpu_hz: u32) {
     FIRED.store(false, Ordering::Release);
     CHAIN.store(false, Ordering::Release);
 
@@ -161,7 +160,7 @@ fn check_interrupt(timer: &MachineTimer, delay: &Delay, cpu_hz: u32) {
     let mut waited = 0u32;
     while !FIRED.load(Ordering::Acquire) && waited < 2_000_000 {
         waited += 1;
-        delay.delay_us(1);
+        delay::delay_us(1);
     }
     let fired = FIRED.load(Ordering::Acquire);
     let served = SERVED_AT.load(Ordering::Acquire);
@@ -180,7 +179,7 @@ fn check_interrupt(timer: &MachineTimer, delay: &Delay, cpu_hz: u32) {
 }
 
 /// Re-arming from the handler produces a tick at a steady interval.
-fn check_periodic(timer: &MachineTimer, delay: &Delay, cpu_hz: u32) {
+fn check_periodic(timer: &MachineTimer, cpu_hz: u32) {
     let step = ticks_per_ms(cpu_hz);
     STEP.store(step as u32, Ordering::Release);
     TICKS.store(0, Ordering::Release);
@@ -188,7 +187,7 @@ fn check_periodic(timer: &MachineTimer, delay: &Delay, cpu_hz: u32) {
     timer.set_target(timer.now() + step);
 
     let start = delay::micros();
-    delay.delay_ms(20);
+    delay::delay_ms(20);
     let elapsed_us = delay::micros() - start;
     CHAIN.store(false, Ordering::Release);
     // Acknowledge the last one so the level-triggered interrupt is not left

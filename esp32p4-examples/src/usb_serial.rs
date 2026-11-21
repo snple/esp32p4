@@ -22,7 +22,7 @@ defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
 use core::fmt::Write;
 
-use esp32p4_hal::delay::Delay;
+use esp32p4_hal::delay;
 use esp32p4_hal::gpio::Pins;
 use esp32p4_hal::main;
 use esp32p4_hal::pac::Peripherals;
@@ -37,7 +37,6 @@ fn main() -> ! {
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
     let mut led = pins.pin::<LED_PIN>();
     led.into_output();
-    let delay = Delay::init();
 
     writeln!(serial, "\r\nESP32-P4 USB Serial/JTAG ready").ok();
 
@@ -57,6 +56,6 @@ fn main() -> ! {
         led.toggle();
         writeln!(serial, "tick {ticks}").ok();
         ticks = ticks.wrapping_add(1);
-        delay.delay_ms(1000);
+        delay::delay_ms(1000);
     }
 }

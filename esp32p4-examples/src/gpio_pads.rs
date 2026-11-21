@@ -19,6 +19,7 @@ use defmt_rtt as _;
 #[cfg(feature = "defmt")]
 defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
+use esp32p4_hal::delay;
 use esp32p4_hal::gpio::pins::pads_with;
 use esp32p4_hal::gpio::{AnalogFunction, MuxFunction, PinOps, Pins};
 use esp32p4_hal::main;
@@ -111,9 +112,8 @@ fn main() -> ! {
     led.into_output();
     defmt::info!("LED pad function: {}", led.mux_function().map(|f| f.name()));
 
-    let delay = esp32p4_hal::delay::Delay::init();
     loop {
         led.toggle();
-        delay.delay_ms(500);
+        delay::delay_ms(500);
     }
 }

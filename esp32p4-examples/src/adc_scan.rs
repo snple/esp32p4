@@ -25,7 +25,7 @@ use esp32p4_hal::adc::{
     Adc, AdcInput, Attenuation, Filter, FilterCoefficient, FilterIndex, Monitor, MonitorIndex,
     Pattern, Sample, Unit,
 };
-use esp32p4_hal::delay::Delay;
+use esp32p4_hal::delay;
 use esp32p4_hal::dma::{AhbDma, Descriptor};
 use esp32p4_hal::gpio::Pins;
 use esp32p4_hal::main;
@@ -46,7 +46,6 @@ const TIMER_CYCLES: u32 = 4_000;
 fn main() -> ! {
     let dp = Peripherals::take().unwrap();
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
-    let delay = Delay::init();
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
 
     let adc = Adc::init(dp.ADC, dp.LP_ADC, &dp.HP_SYS_CLKRST, &dp.LP_PERI);
@@ -130,6 +129,6 @@ fn main() -> ! {
         defmt::info!("monitor: {:?}", adc.monitor_state(MonitorIndex::Zero));
         adc.clear_monitor(MonitorIndex::Zero);
 
-        delay.delay_ms(1_000);
+        delay::delay_ms(1_000);
     }
 }

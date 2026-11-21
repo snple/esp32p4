@@ -22,7 +22,7 @@ use defmt_rtt as _;
 
 defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
-use esp32p4_hal::delay::Delay;
+use esp32p4_hal::delay;
 use esp32p4_hal::main;
 use esp32p4_hal::pac::Peripherals;
 
@@ -32,11 +32,10 @@ fn main() -> ! {
 
     defmt::info!("hello from ESP32-P4");
 
-    let delay = Delay::init();
     let mut ticks = 0u32;
     loop {
         defmt::debug!("tick {}", ticks);
         ticks = ticks.wrapping_add(1);
-        delay.delay_ms(1000);
+        delay::delay_ms(1000);
     }
 }

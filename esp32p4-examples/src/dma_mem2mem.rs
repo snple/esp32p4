@@ -22,7 +22,7 @@ use defmt_rtt as _;
 #[cfg(feature = "defmt")]
 defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
-use esp32p4_hal::delay::Delay;
+use esp32p4_hal::delay;
 use esp32p4_hal::dma::{AhbDma, Descriptor, MemChannel};
 use esp32p4_hal::main;
 use esp32p4_hal::pac::Peripherals;
@@ -85,7 +85,6 @@ fn copy_and_check(
 fn main() -> ! {
     let dp = Peripherals::take().unwrap();
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
-    let delay = Delay::init();
     let dma = AhbDma::init(dp.AHB_DMA, &dp.HP_SYS_CLKRST);
 
     // SAFETY: buffers and descriptors are only used here, for the whole run.
@@ -121,6 +120,6 @@ fn main() -> ! {
             descriptors,
         );
 
-        delay.delay_ms(1_000);
+        delay::delay_ms(1_000);
     }
 }

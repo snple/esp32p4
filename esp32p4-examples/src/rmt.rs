@@ -22,7 +22,7 @@ use defmt_rtt as _;
 #[cfg(feature = "defmt")]
 defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
-use esp32p4_hal::delay::Delay;
+use esp32p4_hal::delay;
 use esp32p4_hal::gpio::signal::{InputSignal, OutputSignal};
 use esp32p4_hal::gpio::{Level, PinOps, Pins};
 use esp32p4_hal::main;
@@ -65,7 +65,6 @@ fn main() -> ! {
     let dp = Peripherals::take().unwrap();
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
-    let delay = Delay::init();
 
     let rmt = Rmt::init(dp.RMT, &dp.HP_SYS_CLKRST);
     rmt.set_clock_source(&dp.HP_SYS_CLKRST, ClockSource::Xtal40m, DIVIDER)
@@ -159,6 +158,6 @@ fn main() -> ! {
     assert_eq!(mismatches2, 0, "RMT channel 2 loopback mismatch");
 
     loop {
-        delay.delay_ms(1_000);
+        delay::delay_ms(1_000);
     }
 }

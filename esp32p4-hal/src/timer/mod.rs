@@ -67,14 +67,13 @@
 //! 0's.
 
 use core::cell::RefCell;
-use core::sync::atomic::{AtomicUsize, Ordering};
 
 use esp32p4_pac::{TIMG0, TIMG1, hp_sys_clkrst};
 use pastey::paste;
 
 use crate::Steal;
-use crate::interrupt::{self, CpuInterrupt, Interrupt, InterruptHandler, Level};
-use crate::time::{self, Duration};
+use crate::interrupt::{self, CpuInterrupt, HandlerSlot, Interrupt, InterruptHandler, Level};
+use crate::time::Duration;
 
 /// A clock a timer or the watchdog can prescale.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -199,27 +198,10 @@ const WDT_CLOCK_HZ: u32 = 40_000_000;
 /// Value that unlocks the watchdog's configuration registers.
 const WDT_UNLOCK_KEY: u32 = 0x50d8_3aa1;
 
-/// Number of general-purpose timers on the chip.
-const TIMER_COUNT: usize = 4;
-
-/// User callbacks, one per counter, called by the generated interrupt shims.
-static HANDLERS: [AtomicUsize; TIMER_COUNT] = [const { AtomicUsize::new(0) }; TIMER_COUNT];
-
 /// The clock controller's register block.
 fn clkrst() -> &'static hp_sys_clkrst::RegisterBlock {
     // SAFETY: the clock controller is always mapped and lives for the program.
     unsafe { &*esp32p4_pac::HP_SYS_CLKRST::PTR }
-}
-
-/// Calls the user's handler of counter `index`.
-fn dispatch(index: usize) {
-    let handler = HANDLERS[index].load(Ordering::Acquire);
-    if handler != 0 {
-        // SAFETY: `HANDLERS` only ever holds values stored by the timer groups,
-        // which store `fn()` pointers.
-        let handler: fn() = unsafe { core::mem::transmute::<usize, fn()>(handler) };
-        handler();
-    }
 }
 
 // ============================================================================
@@ -237,8 +219,10 @@ macro_rules! impl_timer {
     (
         $(#[$attr:meta])*
         $Timer:ident, $TIMG:ident, $G:literal, $N:literal, $source:ident, $shim:ident,
-        $index:literal
+        $slot:ident
     ) => {
+        static $slot: HandlerSlot = HandlerSlot::new();
+
         $(#[$attr])*
         pub struct $Timer {
             /// This counter's group. The group owns the same peripheral; the
@@ -372,8 +356,7 @@ macro_rules! impl_timer {
             /// duration has to be converted: at the default 1 MHz one tick is
             /// one microsecond, but a different clock or prescaler changes that.
             pub fn ticks(&self, duration: Duration) -> u64 {
-                let ticks =
-                    duration.as_ticks() as u128 * self.tick_hz() as u128 / time::TICK_HZ as u128;
+                let ticks = duration.as_ticks(self.tick_hz()) as u128;
                 ticks.clamp(1, MAX_VALUE as u128) as u64
             }
 
@@ -590,37 +573,37 @@ macro_rules! impl_timer {
             const SOURCE: Interrupt = Interrupt::$source;
             /// The shim the group installs on the counter's CPU line.
             const SHIM: fn() = $shim;
-            /// Slot of this counter in the HAL's tables.
-            const INDEX: usize = $index;
+            /// This counter's handler slot.
+            const HANDLER: &'static HandlerSlot = &$slot;
         }
 
         /// Interrupt shim of this counter: acknowledges its alarm, then calls the
         /// user's handler.
         fn $shim() {
             $Timer::new().acknowledge_alarm();
-            dispatch($index);
+            $slot.call();
         }
     };
 }
 
 impl_timer! {
     /// `TIMG0` counter 0, the source of `TG0_T0`.
-    Timer00, TIMG0, 0, 0, TG0_T0, alarm00, 0
+    Timer00, TIMG0, 0, 0, TG0_T0, alarm00, TIMER00_HANDLER
 }
 
 impl_timer! {
     /// `TIMG0` counter 1, the source of `TG0_T1`.
-    Timer01, TIMG0, 0, 1, TG0_T1, alarm01, 1
+    Timer01, TIMG0, 0, 1, TG0_T1, alarm01, TIMER01_HANDLER
 }
 
 impl_timer! {
     /// `TIMG1` counter 0, the source of `TG1_T0`.
-    Timer10, TIMG1, 1, 0, TG1_T0, alarm10, 2
+    Timer10, TIMG1, 1, 0, TG1_T0, alarm10, TIMER10_HANDLER
 }
 
 impl_timer! {
     /// `TIMG1` counter 1, the source of `TG1_T1`.
-    Timer11, TIMG1, 1, 1, TG1_T1, alarm11, 3
+    Timer11, TIMG1, 1, 1, TG1_T1, alarm11, TIMER11_HANDLER
 }
 
 // ============================================================================
@@ -741,8 +724,7 @@ macro_rules! impl_watchdog {
             /// automatically so timeouts longer than the 32-bit tick register
             /// allows still fit.
             pub fn set_timeout(&self, stage: MwdtStage, timeout: Duration) {
-                let ticks =
-                    timeout.as_ticks() as u128 * WDT_CLOCK_HZ as u128 / time::TICK_HZ as u128;
+                let ticks = timeout.as_ticks(WDT_CLOCK_HZ) as u128;
                 assert!(ticks > 0, "a watchdog timeout must not be zero");
 
                 let prescaler = ticks.div_ceil(u32::MAX as u128).clamp(1, u16::MAX as u128) as u32;
@@ -886,14 +868,8 @@ macro_rules! impl_timer_group {
             /// `timer0.set_alarm`, and global interrupts have to be enabled with
             /// [`interrupt::enable`].
             pub fn enable_timer0_interrupt(&self, line: CpuInterrupt, handler: fn()) {
-                self.claim(
-                    &self.irq0,
-                    $Timer0::INDEX,
-                    $Timer0::SOURCE,
-                    $Timer0::SHIM,
-                    line,
-                    handler,
-                );
+                $Timer0::HANDLER.set(handler);
+                self.claim(&self.irq0, $Timer0::SOURCE, $Timer0::SHIM, line);
                 self.timer0.clear_alarm();
                 self.timer0.enable_alarm_interrupt();
             }
@@ -901,7 +877,8 @@ macro_rules! impl_timer_group {
             /// Mask `timer0`'s alarm interrupt and give its CPU line back.
             pub fn disable_timer0_interrupt(&self) {
                 self.timer0.disable_alarm_interrupt();
-                self.release_line(&self.irq0, $Timer0::INDEX);
+                self.release_line(&self.irq0);
+                $Timer0::HANDLER.clear();
             }
 
             /// Whether `timer0`'s alarm interrupt is unmasked.
@@ -914,14 +891,8 @@ macro_rules! impl_timer_group {
             ///
             /// See [`enable_timer0_interrupt`](Self::enable_timer0_interrupt).
             pub fn enable_timer1_interrupt(&self, line: CpuInterrupt, handler: fn()) {
-                self.claim(
-                    &self.irq1,
-                    $Timer1::INDEX,
-                    $Timer1::SOURCE,
-                    $Timer1::SHIM,
-                    line,
-                    handler,
-                );
+                $Timer1::HANDLER.set(handler);
+                self.claim(&self.irq1, $Timer1::SOURCE, $Timer1::SHIM, line);
                 self.timer1.clear_alarm();
                 self.timer1.enable_alarm_interrupt();
             }
@@ -929,7 +900,8 @@ macro_rules! impl_timer_group {
             /// Mask `timer1`'s alarm interrupt and give its CPU line back.
             pub fn disable_timer1_interrupt(&self) {
                 self.timer1.disable_alarm_interrupt();
-                self.release_line(&self.irq1, $Timer1::INDEX);
+                self.release_line(&self.irq1);
+                $Timer1::HANDLER.clear();
             }
 
             /// Whether `timer1`'s alarm interrupt is unmasked.
@@ -941,18 +913,14 @@ macro_rules! impl_timer_group {
             fn claim(
                 &self,
                 slot: &RefCell<Option<InterruptHandler>>,
-                index: usize,
                 source: Interrupt,
                 shim: fn(),
                 line: CpuInterrupt,
-                handler: fn(),
             ) {
                 assert!(
                     slot.borrow().is_none(),
                     "this timer already has an interrupt handler"
                 );
-
-                HANDLERS[index].store(handler as usize, Ordering::Release);
 
                 // SAFETY: the shim only touches its counter's status bits before
                 // calling the user's function, and `claim` makes sure no other
@@ -963,14 +931,9 @@ macro_rules! impl_timer_group {
             }
 
             /// Give the line in `slot` back.
-            fn release_line(&self, slot: &RefCell<Option<InterruptHandler>>, index: usize) {
-                if let Some(handler) = slot.borrow_mut().take() {
-                    // No shim may fire once the line is gone.
-                    HANDLERS[index].store(0, Ordering::Release);
-                    // Dropping the handler unregisters the shim and frees the
-                    // line.
-                    drop(handler);
-                }
+            fn release_line(&self, slot: &RefCell<Option<InterruptHandler>>) {
+                // Dropping the handler unregisters the shim and frees the line.
+                drop(slot.borrow_mut().take());
             }
         }
 

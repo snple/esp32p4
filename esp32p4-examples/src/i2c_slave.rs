@@ -27,7 +27,7 @@ defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use esp32p4_hal::delay::Delay;
+use esp32p4_hal::delay;
 use esp32p4_hal::gpio::{PinOps, Pins};
 use esp32p4_hal::i2c::{
     Error, I2c0, I2c1Slave, I2cConfig, Interrupt as I2cInterrupt, SlaveConfig, StretchCause,
@@ -81,7 +81,6 @@ fn main() -> ! {
     let dp = Peripherals::take().unwrap();
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
-    let delay = Delay::init();
 
     let mut sda_master = pins.pin::<SDA_MASTER>();
     let mut scl_master = pins.pin::<SCL_MASTER>();
@@ -122,7 +121,7 @@ fn main() -> ! {
         check_non_blocking(&master, &slave);
         check_flags(&master, &slave);
         check_stretch(&master, &slave);
-        delay.delay_ms(1_000);
+        delay::delay_ms(1_000);
     }
 }
 

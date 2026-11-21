@@ -26,7 +26,7 @@ use defmt_rtt as _;
 #[cfg(feature = "defmt")]
 defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
-use esp32p4_hal::delay::{self, Delay};
+use esp32p4_hal::delay;
 use esp32p4_hal::efuse::Efuse;
 use esp32p4_hal::emac::{Emac, EmacBuffers, EmacConfig, EmacResources, RmiiPins};
 use esp32p4_hal::gpio::Pins;
@@ -207,7 +207,6 @@ fn main() -> ! {
     // The USB Serial/JTAG logger silently drops everything until its clock gate
     // is open, so the port is opened before the first log statement.
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
-    let delay = Delay::init();
 
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
 
@@ -215,9 +214,9 @@ fn main() -> ! {
     // oscillator time to start.
     let mut phy_reset = pins.pin::<PHY_RESET_PIN>();
     phy_reset.into_output().set_low();
-    delay.delay_ms(100);
+    delay::delay_ms(100);
     phy_reset.set_high();
-    delay.delay_ms(300);
+    delay::delay_ms(300);
 
     let rmii = RmiiPins::new(
         pins.pin::<49>(), // TXEN
@@ -274,7 +273,7 @@ fn main() -> ! {
         // The very first frame after auto-negotiation is regularly lost — the
         // PHY has just finished training. A short settle keeps the first DHCP
         // DISCOVER from going nowhere.
-        delay.delay_ms(200);
+        delay::delay_ms(200);
     } else {
         defmt::warn!("no link: check the cable and the PHY strapping");
     }
@@ -346,7 +345,7 @@ fn main() -> ! {
         net.poll_wait(&mut emac, 20);
 
         for echo in &mut echoes {
-            echo.service(net.sockets_mut(), delay.now_us());
+            echo.service(net.sockets_mut(), delay::micros());
         }
 
         // Data written to a socket only leaves the stack on the next `poll`.
@@ -366,7 +365,7 @@ fn main() -> ! {
             defmt::info!(
                 "tick {} at {} ms: link {} {} {}, ip {:?}, tcp {:?} / {:?}",
                 ticks,
-                delay.now_us() / 1000,
+                delay::micros() / 1000,
                 link.up,
                 link.speed,
                 link.duplex,

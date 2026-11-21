@@ -19,7 +19,7 @@ defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use esp32p4_hal::delay::Delay;
+use esp32p4_hal::delay;
 use esp32p4_hal::gpio::{InterruptLine, InterruptType, Pin, Pins};
 use esp32p4_hal::interrupt::{self, CpuInterrupt, Level};
 use esp32p4_hal::main;
@@ -70,11 +70,10 @@ fn main() -> ! {
     // SAFETY: the GPIO line is claimed and its handler is installed.
     unsafe { interrupt::enable() };
 
-    let delay = Delay::init();
     loop {
         if PRESSED.swap(false, Ordering::Relaxed) {
             led.toggle();
         }
-        delay.delay_ms(10);
+        delay::delay_ms(10);
     }
 }

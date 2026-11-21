@@ -65,6 +65,6 @@ fn main() -> ! {
     }
 
     loop {
-        esp32p4_hal::delay::sleep_ms(1_000);
+        esp32p4_hal::delay::delay_ms(1_000);
     }
 }

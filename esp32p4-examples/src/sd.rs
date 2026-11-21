@@ -33,7 +33,7 @@ use defmt_rtt as _;
 #[cfg(feature = "defmt")]
 defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
-use esp32p4_hal::delay::Delay;
+use esp32p4_hal::delay;
 use esp32p4_hal::gpio::{PinOps, Pins};
 use esp32p4_hal::main;
 use esp32p4_hal::pac::Peripherals;
@@ -55,7 +55,6 @@ const SD_DAT3: u32 = 42;
 fn main() -> ! {
     let dp = Peripherals::take().unwrap();
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
-    let delay = Delay::init();
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
 
     // Power the card first: the on-chip LDO in `SdHost::init` supplies the
@@ -65,7 +64,7 @@ fn main() -> ! {
     power.set_function_gpio();
     power.set_output_enabled(true);
     power.set_low();
-    delay.delay_ms(20);
+    delay::delay_ms(20);
 
     let host = SdHost::init(dp.SDHOST, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST, &dp.PMU);
     host.set_pins(
@@ -144,6 +143,6 @@ fn main() -> ! {
     defmt::info!("SD card self-check passed");
 
     loop {
-        delay.delay_ms(1_000);
+        delay::delay_ms(1_000);
     }
 }

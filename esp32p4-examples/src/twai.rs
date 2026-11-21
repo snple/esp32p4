@@ -24,7 +24,7 @@ defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use esp32p4_hal::clock::XTAL_HZ;
-use esp32p4_hal::delay::Delay;
+use esp32p4_hal::delay;
 use esp32p4_hal::gpio::signal::{InputSignal, OutputSignal};
 use esp32p4_hal::gpio::{PinOps, Pins};
 use esp32p4_hal::interrupt::{self, CpuInterrupt, Level as InterruptLevel};
@@ -74,7 +74,6 @@ fn main() -> ! {
     let dp = Peripherals::take().unwrap();
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
-    let delay = Delay::init();
 
     let mut loop_pin = pins.pin::<LOOP_PIN>();
     loop_pin.route_output_signal(OutputSignal::TWAI0_TX_PAD_OUT);
@@ -101,11 +100,11 @@ fn main() -> ! {
     twai.start();
 
     loop {
-        check_standard_frame(&twai, &delay);
-        check_extended_frame(&twai, &delay);
-        check_remote_frame(&twai, &delay);
-        check_filter(&twai, &delay);
-        check_interrupt(&twai, &delay);
+        check_standard_frame(&twai);
+        check_extended_frame(&twai);
+        check_remote_frame(&twai);
+        check_filter(&twai);
+        check_interrupt(&twai);
         check_timing();
         check_rejects();
 
@@ -118,14 +117,14 @@ fn main() -> ! {
             twai.frames_pending()
         );
 
-        delay.delay_ms(1_000);
+        delay::delay_ms(1_000);
     }
 }
 
 /// A standard-id data frame comes back byte for byte.
-fn check_standard_frame(twai: &Twai0, delay: &Delay) {
+fn check_standard_frame(twai: &Twai0) {
     let sent = Frame::data(Id::Standard(0x123), &[0x11, 0x22, 0x33]).unwrap();
-    let received = round_trip(twai, delay, sent);
+    let received = round_trip(twai, sent);
 
     let ok = match received {
         Some(frame) => frame.id == sent.id && frame.payload() == sent.payload() && !frame.remote,
@@ -139,10 +138,10 @@ fn check_standard_frame(twai: &Twai0, delay: &Delay) {
 }
 
 /// The 29-bit path, with a full payload.
-fn check_extended_frame(twai: &Twai0, delay: &Delay) {
+fn check_extended_frame(twai: &Twai0) {
     let payload = [0u8, 1, 2, 3, 4, 5, 6, 7];
     let sent = Frame::data(Id::Extended(0x1AB_CDEF), &payload).unwrap();
-    let received = round_trip(twai, delay, sent);
+    let received = round_trip(twai, sent);
 
     let ok = match received {
         Some(frame) => {
@@ -158,9 +157,9 @@ fn check_extended_frame(twai: &Twai0, delay: &Delay) {
 }
 
 /// A remote frame keeps its requested length and carries no payload.
-fn check_remote_frame(twai: &Twai0, delay: &Delay) {
+fn check_remote_frame(twai: &Twai0) {
     let sent = Frame::remote(Id::Standard(0x321), 4).unwrap();
-    let received = round_trip(twai, delay, sent);
+    let received = round_trip(twai, sent);
 
     let ok = match received {
         Some(frame) => frame.remote && frame.len() == 4 && frame.payload().is_empty(),
@@ -175,7 +174,7 @@ fn check_remote_frame(twai: &Twai0, delay: &Delay) {
 
 /// The acceptance filter lets the matching identifier through and drops the
 /// neighbouring one.
-fn check_filter(twai: &Twai0, delay: &Delay) {
+fn check_filter(twai: &Twai0) {
     let timing = Timing::for_bitrate(XTAL_HZ, BITRATE, 875).unwrap();
     let config = |filter| Config {
         timing,
@@ -191,18 +190,8 @@ fn check_filter(twai: &Twai0, delay: &Delay) {
     }));
     twai.start();
 
-    let accepted = round_trip(
-        twai,
-        delay,
-        Frame::data(Id::Standard(0x123), &[0xA5]).unwrap(),
-    )
-    .is_some();
-    let rejected = round_trip(
-        twai,
-        delay,
-        Frame::data(Id::Standard(0x124), &[0xA5]).unwrap(),
-    )
-    .is_none();
+    let accepted = round_trip(twai, Frame::data(Id::Standard(0x123), &[0xA5]).unwrap()).is_some();
+    let rejected = round_trip(twai, Frame::data(Id::Standard(0x124), &[0xA5]).unwrap()).is_none();
 
     // Back to accepting everything for the checks that follow.
     twai.stop();
@@ -274,7 +263,7 @@ fn check_rejects() {
 }
 
 /// Sends `frame` with self-reception and waits for the looped-back copy.
-fn round_trip(twai: &Twai0, delay: &Delay, mut frame: Frame) -> Option<Frame> {
+fn round_trip(twai: &Twai0, mut frame: Frame) -> Option<Frame> {
     frame.self_reception = true;
     // Without an acknowledge the controller would retry forever.
     frame.single_shot = true;
@@ -286,14 +275,14 @@ fn round_trip(twai: &Twai0, delay: &Delay, mut frame: Frame) -> Option<Frame> {
         if twai.frames_pending() > 0 {
             return twai.receive().ok();
         }
-        delay.delay_us(10);
+        delay::delay_us(10);
     }
     None
 }
 
 /// Interrupts: the transmitter and the self-received frame both raise one, and
 /// the handler finds them through the interrupt register.
-fn check_interrupt(twai: &Twai0, delay: &Delay) {
+fn check_interrupt(twai: &Twai0) {
     twai.disable_interrupts();
     // Drop anything the polling checks left behind, then clear the flags.
     while twai.frames_pending() > 0 {
@@ -324,7 +313,7 @@ fn check_interrupt(twai: &Twai0, delay: &Delay) {
     frame.self_reception = true;
     frame.single_shot = true;
     let queued = twai.transmit(&frame).is_ok();
-    delay.delay_ms(2);
+    delay::delay_ms(2);
 
     handler.disable();
     twai.disable_interrupts();

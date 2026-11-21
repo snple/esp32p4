@@ -19,7 +19,7 @@ use defmt_rtt as _;
 #[cfg(feature = "defmt")]
 defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
-use esp32p4_hal::delay::Delay;
+use esp32p4_hal::delay;
 use esp32p4_hal::gpio::Pins;
 use esp32p4_hal::main;
 use esp32p4_hal::pac::Peripherals;
@@ -36,7 +36,6 @@ fn main() -> ! {
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
     let mut led = pins.pin::<LED_PIN>();
     led.into_output();
-    let delay = Delay::init();
 
     let group = TimerGroup0::init(dp.TIMG0, &dp.HP_SYS_CLKRST);
 
@@ -49,6 +48,6 @@ fn main() -> ! {
     loop {
         led.toggle();
         wdt.feed();
-        delay.delay_ms(100);
+        delay::delay_ms(100);
     }
 }

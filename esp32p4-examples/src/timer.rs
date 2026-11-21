@@ -17,7 +17,7 @@
 #[cfg(feature = "defmt-rtt")]
 use defmt_rtt as _;
 #[cfg(feature = "defmt")]
-use esp32p4_hal::time::Instant;
+use esp32p4_hal::delay;
 #[cfg(feature = "defmt")]
 defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
@@ -89,7 +89,7 @@ fn main() -> ! {
     unsafe { interrupt::enable() };
 
     #[cfg(feature = "defmt")]
-    let started = Instant::now();
+    let started = delay::micros();
     let mut fast_seen = 0;
 
     loop {
@@ -107,7 +107,7 @@ fn main() -> ! {
                     fast_ticks,
                     FAST_COUNTER.load(Ordering::Relaxed),
                     SLOW_TICKS.load(Ordering::Relaxed),
-                    started.elapsed().as_micros()
+                    delay::micros() - started
                 );
             }
         }

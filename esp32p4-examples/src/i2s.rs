@@ -28,7 +28,7 @@ use defmt_rtt as _;
 defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
 use esp32p4_hal::apll::Apll;
-use esp32p4_hal::delay::Delay;
+use esp32p4_hal::delay;
 use esp32p4_hal::dma::{AhbDma, Descriptor};
 use esp32p4_hal::gpio::signal::{InputSignal, OutputSignal};
 use esp32p4_hal::gpio::{PinOps, Pins};
@@ -58,7 +58,6 @@ fn main() -> ! {
     let dp = Peripherals::take().unwrap();
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
-    let delay = Delay::init();
 
     // The transmit half drives all three lines; the receive half reads the
     // same pads, so the peripheral sees exactly what it drives.
@@ -149,7 +148,6 @@ fn main() -> ! {
             &mut rx_buffer,
             &tx_descriptors,
             &rx_descriptors,
-            &delay,
         );
         check_pdm(
             &i2s,
@@ -164,7 +162,6 @@ fn main() -> ! {
             &mut capture,
             &tx_descriptors,
             &capture_descriptors,
-            &delay,
         );
         check_interrupts(
             &i2s,
@@ -174,7 +171,7 @@ fn main() -> ! {
             &tx_descriptors,
         );
 
-        delay.delay_ms(1_000);
+        delay::delay_ms(1_000);
     }
 }
 
@@ -578,7 +575,6 @@ fn check_stream(
     rx_buffer: &mut [u8],
     tx_descriptors: &[Descriptor],
     rx_descriptors: &[Descriptor],
-    delay: &Delay,
 ) {
     const PATTERN: usize = 32;
     let config = StandardConfig {
@@ -610,7 +606,7 @@ fn check_stream(
             .is_ok();
     i2s.reset_tx_bck_counter();
     let tx_started = rx_started && i2s.tx_stream_begin(tx, pattern, tx_descriptors).is_ok();
-    delay.delay_ms(10);
+    delay::delay_ms(10);
     let bck = i2s.tx_bck_count();
     i2s.tx_stream_stop(tx);
     i2s.rx_stream_stop(rx, &mut rx_buffer[..WINDOW]);
@@ -721,7 +717,6 @@ fn check_pdm(
     capture: &mut [u8],
     tx_descriptors: &[Descriptor],
     capture_descriptors: &[Descriptor],
-    delay: &Delay,
 ) {
     /// Samples per half period of the 1 kHz square at 16 kHz.
     const HALF_SQUARE: usize = 8;
@@ -766,11 +761,11 @@ fn check_pdm(
     // The transmitter's high-pass filter needs a few milliseconds to settle, and
     // the capture is four milliseconds wide.
     let sending = i2s.tx_begin(tx, tx_buffer, tx_descriptors).is_ok();
-    delay.delay_ms(8);
+    delay::delay_ms(8);
     // On this chip the transmitter drives the data line only: neither WS nor BCK
     // leaves the peripheral in PDM mode, which is why a receiving half has to
     // generate its own bit clock.
-    let clock_lines = [edges_hz(counter, ws, delay), edges_hz(counter, bck, delay)];
+    let clock_lines = [edges_hz(counter, ws), edges_hz(counter, bck)];
     let watching = sending
         && sampler
             .rx_begin(probe, capture, capture_descriptors)
@@ -805,11 +800,11 @@ fn check_pdm(
 }
 
 /// Rising edges per second on the pad `pin`, counted over a millisecond.
-fn edges_hz(unit: &pcnt::Unit<'_, 0>, pin: &mut impl PinOps, delay: &Delay) -> u32 {
+fn edges_hz(unit: &pcnt::Unit<'_, 0>, pin: &mut impl PinOps) -> u32 {
     pin.route_input_signal(InputSignal::PCNT_SIG_CH0_PAD_IN0);
     unit.clear();
     unit.enable(Trigger::default());
-    delay.delay_ms(1);
+    delay::delay_ms(1);
     unit.pause(true);
     let edges = unit.count();
     unit.pause(false);

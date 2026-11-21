@@ -19,7 +19,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use esp32p4_hal::delay::Delay;
+use esp32p4_hal::delay;
 use esp32p4_hal::efuse::Efuse;
 use esp32p4_hal::gpio::Pins;
 use esp32p4_hal::main;
@@ -59,9 +59,8 @@ fn main() -> ! {
     explicit.extend(0..128u64);
     assert_eq!(explicit.len(), 128);
 
-    let delay = Delay::init();
     loop {
         led.toggle();
-        delay.delay_ms(500);
+        delay::delay_ms(500);
     }
 }

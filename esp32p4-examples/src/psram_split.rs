@@ -29,7 +29,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use esp32p4_hal::delay::Delay;
+use esp32p4_hal::delay;
 use esp32p4_hal::efuse::Efuse;
 use esp32p4_hal::gpio::Pins;
 use esp32p4_hal::main;
@@ -100,9 +100,8 @@ fn main() -> ! {
         "DMA buffer is not in the uncached pool"
     );
 
-    let delay = Delay::init();
     loop {
         led.toggle();
-        delay.delay_ms(500);
+        delay::delay_ms(500);
     }
 }

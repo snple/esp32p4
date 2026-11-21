@@ -15,7 +15,7 @@ use defmt_rtt as _;
 #[cfg(feature = "defmt")]
 defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
-use esp32p4_hal::delay::Delay;
+use esp32p4_hal::delay;
 use esp32p4_hal::main;
 use esp32p4_hal::pac::Peripherals;
 use esp32p4_hal::tsens::TemperatureSensor;
@@ -25,7 +25,6 @@ use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
 fn main() -> ! {
     let dp = Peripherals::take().unwrap();
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
-    let delay = Delay::init();
 
     let mut sensor = TemperatureSensor::init(dp.LP_TSENS, &dp.LP_PERI);
 
@@ -38,6 +37,6 @@ fn main() -> ! {
             millidegrees,
             sensor.range()
         );
-        delay.delay_ms(1_000);
+        delay::delay_ms(1_000);
     }
 }

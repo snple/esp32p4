@@ -20,7 +20,7 @@ use defmt_rtt as _;
 #[cfg(feature = "defmt")]
 defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
-use esp32p4_hal::delay::Delay;
+use esp32p4_hal::delay;
 use esp32p4_hal::main;
 use esp32p4_hal::pac::Peripherals;
 use esp32p4_hal::tcm;
@@ -99,7 +99,6 @@ fn main() -> ! {
     tcm::init_parity();
     defmt::info!("scratchpad parity check on: {}", tcm::parity_enabled());
 
-    let delay = Delay::init();
     let mut round = 0u32;
     loop {
         defmt::info!(
@@ -110,6 +109,6 @@ fn main() -> ! {
             flash_work(1000)
         );
         round = round.wrapping_add(1);
-        delay.delay_ms(1000);
+        delay::delay_ms(1000);
     }
 }

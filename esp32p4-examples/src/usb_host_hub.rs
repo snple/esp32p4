@@ -60,7 +60,7 @@ fn main() -> ! {
             Ok(device) => device,
             Err(error) => {
                 defmt::debug!("no device: {:?}", error);
-                delay::sleep_ms(200);
+                delay::delay_ms(200);
                 continue;
             }
         };
@@ -75,7 +75,7 @@ fn main() -> ! {
                     hub_device.descriptor().product_id,
                     error
                 );
-                delay::sleep_ms(500);
+                delay::delay_ms(500);
                 continue;
             }
         };
@@ -89,19 +89,19 @@ fn main() -> ! {
 
         if let Err(error) = hub.power_ports() {
             defmt::warn!("powering the ports failed: {:?}", error);
-            delay::sleep_ms(500);
+            delay::delay_ms(500);
             continue;
         }
 
         if let Err(error) = hub.wait_for_connection(PORT, 5_000) {
             defmt::debug!("nothing on port {}: {:?}", PORT, error);
-            delay::sleep_ms(200);
+            delay::delay_ms(200);
             continue;
         }
 
         if let Err(error) = hub.reset_port(PORT) {
             defmt::warn!("resetting port {} failed: {:?}", PORT, error);
-            delay::sleep_ms(200);
+            delay::delay_ms(200);
             continue;
         }
 
@@ -109,7 +109,7 @@ fn main() -> ! {
             Some(address) => address,
             None => {
                 defmt::warn!("no free USB address");
-                delay::sleep_ms(500);
+                delay::delay_ms(500);
                 continue;
             }
         };
@@ -118,7 +118,7 @@ fn main() -> ! {
             Err(error) => {
                 defmt::warn!("the device on port {} did not enumerate: {:?}", PORT, error);
                 addresses.release(address);
-                delay::sleep_ms(200);
+                delay::delay_ms(200);
                 continue;
             }
         };
@@ -134,7 +134,7 @@ fn main() -> ! {
         if let Err(error) = child.set_configuration(1) {
             defmt::warn!("SET_CONFIGURATION failed: {:?}", error);
             addresses.release(address);
-            delay::sleep_ms(500);
+            delay::delay_ms(500);
             continue;
         }
 
@@ -143,7 +143,7 @@ fn main() -> ! {
             Err(error) => {
                 defmt::info!("not a boot keyboard: {:?}", error);
                 addresses.release(address);
-                delay::sleep_ms(500);
+                delay::delay_ms(500);
                 continue;
             }
         };
@@ -168,6 +168,6 @@ fn main() -> ! {
         }
 
         addresses.release(address);
-        delay::sleep_ms(200);
+        delay::delay_ms(200);
     }
 }

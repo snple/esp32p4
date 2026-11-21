@@ -17,7 +17,7 @@ use defmt_rtt as _;
 #[cfg(feature = "defmt")]
 defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
-use esp32p4_hal::delay::Delay;
+use esp32p4_hal::delay;
 use esp32p4_hal::gpio::signal::OutputSignal;
 use esp32p4_hal::gpio::{Pin, PinOps, Pins};
 use esp32p4_hal::ledc::{ChannelConfig, ClockSource, FadeRange, Ledc, Level, TimerConfig};
@@ -43,7 +43,6 @@ fn main() -> ! {
     let dp = Peripherals::take().unwrap();
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
-    let delay = Delay::init();
 
     let ledc = Ledc::init(dp.LEDC, &dp.HP_SYS_CLKRST);
     ledc.set_clock_source(&dp.HP_SYS_CLKRST, ClockSource::Xtal40m);
@@ -78,7 +77,7 @@ fn main() -> ! {
     for percent in DUTIES {
         channel.set_duty(max * percent / 100);
         // The new duty lands on the next overflow, so let a few periods pass.
-        delay.delay_ms(5);
+        delay::delay_ms(5);
 
         let high = sample_high_ratio(&pwm, SAMPLES);
         defmt::info!(
@@ -107,13 +106,13 @@ fn main() -> ! {
     channel.clear_fade_done();
     channel.start_fade();
 
-    delay.delay_ms(10);
+    delay::delay_ms(10);
     let mid = channel.duty();
 
     // 100 steps of one period each: 100 ms, with a wide margin.
     let mut waited = 0;
     while !channel.fade_done() && waited < 2_000 {
-        delay.delay_ms(1);
+        delay::delay_ms(1);
         waited += 1;
     }
     let end = channel.duty();
@@ -131,11 +130,11 @@ fn main() -> ! {
     // Disabling the output drives the idle level instead of the waveform.
     channel.set_idle_level(Level::Low);
     channel.enable(false);
-    delay.delay_ms(2);
+    delay::delay_ms(2);
     defmt::info!("idle: pin high {=bool} (expected false)", pwm.get());
 
     loop {
-        delay.delay_ms(1_000);
+        delay::delay_ms(1_000);
     }
 }
 

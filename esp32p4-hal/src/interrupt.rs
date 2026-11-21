@@ -545,6 +545,49 @@ impl<T> Mutex<T> {
     }
 }
 
+/// One interrupt source's user handler, callable from that source's shim.
+///
+/// Every source gets its own slot, so registering one source's handler cannot
+/// disturb another's, and each shim calls exactly one function it knows at
+/// compile time — no table, no index, no function pointer smuggled through an
+/// integer.
+///
+/// A driver keeps one `static` slot per interrupt source and calls
+/// [`call`](Self::call) from the shim it installs with [`claim`].
+pub(crate) struct HandlerSlot(Mutex<HandlerCell>);
+
+/// The handler a slot holds: one `fn` or nothing.
+type HandlerCell = core::cell::Cell<Option<fn()>>;
+
+impl HandlerSlot {
+    /// An empty slot, ready to be put in a `static`.
+    pub(crate) const fn new() -> Self {
+        Self(Mutex::new(core::cell::Cell::new(None)))
+    }
+
+    /// Installs `handler`, replacing any previous one.
+    pub(crate) fn set(&self, handler: fn()) {
+        free(|cs| self.0.borrow(cs).set(Some(handler)));
+    }
+
+    /// Removes the handler, so an interrupt that is still in flight cannot call
+    /// it after its owner is gone.
+    pub(crate) fn clear(&self) {
+        free(|cs| self.0.borrow(cs).set(None));
+    }
+
+    /// Calls the handler from interrupt context.
+    pub(crate) fn call(&self) {
+        // SAFETY: `set` and `clear` only run inside `free`, so the slot holds
+        // either the previous or the new `fn()` and never a torn value; this runs
+        // in a handler, where interrupts are masked already.
+        let handler = unsafe { (*self.0.as_ptr()).get() };
+        if let Some(handler) = handler {
+            handler();
+        }
+    }
+}
+
 /// Disable machine interrupts until the returned guard is dropped.
 ///
 /// Interrupts stay enabled in the CLIC; only the core's `MIE` bit is cleared,

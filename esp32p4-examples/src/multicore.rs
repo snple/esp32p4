@@ -27,7 +27,7 @@ defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use esp32p4_hal::delay::Delay;
+use esp32p4_hal::delay;
 use esp32p4_hal::interrupt::{self, CpuInterrupt, Level as InterruptLevel};
 use esp32p4_hal::machine_timer::{MachineTimer, ticks_per_ms};
 use esp32p4_hal::main;
@@ -146,7 +146,7 @@ fn core1_main() -> ! {
 
     // This core's own comparator, on the counter core 0 started. Twice the
     // period of core 0's, so the counts have to come out in a 2:1 ratio.
-    let timer = MachineTimer::init();
+    let timer = MachineTimer::init(CPU_HZ);
     TIMER_STEP[1].store(ticks_per_ms(CPU_HZ) as u32 * 2, Ordering::Release);
     timer.set_target(timer.now() + u64::from(TIMER_STEP[1].load(Ordering::Acquire)));
     timer.enable_interrupt(InterruptLevel::LOW, core1_timer_isr);
@@ -195,7 +195,6 @@ fn read_clock_hard(core: usize) {
 fn main() -> ! {
     let dp = Peripherals::take().unwrap();
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
-    let delay = Delay::init();
 
     let mut mc = Multicore::init(dp.LP_SYS, dp.HP_SYS, dp.PMU, dp.HP_SYS_CLKRST);
     // Core 0's own line for the poke from core 1.
@@ -226,19 +225,19 @@ fn main() -> ! {
     unsafe { mc.launch_core1(core1_main, &CORE1_STACK) };
 
     // Core 0's own comparator, one tick per millisecond.
-    let timer = MachineTimer::init();
+    let timer = MachineTimer::init(CPU_HZ);
     TIMER_STEP[0].store(ticks_per_ms(CPU_HZ) as u32, Ordering::Release);
     timer.set_target(timer.now() + u64::from(TIMER_STEP[0].load(Ordering::Acquire)));
     timer.enable_interrupt(InterruptLevel::LOW, core0_timer_isr);
 
-    check_core_id(&mc, &delay);
+    check_core_id(&mc);
     loop {
         check_counters(&mc);
-        check_signal(&delay);
+        check_signal();
         check_shared_clock();
-        check_per_core_timers(&delay);
-        check_identity_seen_by_core1(&delay);
-        delay.delay_ms(1_000);
+        check_per_core_timers();
+        check_identity_seen_by_core1();
+        delay::delay_ms(1_000);
     }
 }
 
@@ -248,14 +247,14 @@ fn report(label: &str, ok: bool) {
 }
 
 /// Only core 0 is running `main`.
-fn check_core_id(mc: &Multicore, delay: &Delay) {
+fn check_core_id(mc: &Multicore) {
     let here = CoreId::current();
     // `launch_core1` returns as soon as core 1 reaches its entry, which is a few
     // instructions before the loop counter moves.
     let mut waited = 0u32;
     while CORE1_LOOPS.load(Ordering::Acquire) == 0 && waited < 50_000 {
         waited += 1;
-        delay.delay_us(1);
+        delay::delay_us(1);
     }
     let running = mc.is_core1_running();
     let alive = CORE1_LOOPS.load(Ordering::Acquire) != 0;
@@ -307,7 +306,7 @@ fn check_counters(mc: &Multicore) {
 }
 
 /// A poke crosses to core 1 and its answer comes back.
-fn check_signal(delay: &Delay) {
+fn check_signal() {
     let pings_before = CORE1_PINGS.load(Ordering::Acquire);
     let irqs_before = CORE0_IRQS.load(Ordering::Acquire);
 
@@ -323,7 +322,7 @@ fn check_signal(delay: &Delay) {
         }
         // Core 1 answers with an interrupt, so let it run: the poke takes the
         // interrupt path on both cores.
-        delay.delay_us(1);
+        delay::delay_us(1);
     }
 
     let pings = CORE1_PINGS.load(Ordering::Acquire);
@@ -343,12 +342,12 @@ fn check_signal(delay: &Delay) {
 }
 
 /// Core 1 reads a different `mhartid` than core 0.
-fn check_identity_seen_by_core1(delay: &Delay) {
+fn check_identity_seen_by_core1() {
     let mut waited = 0u32;
     let mut seen = CORE1_ID.load(Ordering::Acquire);
     while seen == u32::MAX && waited < 50_000 {
         waited += 1;
-        delay.delay_us(1);
+        delay::delay_us(1);
         seen = CORE1_ID.load(Ordering::Acquire);
     }
     let ok = seen == CoreId::Core1.as_index() as u32 && multicore::core_id() == CoreId::Core0;
@@ -401,12 +400,12 @@ fn check_shared_clock() {
 /// the handler tables are per core: core 0 asks for a tick every millisecond and
 /// core 1 every two, so twenty milliseconds of running has to produce about
 /// twenty on one and ten on the other.
-fn check_per_core_timers(delay: &Delay) {
+fn check_per_core_timers() {
     let before = [
         TIMER_TICKS[0].load(Ordering::Relaxed),
         TIMER_TICKS[1].load(Ordering::Relaxed),
     ];
-    delay.delay_ms(20);
+    delay::delay_ms(20);
     let after = [
         TIMER_TICKS[0].load(Ordering::Relaxed),
         TIMER_TICKS[1].load(Ordering::Relaxed),

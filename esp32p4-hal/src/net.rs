@@ -302,7 +302,7 @@ impl<'a> Net<'a> {
             .min(max_sleep_ms);
 
         if sleep_ms > 0 {
-            crate::delay::sleep_ms(sleep_ms);
+            crate::delay::delay_ms(sleep_ms);
         }
         false
     }

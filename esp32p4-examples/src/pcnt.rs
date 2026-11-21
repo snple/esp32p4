@@ -14,7 +14,7 @@ use defmt_rtt as _;
 #[cfg(feature = "defmt")]
 defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
-use esp32p4_hal::delay::Delay;
+use esp32p4_hal::delay;
 use esp32p4_hal::gpio::signal::{InputSignal, OutputSignal};
 use esp32p4_hal::gpio::{PinOps, Pins};
 use esp32p4_hal::ledc::{ChannelConfig, ClockSource, Ledc, TimerConfig};
@@ -37,7 +37,6 @@ fn main() -> ! {
     let dp = Peripherals::take().unwrap();
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
-    let delay = Delay::init();
 
     let mut pin = pins.pin::<PIN>();
     pin.route_output_signal(OutputSignal::LEDC_LS_SIG_OUT_PAD_OUT1);
@@ -75,7 +74,7 @@ fn main() -> ! {
     unit.clear_latched();
 
     timer.start();
-    delay.delay_ms(WINDOW_MS);
+    delay::delay_ms(WINDOW_MS);
     timer.stop();
 
     let count = unit.count();
@@ -109,10 +108,10 @@ fn main() -> ! {
     unit.clear_latched();
     unit.pause(true);
     timer.start();
-    delay.delay_ms(10);
+    delay::delay_ms(10);
     let paused = unit.count();
     unit.pause(false);
-    delay.delay_ms(10);
+    delay::delay_ms(10);
     let running = unit.count();
     timer.stop();
     defmt::info!(
@@ -124,6 +123,6 @@ fn main() -> ! {
     assert!(running > 50, "PCNT did not resume");
 
     loop {
-        delay.delay_ms(1_000);
+        delay::delay_ms(1_000);
     }
 }

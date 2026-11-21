@@ -56,7 +56,7 @@ fn main() -> ! {
 
     defmt::info!("done");
     loop {
-        esp32p4_hal::delay::sleep_ms(1000);
+        esp32p4_hal::delay::delay_ms(1000);
     }
 }
 

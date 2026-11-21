@@ -16,7 +16,7 @@ use defmt_rtt as _;
 defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
 use esp32p4_hal::clock::{ClockTree, RefClock};
-use esp32p4_hal::delay::Delay;
+use esp32p4_hal::delay;
 use esp32p4_hal::main;
 use esp32p4_hal::pac::Peripherals;
 use esp32p4_hal::timer::TimerGroup0;
@@ -58,9 +58,8 @@ fn main() -> ! {
         );
     }
 
-    let delay = Delay::init();
     loop {
-        delay.delay_ms(1000);
+        delay::delay_ms(1000);
         defmt::debug!("cpu {} MHz", clocks.cpu_hz() / 1_000_000);
     }
 }

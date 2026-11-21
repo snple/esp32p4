@@ -57,7 +57,7 @@ fn main() -> ! {
             Err(error) => {
                 // Nothing attached, or a device that does not enumerate.
                 defmt::debug!("no device: {:?}", error);
-                delay::sleep_ms(100);
+                delay::delay_ms(100);
                 continue;
             }
         };
@@ -79,7 +79,7 @@ fn main() -> ! {
             Ok(keyboard) => keyboard,
             Err(error) => {
                 defmt::info!("not a boot keyboard: {:?}", error);
-                delay::sleep_ms(500);
+                delay::delay_ms(500);
                 continue;
             }
         };

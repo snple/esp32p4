@@ -85,8 +85,8 @@ name = "machine_timer"
 path = "src/machine_timer.rs"
 
 [[bin]]
-name = "sleep"
-path = "src/sleep.rs"
+name = "delay"
+path = "src/delay.rs"
 required-features = ["defmt"]
 
 [[bin]]

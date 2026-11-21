@@ -29,7 +29,7 @@ use defmt_rtt as _;
 defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
 use esp32p4_hal::clock::XTAL_HZ;
-use esp32p4_hal::delay::Delay;
+use esp32p4_hal::delay;
 use esp32p4_hal::gpio::signal::{InputSignal, OutputSignal};
 use esp32p4_hal::gpio::{PinOps, Pins};
 use esp32p4_hal::main;
@@ -59,7 +59,6 @@ fn main() -> ! {
     let dp = Peripherals::take().unwrap();
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
-    let delay = Delay::init();
 
     // Each jumpered pair becomes one wired-OR bus carrying both transmitters.
     //
@@ -91,7 +90,7 @@ fn main() -> ! {
     let Ok(timing) = Timing::for_bitrate(XTAL_HZ, BITRATE, SAMPLE_POINT) else {
         defmt::info!("twai bus: timing rejected -> FAIL");
         loop {
-            delay.delay_ms(1_000);
+            delay::delay_ms(1_000);
         }
     };
 
@@ -124,12 +123,12 @@ fn main() -> ! {
     );
 
     loop {
-        check_standard_frame(&node_a, &node_b, &delay);
-        check_extended_frame(&node_b, &node_a, &delay);
-        check_remote_frame(&node_a, &node_b, &delay);
-        check_filter(&node_a, &node_b, &delay);
+        check_standard_frame(&node_a, &node_b);
+        check_extended_frame(&node_b, &node_a);
+        check_remote_frame(&node_a, &node_b);
+        check_filter(&node_a, &node_b);
         check_idle_bus(&node_a, &node_b);
-        delay.delay_ms(1_000);
+        delay::delay_ms(1_000);
     }
 }
 
@@ -143,14 +142,14 @@ macro_rules! transfer_body {
     ($name:ident, $Tx:ident, $Rx:ident, $wait:ident) => {
         /// A frame from `tx` reaches `rx` unchanged, and `tx` collects no error,
         /// which is only possible because `rx` acknowledged it.
-        fn $name(tx: &$Tx, rx: &$Rx, delay: &Delay, sent: Frame, label: &str) -> Option<Frame> {
+        fn $name(tx: &$Tx, rx: &$Rx, sent: Frame, label: &str) -> Option<Frame> {
             // Drop anything left over from the previous round.
             while rx.receive().is_ok() {}
 
             if tx.transmit(&sent).is_err() {
                 return None;
             }
-            let done = $wait(tx, delay, ARRIVE_TIMEOUT_US);
+            let done = $wait(tx, ARRIVE_TIMEOUT_US);
 
             for _ in 0..ARRIVE_TIMEOUT_US / 10 {
                 if let Ok(frame) = rx.receive() {
@@ -172,7 +171,7 @@ macro_rules! transfer_body {
                     );
                     return ok.then_some(frame);
                 }
-                delay.delay_us(10);
+                delay::delay_us(10);
             }
             let counters = tx.error_counters();
             defmt::info!(
@@ -198,12 +197,12 @@ transfer_body!(transfer_ba, Twai1, Twai0, wait_b);
 macro_rules! wait_body {
     ($name:ident, $Node:ident) => {
         /// Waits for the frame to leave the buffer, aborting it on timeout.
-        fn $name(node: &$Node, delay: &Delay, timeout_us: u32) -> bool {
+        fn $name(node: &$Node, timeout_us: u32) -> bool {
             for _ in 0..timeout_us / 10 {
                 if node.status().transmission_complete {
                     return true;
                 }
-                delay.delay_us(10);
+                delay::delay_us(10);
             }
             node.abort_transmission();
             false
@@ -215,27 +214,27 @@ wait_body!(wait_a, Twai0);
 wait_body!(wait_b, Twai1);
 
 /// A standard-id data frame goes from one node to the other.
-fn check_standard_frame(a: &Twai0, b: &Twai1, delay: &Delay) {
+fn check_standard_frame(a: &Twai0, b: &Twai1) {
     let sent = Frame::data(Id::Standard(0x123), &[0x11, 0x22, 0x33]).unwrap();
-    transfer_ab(a, b, delay, sent, "standard");
+    transfer_ab(a, b, sent, "standard");
 }
 
 /// An extended-id data frame goes the other way.
-fn check_extended_frame(b: &Twai1, a: &Twai0, delay: &Delay) {
+fn check_extended_frame(b: &Twai1, a: &Twai0) {
     let sent = Frame::data(Id::Extended(0x1ABCDE), &[0xAA, 0x55]).unwrap();
-    transfer_ba(b, a, delay, sent, "extended");
+    transfer_ba(b, a, sent, "extended");
 }
 
 /// A remote frame keeps its identifier and length and carries no data.
-fn check_remote_frame(a: &Twai0, b: &Twai1, delay: &Delay) {
+fn check_remote_frame(a: &Twai0, b: &Twai1) {
     let sent = Frame::remote(Id::Standard(0x321), 4).unwrap();
-    transfer_ab(a, b, delay, sent, "remote");
+    transfer_ab(a, b, sent, "remote");
 }
 
 /// A filter that rejects the identifier keeps the frame out of the receiver —
 /// and the transmitter still sees an acknowledge, because the hardware
 /// acknowledges before the acceptance filter runs.
-fn check_filter(a: &Twai0, b: &Twai1, delay: &Delay) {
+fn check_filter(a: &Twai0, b: &Twai1) {
     while b.receive().is_ok() {}
     b.configure(&Config {
         timing: Timing::for_bitrate(XTAL_HZ, BITRATE, SAMPLE_POINT).unwrap(),
@@ -249,8 +248,8 @@ fn check_filter(a: &Twai0, b: &Twai1, delay: &Delay) {
 
     let sent = Frame::data(Id::Standard(0x123), &[0x01]).unwrap();
     let queued = a.transmit(&sent).is_ok();
-    wait_a(a, delay, ARRIVE_TIMEOUT_US);
-    delay.delay_us(500);
+    wait_a(a, ARRIVE_TIMEOUT_US);
+    delay::delay_us(500);
     let rejected = b.receive().is_err();
     // The acceptance filter runs after the acknowledge, so the transmitter still
     // sees a healthy bus.

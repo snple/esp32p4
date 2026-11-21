@@ -17,8 +17,8 @@ use defmt_rtt as _;
 defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
 use core::sync::atomic::{AtomicU32, Ordering};
-use esp32p4_hal::delay::Delay;
 
+use esp32p4_hal::delay;
 use esp32p4_hal::etm::Etm;
 use esp32p4_hal::gpio::signal::{InputSignal, OutputSignal};
 use esp32p4_hal::gpio::{Level, Pin, PinOps, Pins};
@@ -67,7 +67,6 @@ fn main() -> ! {
     let dp = Peripherals::take().unwrap();
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
-    let delay = Delay::init();
 
     let mut pin = pins.pin::<PIN>();
     pin.route_output_signal(OutputSignal::PWM0_CH0_A_PAD_OUT);
@@ -115,22 +114,22 @@ fn main() -> ! {
     );
 
     loop {
-        check_sync(&mcpwm, &dp.HP_SYS_CLKRST, &delay);
-        check_capture(&mcpwm, &delay);
-        check_fault(&mcpwm, &rmt, &pin, &fault_pin, &delay);
-        check_carrier(&mcpwm, &rmt, &delay);
-        check_etm(&mcpwm, &etm, &delay);
-        check_event_comparators(&mcpwm, &etm, &delay);
-        check_interrupt(&mcpwm, &delay);
+        check_sync(&mcpwm, &dp.HP_SYS_CLKRST);
+        check_capture(&mcpwm);
+        check_fault(&mcpwm, &rmt, &pin, &fault_pin);
+        check_carrier(&mcpwm, &rmt);
+        check_etm(&mcpwm, &etm);
+        check_event_comparators(&mcpwm, &etm);
+        check_interrupt(&mcpwm);
 
-        delay.delay_ms(1_000);
+        delay::delay_ms(1_000);
     }
 }
 
 /// Sync: timer 0's zero events reload timer 1's counter, so a counter that has
 /// been left running for a while jumps back to the phase as soon as the sync
 /// input is enabled.
-fn check_sync(mcpwm: &Mcpwm0, clkrst: &esp32p4_hal::pac::HP_SYS_CLKRST, delay: &Delay) {
+fn check_sync(mcpwm: &Mcpwm0, clkrst: &esp32p4_hal::pac::HP_SYS_CLKRST) {
     const PHASE: u16 = 50;
 
     // A slow timer 1 (1 kHz) makes the jump unambiguous: it cannot wrap within
@@ -149,11 +148,11 @@ fn check_sync(mcpwm: &Mcpwm0, clkrst: &esp32p4_hal::pac::HP_SYS_CLKRST, delay: &
     timer1.start();
 
     // Let timer 1 wander off on its own, then arm the sync input.
-    delay.delay_us(300);
+    delay::delay_us(300);
     let free_running = timer1.counter();
     timer1.enable_sync_input(true);
     // One timer-0 period is 50 µs; wait a bit more so the reload has happened.
-    delay.delay_us(80);
+    delay::delay_us(80);
     let synced = timer1.counter();
 
     // A counter that is reloaded every timer-0 period (2000 ticks) cannot span
@@ -164,7 +163,7 @@ fn check_sync(mcpwm: &Mcpwm0, clkrst: &esp32p4_hal::pac::HP_SYS_CLKRST, delay: &
         let value = timer1.counter();
         lowest = lowest.min(value);
         highest = highest.max(value);
-        delay.delay_us(3);
+        delay::delay_us(3);
     }
     let span = u32::from(highest - lowest);
 
@@ -189,7 +188,7 @@ fn check_sync(mcpwm: &Mcpwm0, clkrst: &esp32p4_hal::pac::HP_SYS_CLKRST, delay: &
 
 /// Capture: the PWM output loops back into `CAP0`, so successive rising-edge
 /// captures are exactly one period apart.
-fn check_capture(mcpwm: &Mcpwm0, delay: &Delay) {
+fn check_capture(mcpwm: &Mcpwm0) {
     let timer = mcpwm.timer::<0>();
     let capture = mcpwm.capture::<0>();
     mcpwm.capture_timer().start();
@@ -218,7 +217,7 @@ fn check_capture(mcpwm: &Mcpwm0, delay: &Delay) {
             captures += 1;
             previous = value;
         }
-        delay.delay_us(10);
+        delay::delay_us(10);
     }
     capture.enable(false);
     timer.stop();
@@ -236,13 +235,7 @@ fn check_capture(mcpwm: &Mcpwm0, delay: &Delay) {
 
 /// Fault trips: a pin-driven fault forces the outputs, and the trip is released
 /// either by software (one-shot) or by the next zero event (cycle-by-cycle).
-fn check_fault(
-    mcpwm: &Mcpwm0,
-    rmt: &Rmt,
-    pin: &Pin<PIN>,
-    fault_pin: &Pin<FAULT_PIN>,
-    delay: &Delay,
-) {
+fn check_fault(mcpwm: &Mcpwm0, rmt: &Rmt, pin: &Pin<PIN>, fault_pin: &Pin<FAULT_PIN>) {
     let timer = mcpwm.timer::<0>();
     let operator = mcpwm.operator::<0>();
     mcpwm.fault::<0>().enable(true);
@@ -260,13 +253,13 @@ fn check_fault(
     });
 
     fault_pin.set_high();
-    let forced_low = count_high(delay, || pin.get());
+    let forced_low = count_high(|| pin.get());
     let latched = operator.trip_status().one_shot;
 
     fault_pin.set_low();
     operator.release_trip();
     let released = operator.trip_status().one_shot;
-    let back_high = count_high(delay, || pin.get());
+    let back_high = count_high(|| pin.get());
     operator.release_force(OperatorOutput::A);
     // Disarm the one-shot trip again: leaving it armed would latch it a second
     // time when the same fault input trips the cycle-by-cycle test below.
@@ -290,16 +283,16 @@ fn check_fault(
         refresh: CbcRefresh::Zero,
     });
     timer.start();
-    let (clean_high, _) = measure(rmt, delay);
+    let (clean_high, _) = measure(rmt);
 
     fault_pin.set_high();
-    delay.delay_ms(1);
-    let (tripped_high, _) = measure(rmt, delay);
+    delay::delay_ms(1);
+    let (tripped_high, _) = measure(rmt);
     let cbc_on = operator.trip_status().cycle_by_cycle;
 
     fault_pin.set_low();
-    delay.delay_ms(2);
-    let (recovered_high, _) = measure(rmt, delay);
+    delay::delay_ms(2);
+    let (recovered_high, _) = measure(rmt);
     let cbc_after = operator.trip_status().cycle_by_cycle;
     timer.stop();
     mcpwm.fault::<0>().disable();
@@ -330,7 +323,7 @@ fn check_fault(
 /// Carrier: the High level of each PWM period turns into a burst of carrier
 /// periods, so the measured level times shrink from ticks to a fraction of a
 /// tick period.
-fn check_carrier(mcpwm: &Mcpwm0, rmt: &Rmt, delay: &Delay) {
+fn check_carrier(mcpwm: &Mcpwm0, rmt: &Rmt) {
     // One carrier period is 8 * (prescale + 1) = 128 PWM_clk ticks, so a 4/8
     // duty shows up as 64 ticks high and 64 low.
     let timer = mcpwm.timer::<0>();
@@ -347,11 +340,11 @@ fn check_carrier(mcpwm: &Mcpwm0, rmt: &Rmt, delay: &Delay) {
     timer.start();
     // Only the steady carrier pulses are interesting: the burst gaps and the
     // wider first pulse of each burst would drag the average around.
-    let (carrier_high, carrier_low) = measure_short_pulses(rmt, delay, 100);
+    let (carrier_high, carrier_low) = measure_short_pulses(rmt, 100);
 
     operator.disable_carrier();
-    delay.delay_ms(1);
-    let (plain_high, _) = measure(rmt, delay);
+    delay::delay_ms(1);
+    let (plain_high, _) = measure(rmt);
     timer.stop();
 
     // Pulses at the burst boundaries are cut short, so compare the carrier
@@ -373,7 +366,7 @@ fn check_carrier(mcpwm: &Mcpwm0, rmt: &Rmt, delay: &Delay) {
 
 /// ETM: the timer-zero event triggers a capture through the matrix, so the
 /// captured values advance one PWM period at a time.
-fn check_etm(mcpwm: &Mcpwm0, etm: &Etm, delay: &Delay) {
+fn check_etm(mcpwm: &Mcpwm0, etm: &Etm) {
     let timer = mcpwm.timer::<0>();
     let capture = mcpwm.capture::<1>();
     capture
@@ -393,7 +386,7 @@ fn check_etm(mcpwm: &Mcpwm0, etm: &Etm, delay: &Delay) {
 
     mcpwm.capture_timer().start();
     timer.start();
-    delay.delay_ms(1);
+    delay::delay_ms(1);
 
     let armed = channel.is_enabled()
         && channel.event().raw() == 63
@@ -411,7 +404,7 @@ fn check_etm(mcpwm: &Mcpwm0, etm: &Etm, delay: &Delay) {
             captures += 1;
             previous = value;
         }
-        delay.delay_us(10);
+        delay::delay_us(10);
     }
 
     channel.enable(false);
@@ -433,12 +426,12 @@ fn check_etm(mcpwm: &Mcpwm0, etm: &Etm, delay: &Delay) {
 
 /// Average high and low time of the pulses shorter than `limit` ticks, in
 /// 40 MHz ticks.
-fn measure_short_pulses(rmt: &Rmt, delay: &Delay, limit: u16) -> (u32, u32) {
+fn measure_short_pulses(rmt: &Rmt, limit: u16) -> (u32, u32) {
     let mut pulses = [Pulse::default(); 16];
     let rx = rmt.rx_channel::<0>();
     rx.clear_done();
     rx.start();
-    delay.delay_ms(3);
+    delay::delay_ms(3);
     rx.stop();
     let count = rx.read_pulses(&mut pulses);
 
@@ -468,7 +461,7 @@ fn measure_short_pulses(rmt: &Rmt, delay: &Delay, limit: u16) -> (u32, u32) {
 /// Event comparators: `E1`/`E2` fire at a counter value and only feed the ETM,
 /// so a capture triggered by one lands exactly that many ticks after the
 /// timer-zero capture.
-fn check_event_comparators(mcpwm: &Mcpwm0, etm: &Etm, delay: &Delay) {
+fn check_event_comparators(mcpwm: &Mcpwm0, etm: &Etm) {
     let timer = mcpwm.timer::<0>();
     let capture1 = mcpwm.capture::<1>();
     let capture2 = mcpwm.capture::<2>();
@@ -493,8 +486,8 @@ fn check_event_comparators(mcpwm: &Mcpwm0, etm: &Etm, delay: &Delay) {
     mcpwm.capture_timer().start();
     timer.start();
 
-    run_comparator(mcpwm, etm, delay, EventComparator::E1, 500);
-    run_comparator(mcpwm, etm, delay, EventComparator::E2, 1_200);
+    run_comparator(mcpwm, etm, EventComparator::E1, 500);
+    run_comparator(mcpwm, etm, EventComparator::E2, 1_200);
 
     zero_channel.enable(false);
     mcpwm.enable_event(timer.zero_event(), false);
@@ -507,13 +500,7 @@ fn check_event_comparators(mcpwm: &Mcpwm0, etm: &Etm, delay: &Delay) {
 
 /// Points one comparator at a value, captures on it through the ETM and
 /// compares that capture with the timer-zero one.
-fn run_comparator(
-    mcpwm: &Mcpwm0,
-    etm: &Etm,
-    delay: &Delay,
-    comparator: EventComparator,
-    value: u16,
-) {
+fn run_comparator(mcpwm: &Mcpwm0, etm: &Etm, comparator: EventComparator, value: u16) {
     let operator = mcpwm.operator::<0>();
     let capture1 = mcpwm.capture::<1>();
     let capture2 = mcpwm.capture::<2>();
@@ -526,7 +513,7 @@ fn run_comparator(
         capture2.capture_task(),
     );
     channel.enable(true);
-    delay.delay_ms(1);
+    delay::delay_ms(1);
 
     // Both captures repeat once per period, so the difference modulo one period
     // is the fixed distance between the two events.
@@ -548,7 +535,7 @@ fn run_comparator(
 
 /// Interrupts: the timer-zero event drives the CPU line and the handler
 /// acknowledges it, so the count has to match the elapsed time.
-fn check_interrupt(mcpwm: &Mcpwm0, delay: &Delay) {
+fn check_interrupt(mcpwm: &Mcpwm0) {
     mcpwm.clear_interrupts();
     let timer = mcpwm.timer::<0>();
     mcpwm.enable_interrupt(timer.zero_event(), true);
@@ -571,13 +558,13 @@ fn check_interrupt(mcpwm: &Mcpwm0, delay: &Delay) {
     TICKS.store(0, Ordering::Relaxed);
     timer.start();
     // 10 ms at 20 kHz is 200 events.
-    delay.delay_ms(10);
+    delay::delay_ms(10);
     let counted = TICKS.load(Ordering::Relaxed);
 
     // Mask the line so the handler stops acknowledging: the status bit then
     // stays latched until it is cleared.
     handler.disable();
-    delay.delay_ms(1);
+    delay::delay_ms(1);
     let pending = mcpwm.interrupt_pending(timer.zero_event());
     mcpwm.clear_interrupts();
     let cleared = !mcpwm.interrupt_pending(timer.zero_event());
@@ -611,10 +598,10 @@ fn phase_offset(later: u32, earlier: u32, period: u32) -> u32 {
 }
 
 /// How many of 16 reads, 1 ms apart, see the pad high.
-fn count_high(delay: &Delay, read: impl Fn() -> bool) -> u32 {
+fn count_high(read: impl Fn() -> bool) -> u32 {
     let mut high = 0;
     for _ in 0..16 {
-        delay.delay_ms(1);
+        delay::delay_ms(1);
         if read() {
             high += 1;
         }
@@ -624,12 +611,12 @@ fn count_high(delay: &Delay, read: impl Fn() -> bool) -> u32 {
 
 /// Average high and low time of the pulses the RMT receiver sees, in 40 MHz
 /// ticks.
-fn measure(rmt: &Rmt, delay: &Delay) -> (u32, u32) {
+fn measure(rmt: &Rmt) -> (u32, u32) {
     let mut pulses = [Pulse::default(); 16];
     let rx = rmt.rx_channel::<0>();
     rx.clear_done();
     rx.start();
-    delay.delay_ms(3);
+    delay::delay_ms(3);
     rx.stop();
     let count = rx.read_pulses(&mut pulses);
     // The first level is whatever the receiver caught mid-pulse.
