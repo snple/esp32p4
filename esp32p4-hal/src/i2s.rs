@@ -815,6 +815,10 @@ macro_rules! impl_i2s {
                     }
                     r.rx_conf.set_rx_tdm_en();
                     r.rx_conf.clr_rx_pdm_en();
+                    // The PDM-to-PCM converter has to be cleared as well: left
+                    // enabled it keeps filtering the received slots, which shows
+                    // up as a correct bit clock with wrong data.
+                    r.rx_pdm2pcm_conf.clr_rx_pdm2pcm_en();
                     r.rx_conf1
                         .write_rx_bits_mod(u32::from(layout.data_bits - 1));
                     r.rx_conf1

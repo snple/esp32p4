@@ -6,10 +6,12 @@
 //! That makes the whole path — clock tree, format, GDMA, both halves — testable
 //! without a codec, a jumper or a scope.
 //!
-//! The PDM check needs one more thing: the data line also goes out on `GPIO16`,
-//! and a second controller (`I2S1`) reads it back on `GPIO20` through a jumper,
-//! eight bit slots at 8 MHz, so the buffer *is* the waveform on the pin. That is
-//! how the density of a one-bit stream can be checked without a scope.
+//! The PDM check needs more pads: the data line also goes out on `GPIO16` and a
+//! second controller (`I2S1`) reads it back on `GPIO20` through a jumper, eight
+//! bit slots at 8 MHz, so its buffer *is* the waveform on the pin. WS and BCK
+//! also go out on `GPIO17`/`GPIO18`, where a pulse counter counts their edges —
+//! in PDM mode they are dead, which is why the PDM receiver has to generate its
+//! own bit clock.
 //!
 //! Wiring: `GPIO4` is BCK, `GPIO5` is WS, `GPIO6` is the data line (out and in on
 //! the same pad), and `GPIO16`–`GPIO20` has to be jumpered.
@@ -36,6 +38,7 @@ use esp32p4_hal::i2s::{
 };
 use esp32p4_hal::main;
 use esp32p4_hal::pac::{HP_SYS_CLKRST, Peripherals};
+use esp32p4_hal::pcnt::{self, ChannelConfig as PcntChannel, Pcnt, Trigger, UnitIndex};
 use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
 
 /// Pad carrying `I2S0O_BCK_out`.
@@ -72,12 +75,27 @@ fn main() -> ! {
     // a second controller can sample it as a logic analyser would.
     let mut pdm_out = pins.pin::<16>();
     pdm_out.route_output_signal(OutputSignal::I2S0_O_SD_PAD_OUT);
+    // Candidates the PDM transmitter might be driving, each on its own pin so a
+    // counter can look at one at a time.
+    let mut ws_alt2 = pins.pin::<17>();
+    ws_alt2.route_output_signal(OutputSignal::I2S0_O_WS_PAD_OUT);
+    let mut bck_alt2 = pins.pin::<18>();
+    bck_alt2.route_output_signal(OutputSignal::I2S0_O_BCK_PAD_OUT);
+    let mut mclk_alt2 = pins.pin::<19>();
+    mclk_alt2.route_output_signal(OutputSignal::I2S0_MCLK_PAD_OUT);
     let mut probe = pins.pin::<20>();
     probe.route_input_signal(InputSignal::I2S1_I_SD_PAD_IN);
     let _probes = (pdm_out, probe);
 
     let i2s = I2s0::init(dp.I2S0, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
     let sampler = I2s1::init(dp.I2S1, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
+    let counter = Pcnt::init(dp.PCNT, &dp.HP_SYS_CLKRST);
+    counter.configure_channel(
+        UnitIndex::Zero,
+        pcnt::ChannelIndex::Zero,
+        PcntChannel::rising_edge(),
+    );
+    counter.set_limits(UnitIndex::Zero, 0, 30000);
     let dma = AhbDma::init(dp.AHB_DMA, &dp.HP_SYS_CLKRST);
     let clkrst = &dp.HP_SYS_CLKRST;
     let lpaon = &dp.LP_AON_CLKRST;
@@ -140,6 +158,9 @@ fn main() -> ! {
             clkrst,
             &dma.tx_channel::<0>(),
             &dma.rx_channel::<1>(),
+            &counter,
+            &mut ws_alt2,
+            &mut bck_alt2,
             &mut tx_buffer,
             &mut capture,
             &tx_descriptors,
@@ -694,6 +715,9 @@ fn check_pdm(
     clkrst: &HP_SYS_CLKRST,
     tx: &impl esp32p4_hal::dma::TransmitChannel,
     probe: &impl esp32p4_hal::dma::ReceiveChannel,
+    counter: &Pcnt,
+    ws: &mut impl PinOps,
+    bck: &mut impl PinOps,
     tx_buffer: &mut [u8],
     capture: &mut [u8],
     tx_descriptors: &[Descriptor],
@@ -744,6 +768,10 @@ fn check_pdm(
     // the capture is four milliseconds wide.
     let sending = i2s.tx_begin(tx, tx_buffer, tx_descriptors).is_ok();
     delay.delay_ms(8);
+    // On this chip the transmitter drives the data line only: neither WS nor BCK
+    // leaves the peripheral in PDM mode, which is why a receiving half has to
+    // generate its own bit clock.
+    let clock_lines = [edges_hz(counter, ws, delay), edges_hz(counter, bck, delay)];
     let watching = sending
         && sampler
             .rx_begin(probe, capture, capture_descriptors)
@@ -766,11 +794,26 @@ fn check_pdm(
 
     let ok = sent && swing;
     defmt::info!(
-        "pdm: {=u32} Hz bit clock, pin {=u32}..{=u32} permille, sampled at {=u32} Hz -> {}",
+        "pdm: {=u32} Hz bit clock, pin {=u32}..{=u32} permille, sampled at {=u32} Hz, ws {=u32} Hz, bck {=u32} Hz -> {}",
         pdm.bclk_hz,
         low,
         high,
         watch.bclk_hz,
+        clock_lines[0],
+        clock_lines[1],
         if ok { "ok" } else { "FAIL" }
     );
+}
+
+/// Rising edges per second on the pad `pin`, counted over a millisecond.
+fn edges_hz(counter: &Pcnt, pin: &mut impl PinOps, delay: &Delay) -> u32 {
+    pin.route_input_signal(InputSignal::PCNT_SIG_CH0_PAD_IN0);
+    counter.clear(UnitIndex::Zero);
+    counter.enable(UnitIndex::Zero, Trigger::default());
+    delay.delay_ms(1);
+    counter.pause(UnitIndex::Zero, true);
+    let edges = counter.count(UnitIndex::Zero);
+    counter.pause(UnitIndex::Zero, false);
+    pin.release_input_signal(InputSignal::PCNT_SIG_CH0_PAD_IN0);
+    edges.max(0) as u32 * 1000
 }
