@@ -57,6 +57,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `pcnt` | PCNT：用 LEDC 的 10 kHz 方波计数，验证限值回绕、标志锁存与暂停/恢复 |
 | `mcpwm` / `mcpwm_extras` | MCPWM0：前者查计数器/强制电平/三档占空比/互补加死区，后者查同步、捕获、故障跳闸、载波、ETM、事件比较器与中断 |
 | `twai` | TWAI0（CAN 2.0B）：把 TX/RX 路由到同一个焊盘做回环，验证标准/扩展/远程帧往返、过滤器正负向、收发中断、位时序与非法输入 |
+| `apll` | 音频 PLL：regi2c 模拟总线上的系数与标定、PMU 上电、频率回算；24.576 MHz 实测误差 0.16 ppm |
 | `i2s` | I2S0 标准模式：TX 主 / RX 从 + 内部 BCK/WS 共享、SD 单焊盘回环，验证时钟树、立体声与 mono 逐字节往返、BCK 计数、中断与非法配置 |
 
 ## 快速开始
@@ -1362,8 +1363,33 @@ i2s.tx_write(&dma.tx_channel::<0>(), &samples, &descriptors)?;
   `enable_interrupts` / `interrupts()` / `clear_interrupts()`，`I2s0::SOURCE` 给
   `interrupt::claim`。`set_hung_timeout` 调整从机等不到 BCK/WS 的判定时间。
 
+### 音频 PLL
+
+[`apll`](esp32p4-hal/src/apll.rs) 是这套 HAL 里唯一一个**不在内存映射里**的外设：P4 的 APLL
+参数挂在 regi2c 的模拟总线（block 0x6F、host 1）上，另外还需要 PMU 的 `IMM_HP_CK_POWER` 把
+模拟部分上电、`LP_AON_CLKRST` 打开 `hp_audio_pll_clk_en` 的门控。三条都要做，缺一个的现象是
+「寄存器写进去了，频率出不来」。
+
+```rust
+let mut apll = Apll::enable(24_576_000, &dp.LP_AON_CLKRST, &dp.PMU)?;
+let real = apll.frequency_hz();          // 24575996，误差 0.16 ppm
+i2s.set_clock_source(&dp.HP_SYS_CLKRST, ClockSource::Apll, real);
+```
+
+- `out = xtal × (4 + sdm2 + sdm1/256 + sdm0/65536) / ((o_div + 2) × 2)`：分子必须落在
+  350–500 MHz，所以可用范围是 5.3–125 MHz；`enable` 在参数空间里搜最近的组合，`set_frequency`
+  重写 SDM 并重跑标定，`frequency_hz` 用同一公式从寄存器反算——**报出来的就是实际值**，不是
+  目标值。
+- 标定序列是「写 `CAL` 为 0x0f、0x3f、0x1f，再轮询 `CAL_END`」，标定期间输出必须停。
+- 上板验证：目标 24.576 MHz（48 kHz × 512，也就是 12.288 MHz MCLK 的两倍）→ 24575996 Hz。
+  之后把它当作 I2S 时钟源，`mclk_divider` 用整数 2 + 0/512 得到 12.288 MHz MCLK，64 字节的
+  传输正好数到 512 个 BCK（期望 512，容差 ±1）。
+
 踩过的坑：
 
+- **APLL 的低频端要求 MCLK 分频向上取整**：PLL 回读值常常比标称值低几个 ppm，`source / mclk`
+  因此落到 1，而分频器的最小值是 2。现在只要源在 2 × MCLK 的 0.5% 以内就取 N = 2（误差是
+  ppm 级），不再是 `RateUnsupported`。
 - **没有 CPU 数据通路**：P4 的 I2S 没有 `TXFIFO`/`RXFIFO` 寄存器，FIFO 只由 GDMA 填/排，
   所以每个传输都必须先接上 DMA 通道（`Peripheral::I2s0..2`）；
 - **起停顺序**：先复位半区与 FIFO，再启动 DMA，最后置 `TX_START`。反过来（先启动外设）会让
@@ -1395,9 +1421,15 @@ BCK/WS 共享，SD 单焊盘回环）：
 | TDM 有空洞（`active = 0b1010`） | 每帧仍 4 槽（16393/16384 BCK），但 DMA 每帧只搬 2 字节 |
 | 环形流 | TX 环（32 字节模式）与 RX 环（40 字节窗口）各跑 10 ms：15359/15360 个 BCK，窗口内容是该模式的某个相位，无中断残留 |
 | 中断 | `TX_DONE` 触发、读取后清零 |
+| APLL | 目标 24.576 MHz → 24575996 Hz（0.16 ppm），重调 22.5792 MHz 后回到目标；作为 I2S 时钟源时 MCLK 分频为 2 + 0/512，64 字节传输数到 513/512 个 BCK |
 | 非法配置 | 数据位宽 > 槽宽、0 bit、5 MHz、100 Hz、从机 128×、TDM 空掩码、奇数帧长全部被拒 |
 
 示例 [`i2s`](esp32p4-examples/src/i2s.rs) 每秒重跑一遍这套检查，每项单独打印 `ok`/`FAIL`。
+
+**没做的：PDM TX/RX。** PCM2PDM / PDM2PCM 只有 I2S0 支持，按参考驱动的寄存器配置实现过一版，
+但上板测到的传输函数与参考不符：输入为零时数据线上的密度是 0.75（应 0.5），链路增益约 0.44，
+换 `chan_mod`、`FP/FS`、`sigmadelta_in_shift`、抖动与高通旁路都不改变这个形状。没有示波器或
+厂家参考可对照，因此这部分代码没有留在仓库里——它的存在会让「全部上板验证过」这个前提失效。
 
 ## eFuse 与芯片版本
 

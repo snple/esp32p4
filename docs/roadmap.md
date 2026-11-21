@@ -30,6 +30,7 @@
 | `etm` | [etm.rs](../esp32p4-hal/src/etm.rs) | SOC_ETM 的 50 个通道：事件/任务 id 连接与使能 |
 | `twai` | [twai.rs](../esp32p4-hal/src/twai.rs) | TWAI0/1/2 经典 CAN 2.0B（无 CAN-FD）：位时序、过滤器、标准/扩展/远程帧收发、自接收、状态与错误计数、按源中断 |
 | `i2s` | [i2s.rs](../esp32p4-hal/src/i2s.rs) | I2S0/1/2 标准双槽与 TDM（最多 16 槽）：时钟树分数分频、主/从、8–32 bit 槽、活动槽掩码、GDMA 收发、内部 BCK/WS 共享、BCK 计数与中断 |
+| `apll` | [apll.rs](../esp32p4-hal/src/apll.rs) | 音频 PLL：系数搜索、regi2c 模拟总线上的寄存器、PMU 上电位、三步标定与频率回报 |
 | `tsens` | [tsens.rs](../esp32p4-hal/src/tsens.rs) | `LP_TSENS` 温度传感器：上电与时钟、5 档自动选择、毫摄氏度读数、硬件监测阈值与中断 |
 | `sdhost` | [sdhost.rs](../esp32p4-hal/src/sdhost.rs) | SD 卡主机（`SDHOST`）：识别（CMD0/8/2/3/9/7、ACMD41/6）、CSD 容量解码、1/4 位总线、内部 DMA 的块读写 |
 | `spi` | [spi.rs](../esp32p4-hal/src/spi.rs) | GP-SPI2/3 主机与从机：CPU 传输（64 B 缓冲）、时钟模式 0–3、位序、硬件 CS 时序、任意引脚路由 |
@@ -133,8 +134,15 @@
    时钟分频器**（TRM 要求 ≥ 8 × BCK，否则从机静默收不到数据）；**`TX_TDM_SKIP_MSK_EN` 会缩短
    帧宽**而接收侧没有对应位，两端对 BCK 的理解会差一个槽数倍。示例 `i2s` 用 SD 单焊盘回环验证
    立体声与 mono 的逐字节往返、4 槽 TDM（含空洞）、环形流、BCK 计数与中断，结果见 README。
-   剩下未做的：PDM TX/RX（PCM2PDM / PDM2PCM，仅 I2S0 支持）、APLL 频率微调（现在源可选
-   XTAL / PLL_F160M / 外部，APLL 需上层先配好）。
+   **APLL** 也已接上（[`apll`](../esp32p4-hal/src/apll.rs)）：它没有内存映射寄存器，参数在
+   regi2c 的模拟总线（block 0x6F）上，另需 PMU 的 `imm_hp_ck_power` 上电位和 `LP_AON_CLKRST`
+   的门控；`Apll::enable` 搜索系数、上电、三步标定，`frequency_hz()` 用同样的公式从寄存器
+   反算实际频率。24.576 MHz 上板实测 24575996 Hz（误差 0.16 ppm），代价是需要把 MCLK 分频器
+   从「源略低于 2 × MCLK 就报错」改成向上取整到 N = 2。
+   剩下未做的：PDM TX/RX（PCM2PDM / PDM2PCM，仅 I2S0 支持）。按参考驱动的寄存器配置实现过一
+   版，上板测到的传输函数与参考不符（零输入时数据线上的密度是 0.75 而不是 0.5，链路增益约
+   0.44），说明还有没对齐的配置项，**因此这部分代码没有留在仓库里**，需要示波器或厂家参考再
+   做。
    ~~TWAI~~ 已完成，但**不是** CAN-FD：P4 的 TWAI 是经典 CAN 2.0B 控制器（`soc_caps.h` 没有
    `SOC_TWAI_SUPPORTS_FD`，TRM 第 54 章也没有 FD 帧格式），路线图原来写的「CAN-FD ×3」是
    错的。三个控制器共用一份宏生成的实现：位时序（整除校验 + 采样点最近）、单过滤器（与帧
