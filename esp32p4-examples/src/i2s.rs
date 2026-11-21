@@ -6,8 +6,13 @@
 //! That makes the whole path — clock tree, format, GDMA, both halves — testable
 //! without a codec, a jumper or a scope.
 //!
-//! Wiring if pads are watched: `GPIO4` is BCK, `GPIO5` is WS, `GPIO6` is the
-//! data line (out and in on the same pad).
+//! The PDM check needs one more thing: the data line also goes out on `GPIO16`,
+//! and a second controller (`I2S1`) reads it back on `GPIO20` through a jumper,
+//! eight bit slots at 8 MHz, so the buffer *is* the waveform on the pin. That is
+//! how the density of a one-bit stream can be checked without a scope.
+//!
+//! Wiring: `GPIO4` is BCK, `GPIO5` is WS, `GPIO6` is the data line (out and in on
+//! the same pad), and `GPIO16`–`GPIO20` has to be jumpered.
 //!
 //! Every check prints `ok` or `FAIL` on its own, and the whole set repeats once a
 //! second.
@@ -26,7 +31,8 @@ use esp32p4_hal::dma::{AhbDma, Descriptor};
 use esp32p4_hal::gpio::signal::{InputSignal, OutputSignal};
 use esp32p4_hal::gpio::{PinOps, Pins};
 use esp32p4_hal::i2s::{
-    ClockSource, Error, I2s0, Interrupts, Slot, Standard, StandardConfig, TdmConfig,
+    ClockSource, Error, I2s0, I2s1, Interrupts, PdmTxConfig, Slot, Standard, StandardConfig,
+    TdmConfig,
 };
 use esp32p4_hal::main;
 use esp32p4_hal::pac::{HP_SYS_CLKRST, Peripherals};
@@ -62,7 +68,16 @@ fn main() -> ! {
     sd.route_input_signal(InputSignal::I2S0_I_SD_PAD_IN);
     let _pads = (bck, ws, sd);
 
+    // The PDM data line also goes out on GPIO16 and comes back in on GPIO20, so
+    // a second controller can sample it as a logic analyser would.
+    let mut pdm_out = pins.pin::<16>();
+    pdm_out.route_output_signal(OutputSignal::I2S0_O_SD_PAD_OUT);
+    let mut probe = pins.pin::<20>();
+    probe.route_input_signal(InputSignal::I2S1_I_SD_PAD_IN);
+    let _probes = (pdm_out, probe);
+
     let i2s = I2s0::init(dp.I2S0, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
+    let sampler = I2s1::init(dp.I2S1, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
     let dma = AhbDma::init(dp.AHB_DMA, &dp.HP_SYS_CLKRST);
     let clkrst = &dp.HP_SYS_CLKRST;
     let lpaon = &dp.LP_AON_CLKRST;
@@ -71,6 +86,8 @@ fn main() -> ! {
     let mut tx_buffer = [0u8; 4 * WORDS];
     let mut rx_buffer = [0u8; 4 * WORDS];
     let tx_descriptors = [const { Descriptor::new() }; 4];
+    let mut capture = [0u8; 4094];
+    let capture_descriptors = [const { Descriptor::new() }; 4];
     let rx_descriptors = [const { Descriptor::new() }; 4];
 
     loop {
@@ -115,6 +132,18 @@ fn main() -> ! {
             &mut rx_buffer,
             &tx_descriptors,
             &rx_descriptors,
+            &delay,
+        );
+        check_pdm(
+            &i2s,
+            &sampler,
+            clkrst,
+            &dma.tx_channel::<0>(),
+            &dma.rx_channel::<1>(),
+            &mut tx_buffer,
+            &mut capture,
+            &tx_descriptors,
+            &capture_descriptors,
             &delay,
         );
         check_interrupts(
@@ -646,6 +675,102 @@ fn check_apll(
         clock.as_ref().map(|c| c.mclk_numerator).unwrap_or(0),
         clock.as_ref().map(|c| c.mclk_denominator).unwrap_or(0),
         bck,
+        if ok { "ok" } else { "FAIL" }
+    );
+}
+
+/// PDM end to end, seen from three places at once: the transmitter codes a 1 kHz
+/// square into a density stream, a second controller samples the data pin through
+/// the GPIO16-GPIO20 jumper and checks that the density really swings, and the
+/// PDM receiver filters the stream back into the square.
+///
+/// The transmitter runs at 16 kHz, where the module clock is 16.384 MHz and the
+/// crystal can still divide it; 48 kHz would need 49.152 MHz and therefore the
+/// audio PLL.
+#[allow(clippy::too_many_arguments)]
+fn check_pdm(
+    i2s: &I2s0,
+    sampler: &I2s1,
+    clkrst: &HP_SYS_CLKRST,
+    tx: &impl esp32p4_hal::dma::TransmitChannel,
+    probe: &impl esp32p4_hal::dma::ReceiveChannel,
+    tx_buffer: &mut [u8],
+    capture: &mut [u8],
+    tx_descriptors: &[Descriptor],
+    capture_descriptors: &[Descriptor],
+    delay: &Delay,
+) {
+    /// Samples per half period of the 1 kHz square at 16 kHz.
+    const HALF_SQUARE: usize = 8;
+
+    // PDM needs no BCK/WS sharing: the transmitter drives no bit clock and the
+    // receiver generates its own.
+    i2s.share_bck_ws(false);
+    let pdm = i2s.tx_configure_pdm(
+        clkrst,
+        &PdmTxConfig {
+            sample_rate: 16_000,
+            ..Default::default()
+        },
+    );
+    // Eight bit slots, both active: one byte per slot means one sample per bit
+    // clock, so the buffer is the waveform on the pin.
+    let watch = sampler.rx_configure(
+        clkrst,
+        &StandardConfig {
+            sample_rate: 500_000,
+            data_bits: 8,
+            slot_bits: 8,
+            slot: Slot::Both,
+            mclk_multiple: 32,
+            ..Default::default()
+        },
+    );
+    let (Ok(pdm), Ok(watch)) = (pdm, watch) else {
+        defmt::info!("pdm: configure failed -> FAIL");
+        return;
+    };
+
+    for (index, sample) in tx_buffer.as_chunks_mut::<2>().0.iter_mut().enumerate() {
+        let level = if (index / HALF_SQUARE).is_multiple_of(2) {
+            16_384i16
+        } else {
+            -16_384
+        };
+        sample.copy_from_slice(&level.to_le_bytes());
+    }
+
+    // The transmitter's high-pass filter needs a few milliseconds to settle, and
+    // the capture is four milliseconds wide.
+    let sending = i2s.tx_begin(tx, tx_buffer, tx_descriptors).is_ok();
+    delay.delay_ms(8);
+    let watching = sending
+        && sampler
+            .rx_begin(probe, capture, capture_descriptors)
+            .is_ok();
+    let watched = watching && sampler.rx_wait(probe, capture).is_ok();
+    let sent = sending && i2s.tx_wait(tx).is_ok();
+
+    // The pin: a density stream at the bit clock, swinging between a quarter and
+    // three quarters of ones for a half-scale square.
+    let mut low = u32::MAX;
+    let mut high = 0u32;
+    for index in 0..16 {
+        let slice = &capture[capture.len() / 16 * index..capture.len() / 16 * (index + 1)];
+        let ones: u32 = slice.iter().map(|byte| byte.count_ones()).sum();
+        let density = ones * 1000 / (slice.len() as u32 * 8);
+        low = low.min(density);
+        high = high.max(density);
+    }
+    let swing = watched && low < 320 && high > 680;
+
+    let ok = sent && swing;
+    defmt::info!(
+        "pdm: {=u32} Hz bit clock, pin {=u32}..{=u32} permille, sampled at {=u32} Hz -> {}",
+        pdm.bclk_hz,
+        low,
+        high,
+        watch.bclk_hz,
         if ok { "ok" } else { "FAIL" }
     );
 }

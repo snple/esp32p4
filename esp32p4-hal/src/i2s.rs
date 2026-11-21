@@ -372,6 +372,63 @@ impl Layout {
     }
 }
 
+/// PDM transmit: a PCM stream coded into a one-bit density stream, which is what
+/// a PDM speaker or the input of a class-D amplifier wants.
+///
+/// Only I2S0 has the PCM-to-PDM converter. The data line carries
+/// `64 x (fp / fs)` bits per sample, and the filter coefficients are the
+/// reference defaults; only the rate and the clock are configurable here.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct PdmTxConfig {
+    /// Sampling rate of the PCM side, in Hz.
+    pub sample_rate: u32,
+    /// MCLK as a multiple of the sample rate: at least 1024, because the PDM bit
+    /// clock divider cannot go below eight.
+    pub mclk_multiple: u16,
+    /// Whether this half drives BCK and WS.
+    pub master: bool,
+}
+
+impl Default for PdmTxConfig {
+    fn default() -> Self {
+        Self {
+            sample_rate: 16_000,
+            mclk_multiple: 1024,
+            master: true,
+        }
+    }
+}
+
+impl PdmTxConfig {
+    /// The bit clock the converter runs at: the ratio of the two filter clocks
+    /// times 64, times the sample rate.
+    const fn bclk_hz(&self) -> u32 {
+        self.sample_rate * (PDM_FP / PDM_FS) * 64
+    }
+
+    const fn mclk_hz(&self) -> u32 {
+        self.sample_rate * self.mclk_multiple as u32
+    }
+
+    fn check(&self) -> Result<Self, Error> {
+        if self.sample_rate == 0 || self.mclk_multiple < 1024 {
+            return Err(Error::RateUnsupported);
+        }
+        Ok(*self)
+    }
+}
+
+/// The ratio between the filter clocks, which is what sets the oversampling.
+const PDM_FP: u32 = 960;
+/// See [`PDM_FP`].
+const PDM_FS: u32 = 480;
+/// The high-pass filter corner the reference driver uses, as `(param0, param5)`.
+const PDM_HP_COEF_0: u32 = 6;
+const PDM_HP_COEF_5: u32 = 7;
+/// The PDM bit clock divider cannot be smaller than this.
+const PDM_MIN_BCK_DIV: u32 = 8;
+
 /// The clock the configuration ended up with.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -704,9 +761,13 @@ macro_rules! impl_i2s {
                     }
                     // The peripheral has no separate "standard" bit: a
                     // two-slot frame is TDM with two slots, and PDM must stay
-                    // off or the controller sends in neither mode.
+                    // off or the controller sends in neither mode. The
+                    // PCM-to-PDM converter has to be cleared too: left enabled
+                    // it keeps spending 128 bit clocks on every sample, which
+                    // turns a standard transfer into eight times the clocks.
                     r.tx_conf.set_tx_tdm_en();
                     r.tx_conf.clr_tx_pdm_en();
+                    r.tx_pcm2pdm_conf.clr_pcm2pdm_conv_en();
                     r.tx_conf1
                         .write_tx_bits_mod(u32::from(layout.data_bits - 1));
                     r.tx_conf1
@@ -726,6 +787,11 @@ macro_rules! impl_i2s {
                     }
                     r.tx_conf.clr_tx_bit_order();
                     r.tx_conf.clr_tx_mono();
+                    // Channel mode zero: every slot carries its own channel.
+                    // The PDM configuration leaves this at three, and inheriting
+                    // that here turns a two slot frame into eight times the bit
+                    // clocks.
+                    r.tx_conf.write_tx_chan_mod(0);
                     // One write describes the whole frame: the slot enables and
                     // the slot count. `SKIP_MSK_EN` stays clear on purpose —
                     // with it set the hardware shrinks the frame to the active
@@ -1194,15 +1260,35 @@ macro_rules! impl_i2s {
                     layout: &Layout,
                     owner: MclkOwner,
                 ) -> Result<Clock, Error> {
-                    let bclk_hz = layout.bclk_hz();
-                    let mclk_hz = layout.mclk_hz();
+                    let minimum = 2;
+                    self.program_clock_raw(
+                        clkrst,
+                        layout.bclk_hz(),
+                        layout.mclk_hz(),
+                        layout.master,
+                        owner,
+                        minimum,
+                    )
+                }
+
+                #[allow(clippy::too_many_arguments)]
+                fn program_clock_raw(
+                    &self,
+                    clkrst: &HP_SYS_CLKRST,
+                    bclk_hz: u32,
+                    mclk_hz: u32,
+                    master: bool,
+                    owner: MclkOwner,
+                    minimum_bck_div: u32,
+                ) -> Result<Clock, Error> {
                     if bclk_hz == 0 || mclk_hz == 0 {
                         return Err(Error::RateUnsupported);
                     }
                     let bck_divisor = mclk_hz / bclk_hz;
                     // The divider field cannot hold 1, so the smallest usable
-                    // divisor is 2; below 8 a slave samples unreliably.
-                    if bck_divisor < 2 || mclk_hz % bclk_hz != 0 {
+                    // divisor is 2; below 8 a slave samples unreliably, and PDM
+                    // cannot run below eight either.
+                    if bck_divisor < minimum_bck_div || mclk_hz % bclk_hz != 0 {
                         return Err(Error::RateUnsupported);
                     }
                     let divisor = mclk_divider(self.source_hz(), mclk_hz)?;
@@ -1217,19 +1303,19 @@ macro_rules! impl_i2s {
                     // not touch which half owns MCLK or the BCK divider — but it
                     // still needs its own module clock, at least eight BCK
                     // periods per bit, or it cannot sample the line.
-                    if !layout.master && mclk_hz < bclk_hz * 8 {
+                    if !master && mclk_hz < bclk_hz * 8 {
                         return Err(Error::SlaveClockTooSlow);
                     }
                     match owner {
                         MclkOwner::Transmit => {
-                            if layout.master {
+                            if master {
                                 clkrst.[<$mst_reg>].[<set_ $mst>]();
                                 self.regs().tx_conf.write_tx_bck_div_num(bck_divisor - 1);
                             }
                             self.program_tx_divider(clkrst, &divisor);
                         }
                         MclkOwner::Receive => {
-                            if layout.master {
+                            if master {
                                 clkrst.[<$mst_reg>].[<clr_ $mst>]();
                                 self.regs().rx_conf.write_rx_bck_div_num(bck_divisor - 1);
                             }
@@ -1389,3 +1475,80 @@ impl_i2s!(
     peri_clk_ctrl19,
     reg_i2s2_mst_clk_sel
 );
+
+// ============================================================================
+// PDM
+// ============================================================================
+//
+// Only I2S0 has the PCM-to-PDM and PDM-to-PCM converters. The other two
+// controllers do not get these methods at all, so a call that could never work
+// is a compile error instead of silence.
+impl I2s0 {
+    /// Configures the transmit half for PDM mode and returns the bit clock the
+    /// converter runs at.
+    ///
+    /// The converter spends `64 x (fp / fs)` bit clocks on every sample, so
+    /// [`PdmTxConfig::sample_rate`] fixes the bit clock; the module clock has to
+    /// divide down to at least eight bit clocks per period.
+    pub fn tx_configure_pdm(
+        &self,
+        clkrst: &HP_SYS_CLKRST,
+        config: &PdmTxConfig,
+    ) -> Result<Clock, Error> {
+        let config = config.check()?;
+        let clock = self.program_clock_raw(
+            clkrst,
+            config.bclk_hz(),
+            config.mclk_hz(),
+            config.master,
+            MclkOwner::Transmit,
+            PDM_MIN_BCK_DIV,
+        )?;
+
+        let r = self.regs();
+        r.tx_conf.trigger_tx_reset();
+        r.tx_conf.trigger_tx_fifo_reset();
+        if config.master {
+            r.tx_conf.clr_tx_slave_mod();
+        } else {
+            r.tx_conf.set_tx_slave_mod();
+        }
+        // PDM and TDM are exclusive, and the controller refuses to
+        // run in neither mode.
+        r.tx_conf.set_tx_pdm_en();
+        r.tx_conf.clr_tx_tdm_en();
+        r.tx_conf.clr_tx_msb_shift();
+        r.tx_conf.clr_tx_ws_idle_pol();
+        // Mono on one line: the reference driver's mono default is
+        // `slot_mask = BOTH`, which maps to channel mode 3.
+        r.tx_conf.write_tx_chan_mod(3);
+        r.tx_conf.set_tx_mono();
+        r.tx_conf.set_tx_mono_fst_vld();
+        r.tx_conf1.write_tx_bits_mod(15);
+        r.tx_conf1.write_tx_tdm_chan_bits(15);
+        r.tx_conf1.write_tx_half_sample_bits(15);
+
+        let conf = &r.tx_pcm2pdm_conf;
+        conf.set_pcm2pdm_conv_en();
+        conf.write_tx_pdm_prescale(0);
+        // Scale stages: the DAC and sinc stages stay at unity, and
+        // the high-pass input is halved.
+        conf.write_tx_pdm_sigmadelta_in_shift(2);
+        conf.write_tx_pdm_sinc_in_shift(1);
+        conf.write_tx_pdm_lp_in_shift(1);
+        conf.write_tx_pdm_hp_in_shift(1);
+        conf.write_tx_pdm_sinc_osr2(PDM_FP / PDM_FS);
+        // The high-pass filter cannot be bypassed on this chip.
+        conf.clr_tx_pdm_hp_bypass();
+        conf.clr_tx_pdm_sigmadelta_dither();
+        conf.clr_tx_pdm_sigmadelta_dither2();
+        conf.clr_tx_pdm_dac_mode_en();
+        conf.set_tx_pdm_dac_2out_en();
+        let conf1 = &r.tx_pcm2pdm_conf1;
+        conf1.write_tx_pdm_fp(PDM_FP);
+        conf1.write_tx_pdm_fs(PDM_FS);
+        conf1.write_tx_iir_hp_mult12_0(PDM_HP_COEF_0);
+        conf1.write_tx_iir_hp_mult12_5(PDM_HP_COEF_5);
+        Ok(clock)
+    }
+}
