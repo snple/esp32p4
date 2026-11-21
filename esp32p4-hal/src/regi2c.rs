@@ -264,6 +264,46 @@ pub mod mpll {
     pub const DHREF: Field = Field::new(Register::new(Block::MSPI, 3), 5, 4);
 }
 
+/// Audio PLL (`Apll`), on analog block `0x6f`.
+///
+/// The coefficients and the calibration live here; [`crate::apll`] drives them.
+pub mod apll {
+    use super::{Block, Field, Register};
+
+    /// Calibration delay, and the bits that start and release a calibration.
+    pub const CAL: Register = Register::new(Block::PLLA, 0);
+    /// Calibration delay, `[3:0]` of [`CAL`].
+    pub const CAL_DELAY: Field = Field::new(CAL, 3, 0);
+    /// `[4]` of [`CAL`]: releases the calibration state machine.
+    pub const CAL_RSTB: Field = Field::new(CAL, 4, 4);
+    /// `[5]` of [`CAL`]: starts a calibration.
+    pub const CAL_START: Field = Field::new(CAL, 5, 5);
+    /// `[6]` of [`CAL`]: unstops the calibration clock.
+    pub const CAL_UNSTOP: Field = Field::new(CAL, 6, 6);
+    /// `[7]` of [`CAL`]: enables the frequency calibration comparator.
+    pub const ENABLE_FCAL: Field = Field::new(CAL, 7, 7);
+
+    /// Calibration result, `[7]` of register 3.
+    pub const CAL_END: Field = Field::new(Register::new(Block::PLLA, 3), 7, 7);
+
+    /// Output divider `[4:0]` of register 4.
+    pub const OUTPUT_DIV: Field = Field::new(Register::new(Block::PLLA, 4), 4, 0);
+
+    /// Sigma-delta stop control, register 5.
+    pub const SDM: Register = Register::new(Block::PLLA, 5);
+    /// `[5]` of [`SDM`]: stops the sigma-delta modulator.
+    pub const SDM_STOP: Field = Field::new(SDM, 5, 5);
+    /// `[6]` of [`SDM`]: releases the sigma-delta modulator reset.
+    pub const SDM_RSTB: Field = Field::new(SDM, 6, 6);
+
+    /// Fractional part, most significant byte, `[5:0]` of register 7.
+    pub const DSDM2: Field = Field::new(Register::new(Block::PLLA, 7), 5, 0);
+    /// Fractional part, middle byte: register 8.
+    pub const DSDM1: Field = Field::new(Register::new(Block::PLLA, 8), 7, 0);
+    /// Fractional part, least significant byte: register 9.
+    pub const DSDM0: Field = Field::new(Register::new(Block::PLLA, 9), 7, 0);
+}
+
 /// Errors reported by the `try_*` functions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]

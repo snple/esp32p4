@@ -476,9 +476,17 @@ fn mclk_divider(source_hz: u32, mclk_hz: u32) -> Result<Divider, Error> {
     }
     // The integer part has to be at least 2, which is `source > 2 * mclk`.
     let mut integer = source_hz / mclk_hz;
-    let remainder = source_hz % mclk_hz;
+    let mut remainder = source_hz % mclk_hz;
     if integer < 2 {
-        return Err(Error::RateUnsupported);
+        // A source that is nominally twice the target lands a hair below it
+        // once it comes back from a PLL, and the hardware cannot divide by less
+        // than two. Round up instead of failing: the resulting error is in the
+        // parts-per-million range.
+        if u64::from(source_hz) * 100 < u64::from(mclk_hz) * 199 {
+            return Err(Error::RateUnsupported);
+        }
+        integer = 2;
+        remainder = 0;
     }
     const A: u32 = 512;
     let mut b = ((u64::from(remainder) * u64::from(A) + u64::from(mclk_hz) / 2)

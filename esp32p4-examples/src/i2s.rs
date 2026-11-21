@@ -20,11 +20,14 @@ use defmt_rtt as _;
 #[cfg(feature = "defmt")]
 defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
+use esp32p4_hal::apll::Apll;
 use esp32p4_hal::delay::Delay;
 use esp32p4_hal::dma::{AhbDma, Descriptor};
 use esp32p4_hal::gpio::signal::{InputSignal, OutputSignal};
 use esp32p4_hal::gpio::{PinOps, Pins};
-use esp32p4_hal::i2s::{Error, I2s0, Interrupts, Slot, Standard, StandardConfig, TdmConfig};
+use esp32p4_hal::i2s::{
+    ClockSource, Error, I2s0, Interrupts, Slot, Standard, StandardConfig, TdmConfig,
+};
 use esp32p4_hal::main;
 use esp32p4_hal::pac::{HP_SYS_CLKRST, Peripherals};
 use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
@@ -62,6 +65,8 @@ fn main() -> ! {
     let i2s = I2s0::init(dp.I2S0, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
     let dma = AhbDma::init(dp.AHB_DMA, &dp.HP_SYS_CLKRST);
     let clkrst = &dp.HP_SYS_CLKRST;
+    let lpaon = &dp.LP_AON_CLKRST;
+    let pmu = &dp.PMU;
 
     let mut tx_buffer = [0u8; 4 * WORDS];
     let mut rx_buffer = [0u8; 4 * WORDS];
@@ -81,6 +86,15 @@ fn main() -> ! {
             &mut rx_buffer,
             &tx_descriptors,
             &rx_descriptors,
+        );
+        check_apll(
+            &i2s,
+            clkrst,
+            lpaon,
+            pmu,
+            &dma.tx_channel::<0>(),
+            &tx_buffer,
+            &tx_descriptors,
         );
         check_tdm(
             &i2s,
@@ -572,6 +586,66 @@ fn check_stream(
         expected_bck,
         phase,
         hung.raw(),
+        if ok { "ok" } else { "FAIL" }
+    );
+}
+
+/// The audio PLL tuned to an exact audio clock: 12.288 MHz, which is eight
+/// BCK periods per bit at 48 kHz — an integer divider, so BCK has to be exactly
+/// 1.536 MHz and the counter proves it.
+fn check_apll(
+    i2s: &I2s0,
+    clkrst: &HP_SYS_CLKRST,
+    lpaon: &esp32p4_hal::pac::LP_AON_CLKRST,
+    pmu: &esp32p4_hal::pac::PMU,
+    tx: &impl esp32p4_hal::dma::TransmitChannel,
+    tx_buffer: &[u8],
+    tx_descriptors: &[Descriptor],
+) {
+    // Twice the MCLK a 48 kHz stream needs, which is what a codec expects on
+    // its MCLK pin.
+    let target = 24_576_000;
+    let Ok(mut apll) = Apll::enable(target, lpaon, pmu) else {
+        defmt::info!("apll: could not start -> FAIL");
+        return;
+    };
+    let realized = apll.frequency_hz();
+    let tuned = apll
+        .set_frequency(22_579_200)
+        .is_ok_and(|hz| hz.abs_diff(22_579_200) < 100);
+    let retuned = apll.set_frequency(target).is_ok();
+
+    // 24.576 MHz / 2 = 12.288 MHz MCLK, / 8 = 1.536 MHz BCK: with the PLL as the
+    // source the divider is integral, so a transfer of known length has to
+    // produce exactly 8 BCK per byte.
+    i2s.set_clock_source(clkrst, ClockSource::Apll, realized);
+    let config = StandardConfig {
+        sample_rate: RATE,
+        ..Default::default()
+    };
+    let clock = i2s.tx_configure(clkrst, &config).ok();
+    let played = clock
+        .as_ref()
+        .is_some_and(|c| c.source_hz == realized && c.mclk_integer == 2 && c.mclk_numerator == 0);
+    i2s.reset_tx_bck_counter();
+    let sent = played && i2s.tx_write(tx, &tx_buffer[..64], tx_descriptors).is_ok();
+    let bck = i2s.tx_bck_count();
+
+    i2s.set_clock_source(clkrst, ClockSource::Xtal, 0);
+    apll.disable(lpaon, pmu);
+
+    // The counter can include one BCK on either side of the transfer.
+    let exact = bck.abs_diff(64 * 8) <= 1;
+    let ok = realized.abs_diff(target) < 100 && tuned && retuned && played && sent && exact;
+    defmt::info!(
+        "apll: {=u32} Hz (wanted {=u32}), retuned {=bool}, divider {=u32}+{=u32}/{=u32}, {=u32}/512 BCK -> {}",
+        realized,
+        target,
+        tuned && retuned,
+        clock.as_ref().map(|c| c.mclk_integer).unwrap_or(0),
+        clock.as_ref().map(|c| c.mclk_numerator).unwrap_or(0),
+        clock.as_ref().map(|c| c.mclk_denominator).unwrap_or(0),
+        bck,
         if ok { "ok" } else { "FAIL" }
     );
 }
