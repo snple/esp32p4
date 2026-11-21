@@ -25,9 +25,7 @@
 //! ```ignore
 //! use esp32p4_hal::gpio::signal::{InputSignal, OutputSignal};
 //! use esp32p4_hal::gpio::{Level, Pins};
-//! use esp32p4_hal::rmt::{
-//!     ClockSource, Pulse, Rmt, RxChannelIndex, RxConfig, TxChannelIndex, TxConfig,
-//! };
+//! use esp32p4_hal::rmt::{ClockSource, Pulse, Rmt, RxConfig, TxConfig};
 //!
 //! let rmt = Rmt::init(dp.RMT, &dp.HP_SYS_CLKRST);
 //! rmt.set_clock_source(&dp.HP_SYS_CLKRST, ClockSource::Xtal40m, 1).unwrap(); // 40 MHz ticks
@@ -36,14 +34,16 @@
 //! pin.route_output_signal(OutputSignal::RMT_SIG_PAD_OUT0);
 //! pin.route_input_signal(InputSignal::RMT_SIG_PAD_IN0);
 //!
-//! rmt.configure_tx(TxChannelIndex::Zero, &TxConfig::default()).unwrap();
-//! rmt.configure_rx(RxChannelIndex::Zero, &RxConfig::default()).unwrap();
+//! // The channel number lives in the handle's type.
+//! let tx = rmt.tx_channel::<0>();
+//! let rx = rmt.rx_channel::<0>();
+//! tx.configure(&TxConfig::default()).unwrap();
+//! rx.configure(&RxConfig::default()).unwrap();
 //!
 //! // Both ends share the pad, so the example sends and listens at once.
 //! let mut received = [Pulse::default(); 64];
-//! rmt.receive(RxChannelIndex::Zero, &mut received, 10_000).unwrap();
-//! rmt.send(
-//!     TxChannelIndex::Zero,
+//! rx.receive(&mut received, 10_000).unwrap();
+//! tx.send(
 //!     &[Pulse::new(Level::High, 10), Pulse::new(Level::Low, 30)],
 //!     10_000,
 //! )
@@ -65,7 +65,7 @@
 //!   both.
 //! - Receive carrier demodulation is enabled out of reset. With the default
 //!   thresholds it removes every input pulse, so the receiver reports the idle
-//!   gap without ever recording an edge; [`Rmt::configure_rx`] turns it off.
+//!   gap without ever recording an edge; `RxChannel::configure` turns it off.
 //! - The last pulse of a burst is usually lost: the receiver is still counting
 //!   it when the idle gap ends the reception.
 //! - The reset SVD puts RMT at `0x500D_4000`, which the TRM marks as reserved;
@@ -80,34 +80,6 @@ pub const RAM_WORDS_PER_CHANNEL: usize = 48;
 
 /// Pulse codes one RAM block holds (two per 32-bit word).
 pub const PULSES_PER_BLOCK: usize = RAM_WORDS_PER_CHANNEL * 2;
-
-/// A transmit channel: hardware channels 0–3.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum TxChannelIndex {
-    /// Hardware channel 0.
-    Zero,
-    /// Hardware channel 1.
-    One,
-    /// Hardware channel 2.
-    Two,
-    /// Hardware channel 3, the one with GDMA access.
-    Three,
-}
-
-/// A receive channel: hardware channels 4–7, numbered 0–3 here.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum RxChannelIndex {
-    /// Hardware channel 4.
-    Zero,
-    /// Hardware channel 5.
-    One,
-    /// Hardware channel 6.
-    Two,
-    /// Hardware channel 7, the one with GDMA access.
-    Three,
-}
 
 /// Clock feeding the group divider.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -293,221 +265,6 @@ pub enum Error {
     Timeout,
 }
 
-// ============================================================================
-// Per-channel register access
-// ============================================================================
-//
-// Every channel has its own register types (`TxCh0conf0` vs `TxCh1conf0`, …)
-// with the channel number baked into each field accessor name. These traits
-// give the driver one name per operation; the macro below implements them for
-// all four channels.
-
-trait TxConfRegs {
-    fn set_idle(&self, high: bool, from_register: bool);
-    fn set_divider(&self, divider: u16);
-    fn set_blocks(&self, blocks: u8);
-    fn set_carrier(&self, carrier: Option<Carrier>);
-    fn set_conti_mode(&self, enable: bool);
-    fn start(&self);
-    fn stop(&self);
-    fn reset_pointers(&self);
-    fn update(&self);
-    fn blocks(&self) -> u32;
-}
-
-trait TxStatusRegs {
-    fn state(&self) -> u32;
-    fn memory_empty(&self) -> bool;
-}
-
-trait RxConf0Regs {
-    fn set_carrier_demodulation(&self, enable: bool);
-    fn set_divider(&self, divider: u16);
-    fn set_idle_threshold(&self, threshold: u16);
-    fn set_blocks(&self, blocks: u8);
-}
-
-trait RxConf1Regs {
-    fn set_mem_owner(&self, hardware: bool);
-    fn set_filter(&self, threshold: Option<u8>);
-    fn reset_pointers(&self);
-    fn set_enabled(&self, enable: bool);
-    fn update(&self);
-}
-
-trait RxStatusRegs {
-    fn write_cursor(&self) -> u32;
-}
-
-macro_rules! impl_channel_regs {
-    ($tx_conf:ident, $tx_status:ident, $rx_conf0:ident, $rx_conf1:ident, $rx_status:ident) => {
-        pastey::paste! {
-            impl TxConfRegs for rmt::$tx_conf {
-                fn set_idle(&self, high: bool, from_register: bool) {
-                    if high {
-                        self.[<set_idle_out_lv_ch0>]();
-                    } else {
-                        self.[<clr_idle_out_lv_ch0>]();
-                    }
-                    if from_register {
-                        self.[<set_idle_out_en_ch0>]();
-                    } else {
-                        self.[<clr_idle_out_en_ch0>]();
-                    }
-                }
-
-                fn set_divider(&self, divider: u16) {
-                    // Zero means a divider of 256.
-                    self.[<write_div_cnt_ch0>](if divider >= 256 {
-                        0
-                    } else {
-                        u32::from(divider)
-                    });
-                }
-
-                fn set_blocks(&self, blocks: u8) {
-                    self.[<write_mem_size_ch0>](u32::from(blocks));
-                }
-
-                fn set_carrier(&self, carrier: Option<Carrier>) {
-                    match carrier {
-                        Some(carrier) => {
-                            if carrier.on_high {
-                                self.[<set_carrier_out_lv_ch0>]();
-                            } else {
-                                self.[<clr_carrier_out_lv_ch0>]();
-                            }
-                            if carrier.only_while_active {
-                                self.[<set_carrier_eff_en_ch0>]();
-                            } else {
-                                self.[<clr_carrier_eff_en_ch0>]();
-                            }
-                            self.[<set_carrier_en_ch0>]();
-                        }
-                        None => self.[<clr_carrier_en_ch0>](),
-                    }
-                }
-
-                fn set_conti_mode(&self, enable: bool) {
-                    if enable {
-                        self.[<set_tx_conti_mode_ch0>]();
-                    } else {
-                        self.[<clr_tx_conti_mode_ch0>]();
-                    }
-                }
-
-                fn start(&self) {
-                    self.[<trigger_conf_update_ch0>]();
-                    self.[<trigger_tx_start_ch0>]();
-                }
-
-                fn stop(&self) {
-                    self.[<set_tx_stop_ch0>]();
-                    self.[<trigger_conf_update_ch0>]();
-                }
-
-                fn reset_pointers(&self) {
-                    self.[<trigger_mem_rd_rst_ch0>]();
-                    self.[<trigger_apb_mem_rst_ch0>]();
-                }
-
-                fn update(&self) {
-                    self.[<trigger_conf_update_ch0>]();
-                }
-
-                fn blocks(&self) -> u32 {
-                    self.[<mem_size_ch0>]()
-                }
-            }
-
-            impl TxStatusRegs for rmt::$tx_status {
-                fn state(&self) -> u32 {
-                    self.[<state_ch0>]()
-                }
-
-                fn memory_empty(&self) -> bool {
-                    self.[<mem_empty_ch0>]()
-                }
-            }
-
-            impl RxConf0Regs for rmt::$rx_conf0 {
-                fn set_carrier_demodulation(&self, enable: bool) {
-                    if enable {
-                        self.[<set_carrier_en_ch4>]();
-                    } else {
-                        self.[<clr_carrier_en_ch4>]();
-                    }
-                }
-
-                fn set_divider(&self, divider: u16) {
-                    self.[<write_div_cnt_ch4>](if divider >= 256 {
-                        0
-                    } else {
-                        u32::from(divider)
-                    });
-                }
-
-                fn set_idle_threshold(&self, threshold: u16) {
-                    self.[<write_idle_thres_ch4>](u32::from(threshold));
-                }
-
-                fn set_blocks(&self, blocks: u8) {
-                    self.[<write_mem_size_ch4>](u32::from(blocks));
-                }
-            }
-
-            impl RxConf1Regs for rmt::$rx_conf1 {
-                fn set_mem_owner(&self, hardware: bool) {
-                    if hardware {
-                        self.[<set_mem_owner_ch4>]();
-                    } else {
-                        self.[<clr_mem_owner_ch4>]();
-                    }
-                }
-
-                fn set_filter(&self, threshold: Option<u8>) {
-                    match threshold {
-                        Some(threshold) => {
-                            self.[<write_rx_filter_thres_ch4>](u32::from(threshold));
-                            self.[<set_rx_filter_en_ch4>]();
-                        }
-                        None => self.[<clr_rx_filter_en_ch4>](),
-                    }
-                }
-
-                fn reset_pointers(&self) {
-                    self.[<trigger_mem_wr_rst_ch4>]();
-                    self.[<trigger_apb_mem_rst_ch4>]();
-                }
-
-                fn set_enabled(&self, enable: bool) {
-                    if enable {
-                        self.[<set_rx_en_ch4>]();
-                    } else {
-                        self.[<clr_rx_en_ch4>]();
-                    }
-                    self.[<trigger_conf_update_ch4>]();
-                }
-
-                fn update(&self) {
-                    self.[<trigger_conf_update_ch4>]();
-                }
-            }
-
-            impl RxStatusRegs for rmt::$rx_status {
-                fn write_cursor(&self) -> u32 {
-                    self.[<mem_waddr_ex_ch4>]()
-                }
-            }
-        }
-    };
-}
-
-impl_channel_regs!(TxCh0conf0, TxCh0status, RxCh0conf0, RxCh0conf1, RxCh0status);
-impl_channel_regs!(TxCh1conf0, TxCh1status, RxCh1conf0, RxCh1conf1, RxCh1status);
-impl_channel_regs!(TxCh2conf0, TxCh2status, RxCh2conf0, RxCh2conf1, RxCh2status);
-impl_channel_regs!(TxCh3conf0, TxCh3status, RxCh3conf0, RxCh3conf1, RxCh3status);
-
 /// RMT controller owning the PAC peripheral.
 pub struct Rmt {
     rmt: RMT,
@@ -599,509 +356,453 @@ impl Rmt {
         Ok(())
     }
 
-    fn tx_conf(&self, channel: TxChannelIndex) -> &dyn TxConfRegs {
-        match channel {
-            TxChannelIndex::Zero => &self.rmt.tx_ch0conf0,
-            TxChannelIndex::One => &self.rmt.tx_ch1conf0,
-            TxChannelIndex::Two => &self.rmt.tx_ch2conf0,
-            TxChannelIndex::Three => &self.rmt.tx_ch3conf0,
-        }
-    }
-
-    fn tx_status(&self, channel: TxChannelIndex) -> &dyn TxStatusRegs {
-        match channel {
-            TxChannelIndex::Zero => &self.rmt.tx_ch0status,
-            TxChannelIndex::One => &self.rmt.tx_ch1status,
-            TxChannelIndex::Two => &self.rmt.tx_ch2status,
-            TxChannelIndex::Three => &self.rmt.tx_ch3status,
-        }
-    }
-
-    /// Base of the channel's pulse RAM as a `VolatileCell` array.
+    /// A handle to transmit channel `N`.
     ///
-    /// The SVD gives every word its own register type; the driver walks them
-    /// through this pointer instead of a 48-arm match. `index` is bounded by
-    /// the configured block count.
-    fn tx_ram(&self, channel: TxChannelIndex) -> *const crate::pac::common::VolatileCell<u32> {
-        match channel {
-            TxChannelIndex::Zero => {
-                &self.rmt.tx_ch0_mem0 as *const _ as *const crate::pac::common::VolatileCell<u32>
-            }
-            TxChannelIndex::One => {
-                &self.rmt.tx_ch1_mem0 as *const _ as *const crate::pac::common::VolatileCell<u32>
-            }
-            TxChannelIndex::Two => {
-                &self.rmt.tx_ch2_mem0 as *const _ as *const crate::pac::common::VolatileCell<u32>
-            }
-            TxChannelIndex::Three => {
-                &self.rmt.tx_ch3_mem0 as *const _ as *const crate::pac::common::VolatileCell<u32>
-            }
-        }
+    /// `N` is 0–3; anything else fails to compile.
+    #[inline]
+    pub fn tx_channel<const N: u8>(&self) -> TxChannel<'_, N> {
+        const { assert!(N < 4, "this controller has four transmit channels, 0 to 3") };
+        TxChannel(self)
     }
 
-    fn rx_ram(&self, channel: RxChannelIndex) -> *const crate::pac::common::VolatileCell<u32> {
-        match channel {
-            RxChannelIndex::Zero => {
-                &self.rmt.rx_ch0_mem0 as *const _ as *const crate::pac::common::VolatileCell<u32>
-            }
-            RxChannelIndex::One => {
-                &self.rmt.rx_ch1_mem0 as *const _ as *const crate::pac::common::VolatileCell<u32>
-            }
-            RxChannelIndex::Two => {
-                &self.rmt.rx_ch2_mem0 as *const _ as *const crate::pac::common::VolatileCell<u32>
-            }
-            RxChannelIndex::Three => {
-                &self.rmt.rx_ch3_mem0 as *const _ as *const crate::pac::common::VolatileCell<u32>
-            }
-        }
-    }
-
-    fn rx_conf0(&self, channel: RxChannelIndex) -> &dyn RxConf0Regs {
-        match channel {
-            RxChannelIndex::Zero => &self.rmt.rx_ch0conf0,
-            RxChannelIndex::One => &self.rmt.rx_ch1conf0,
-            RxChannelIndex::Two => &self.rmt.rx_ch2conf0,
-            RxChannelIndex::Three => &self.rmt.rx_ch3conf0,
-        }
-    }
-
-    fn rx_conf1(&self, channel: RxChannelIndex) -> &dyn RxConf1Regs {
-        match channel {
-            RxChannelIndex::Zero => &self.rmt.rx_ch0conf1,
-            RxChannelIndex::One => &self.rmt.rx_ch1conf1,
-            RxChannelIndex::Two => &self.rmt.rx_ch2conf1,
-            RxChannelIndex::Three => &self.rmt.rx_ch3conf1,
-        }
-    }
-
-    fn rx_status(&self, channel: RxChannelIndex) -> &dyn RxStatusRegs {
-        match channel {
-            RxChannelIndex::Zero => &self.rmt.rx_ch0status,
-            RxChannelIndex::One => &self.rmt.rx_ch1status,
-            RxChannelIndex::Two => &self.rmt.rx_ch2status,
-            RxChannelIndex::Three => &self.rmt.rx_ch3status,
-        }
-    }
-
-    // ========================================================================
-    // Transmit
-    // ========================================================================
-
-    /// Applies `config` to a transmit channel.
+    /// A handle to receive channel `N`.
     ///
-    /// # Errors
-    ///
-    /// [`Error::Divider`] when the channel divider is zero, [`Error::Blocks`]
-    /// when `blocks` is outside what the channel can own.
-    pub fn configure_tx(&self, channel: TxChannelIndex, config: &TxConfig) -> Result<(), Error> {
-        if config.divider == 0 {
-            return Err(Error::Divider);
-        }
-        let usable = match channel {
-            TxChannelIndex::Zero => 4,
-            TxChannelIndex::One => 3,
-            TxChannelIndex::Two => 2,
-            TxChannelIndex::Three => 1,
-        };
-        if config.blocks == 0 || config.blocks > usable {
-            return Err(Error::Blocks);
-        }
-
-        self.reset_tx_clock_divider(channel);
-        let conf = self.tx_conf(channel);
-        conf.set_idle(matches!(config.idle_level, Level::High), config.idle_output);
-        conf.set_divider(config.divider);
-        conf.set_blocks(config.blocks);
-        conf.set_carrier(config.carrier);
-        conf.update();
-
-        if let Some(carrier) = config.carrier {
-            self.set_tx_carrier_duty(channel, carrier.high, carrier.low);
-        }
-        Ok(())
-    }
-
-    /// Sets the carrier's high and low durations, in ticks minus one.
-    pub fn set_tx_carrier_duty(&self, channel: TxChannelIndex, high: u16, low: u16) {
-        match channel {
-            TxChannelIndex::Zero => {
-                self.rmt
-                    .ch0carrier_duty
-                    .write_carrier_high_ch(u32::from(high));
-                self.rmt
-                    .ch0carrier_duty
-                    .write_carrier_low_ch(u32::from(low));
-            }
-            TxChannelIndex::One => {
-                self.rmt
-                    .ch1carrier_duty
-                    .write_carrier_high_ch(u32::from(high));
-                self.rmt
-                    .ch1carrier_duty
-                    .write_carrier_low_ch(u32::from(low));
-            }
-            TxChannelIndex::Two => {
-                self.rmt
-                    .ch2carrier_duty
-                    .write_carrier_high_ch(u32::from(high));
-                self.rmt
-                    .ch2carrier_duty
-                    .write_carrier_low_ch(u32::from(low));
-            }
-            TxChannelIndex::Three => {
-                self.rmt
-                    .ch3carrier_duty
-                    .write_carrier_high_ch(u32::from(high));
-                self.rmt
-                    .ch3carrier_duty
-                    .write_carrier_low_ch(u32::from(low));
-            }
-        }
-    }
-
-    /// Writes a pulse sequence into the channel's RAM and starts it.
-    ///
-    /// An end marker is appended when `pulses` does not end with one, so at most
-    /// `blocks * 96 - 1` pulses fit. The call returns once the transmitter is
-    /// running; use [`wait_tx_done`](Self::wait_tx_done) for the end.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::TooLong`] when the sequence does not fit the configured blocks.
-    pub fn transmit(&self, channel: TxChannelIndex, pulses: &[Pulse]) -> Result<(), Error> {
-        self.write_pulses(channel, pulses)?;
-        self.start_tx(channel);
-        Ok(())
-    }
-
-    /// Loads a pulse sequence without starting the transmitter. Returns how
-    /// many codes were written, including the end marker.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::TooLong`] when the sequence does not fit the configured blocks.
-    pub fn write_pulses(&self, channel: TxChannelIndex, pulses: &[Pulse]) -> Result<usize, Error> {
-        let capacity = self.tx_capacity(channel);
-        let mut count = pulses.len();
-        if count == 0 || !pulses[count - 1].is_end() {
-            count += 1;
-        }
-        if count > capacity {
-            return Err(Error::TooLong);
-        }
-
-        self.reset_tx_clock_divider(channel);
-        self.tx_conf(channel).reset_pointers();
-        let ram = self.tx_ram(channel);
-        let code = |index: usize| {
-            if index < pulses.len() {
-                pulses[index].code()
-            } else {
-                Pulse::END.code()
-            }
-        };
-        let mut index = 0;
-        while index < count {
-            // SAFETY: `ram` is the channel's 48-word (times `blocks`) pulse
-            // RAM and `index` stays below `tx_capacity`.
-            unsafe {
-                (&*ram.add(index / 2)).write_bits(code(index) | (code(index + 1) << 16));
-            }
-            index += 2;
-        }
-        Ok(count)
-    }
-
-    /// Starts transmitting what is already in the channel's RAM.
-    pub fn start_tx(&self, channel: TxChannelIndex) {
-        self.tx_conf(channel).start();
-    }
-
-    /// Stops the transmitter immediately.
-    pub fn stop_tx(&self, channel: TxChannelIndex) {
-        self.tx_conf(channel).stop();
-    }
-
-    /// Enables continuous transmission: the RAM is sent over and over.
-    pub fn set_tx_conti_mode(&self, channel: TxChannelIndex, enable: bool) {
-        let conf = self.tx_conf(channel);
-        conf.set_conti_mode(enable);
-        conf.update();
-    }
-
-    /// Whether the transmitter has finished the sequence.
-    pub fn tx_done(&self, channel: TxChannelIndex) -> bool {
-        match channel {
-            TxChannelIndex::Zero => self.rmt.int_raw.ch0_tx_end_int_raw(),
-            TxChannelIndex::One => self.rmt.int_raw.ch1_tx_end_int_raw(),
-            TxChannelIndex::Two => self.rmt.int_raw.ch2_tx_end_int_raw(),
-            TxChannelIndex::Three => self.rmt.int_raw.ch3_tx_end_int_raw(),
-        }
-    }
-
-    /// Clears the transmit-end status.
-    pub fn clear_tx_done(&self, channel: TxChannelIndex) {
-        match channel {
-            TxChannelIndex::Zero => self.rmt.int_clr.trigger_ch0_tx_end_int_clr(),
-            TxChannelIndex::One => self.rmt.int_clr.trigger_ch1_tx_end_int_clr(),
-            TxChannelIndex::Two => self.rmt.int_clr.trigger_ch2_tx_end_int_clr(),
-            TxChannelIndex::Three => self.rmt.int_clr.trigger_ch3_tx_end_int_clr(),
-        }
-    }
-
-    /// Enables the transmit-end interrupt.
-    pub fn enable_tx_end_interrupt(&self, channel: TxChannelIndex, enable: bool) {
-        match (channel, enable) {
-            (TxChannelIndex::Zero, true) => self.rmt.int_ena.set_ch0_tx_end_int_ena(),
-            (TxChannelIndex::Zero, false) => self.rmt.int_ena.clr_ch0_tx_end_int_ena(),
-            (TxChannelIndex::One, true) => self.rmt.int_ena.set_ch1_tx_end_int_ena(),
-            (TxChannelIndex::One, false) => self.rmt.int_ena.clr_ch1_tx_end_int_ena(),
-            (TxChannelIndex::Two, true) => self.rmt.int_ena.set_ch2_tx_end_int_ena(),
-            (TxChannelIndex::Two, false) => self.rmt.int_ena.clr_ch2_tx_end_int_ena(),
-            (TxChannelIndex::Three, true) => self.rmt.int_ena.set_ch3_tx_end_int_ena(),
-            (TxChannelIndex::Three, false) => self.rmt.int_ena.clr_ch3_tx_end_int_ena(),
-        }
-    }
-
-    /// Spins until the sequence has been sent.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::Timeout`] when the transmitter is still running after
-    /// `timeout_us` microseconds.
-    pub fn wait_tx_done(&self, channel: TxChannelIndex, timeout_us: u64) -> Result<(), Error> {
-        wait_until(timeout_us, || self.tx_done(channel)).ok_or(Error::Timeout)
-    }
-
-    /// Sends `pulses` and waits for the transmitter to finish.
-    ///
-    /// # Errors
-    ///
-    /// The same as [`transmit`](Self::transmit) and
-    /// [`wait_tx_done`](Self::wait_tx_done).
-    pub fn send(
-        &self,
-        channel: TxChannelIndex,
-        pulses: &[Pulse],
-        timeout_us: u64,
-    ) -> Result<(), Error> {
-        self.clear_tx_done(channel);
-        self.transmit(channel, pulses)?;
-        self.wait_tx_done(channel, timeout_us)
-    }
-
-    /// Pulse codes the channel's configured blocks can hold.
-    pub fn tx_capacity(&self, channel: TxChannelIndex) -> usize {
-        let blocks = self.tx_conf(channel).blocks();
-        if blocks == 0 {
-            PULSES_PER_BLOCK
-        } else {
-            blocks as usize * PULSES_PER_BLOCK
-        }
-    }
-
-    /// The transmitter's state-machine value; zero means idle.
-    pub fn tx_state(&self, channel: TxChannelIndex) -> u32 {
-        self.tx_status(channel).state()
-    }
-
-    /// Whether the channel's RAM is empty.
-    pub fn tx_memory_empty(&self, channel: TxChannelIndex) -> bool {
-        self.tx_status(channel).memory_empty()
-    }
-
-    fn reset_tx_clock_divider(&self, channel: TxChannelIndex) {
-        match channel {
-            TxChannelIndex::Zero => self.rmt.ref_cnt_rst.trigger_tx_ref_cnt_rst_ch0(),
-            TxChannelIndex::One => self.rmt.ref_cnt_rst.trigger_tx_ref_cnt_rst_ch1(),
-            TxChannelIndex::Two => self.rmt.ref_cnt_rst.trigger_tx_ref_cnt_rst_ch2(),
-            TxChannelIndex::Three => self.rmt.ref_cnt_rst.trigger_tx_ref_cnt_rst_ch3(),
-        }
-    }
-
-    // ========================================================================
-    // Receive
-    // ========================================================================
-
-    /// Applies `config` to a receive channel.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::Divider`] when the channel divider is zero, [`Error::Blocks`]
-    /// when `blocks` is outside what the channel can own.
-    pub fn configure_rx(&self, channel: RxChannelIndex, config: &RxConfig) -> Result<(), Error> {
-        if config.divider == 0 {
-            return Err(Error::Divider);
-        }
-        let usable = match channel {
-            RxChannelIndex::Zero => 4,
-            RxChannelIndex::One => 3,
-            RxChannelIndex::Two => 2,
-            RxChannelIndex::Three => 1,
-        };
-        if config.blocks == 0 || config.blocks > usable {
-            return Err(Error::Blocks);
-        }
-
-        self.reset_rx_clock_divider(channel);
-        let conf0 = self.rx_conf0(channel);
-        // Carrier demodulation is on out of reset, and with the default
-        // thresholds it strips every pulse that is not a carrier, leaving the
-        // receiver with no edges at all.
-        conf0.set_carrier_demodulation(false);
-        conf0.set_divider(config.divider);
-        conf0.set_idle_threshold(config.idle_threshold);
-        conf0.set_blocks(config.blocks);
-
-        let conf1 = self.rx_conf1(channel);
-        conf1.set_filter(config.filter_threshold);
-        conf1.update();
-        Ok(())
-    }
-
-    /// Starts receiving. The channel stops on its own once the input stays at
-    /// one level for longer than the idle threshold.
-    pub fn start_rx(&self, channel: RxChannelIndex) {
-        let conf1 = self.rx_conf1(channel);
-        conf1.reset_pointers();
-        // The receiver can only write the RAM while it owns it; APB reads and
-        // receiver writes must not overlap.
-        conf1.set_mem_owner(true);
-        conf1.set_enabled(true);
-    }
-
-    /// Stops receiving.
-    pub fn stop_rx(&self, channel: RxChannelIndex) {
-        self.rx_conf1(channel).set_enabled(false);
-    }
-
-    /// Whether a reception has finished.
-    pub fn rx_done(&self, channel: RxChannelIndex) -> bool {
-        match channel {
-            RxChannelIndex::Zero => self.rmt.int_raw.ch4_rx_end_int_raw(),
-            RxChannelIndex::One => self.rmt.int_raw.ch5_rx_end_int_raw(),
-            RxChannelIndex::Two => self.rmt.int_raw.ch6_rx_end_int_raw(),
-            RxChannelIndex::Three => self.rmt.int_raw.ch7_rx_end_int_raw(),
-        }
-    }
-
-    /// Clears the receive-end status.
-    pub fn clear_rx_done(&self, channel: RxChannelIndex) {
-        match channel {
-            RxChannelIndex::Zero => self.rmt.int_clr.trigger_ch4_rx_end_int_clr(),
-            RxChannelIndex::One => self.rmt.int_clr.trigger_ch5_rx_end_int_clr(),
-            RxChannelIndex::Two => self.rmt.int_clr.trigger_ch6_rx_end_int_clr(),
-            RxChannelIndex::Three => self.rmt.int_clr.trigger_ch7_rx_end_int_clr(),
-        }
-    }
-
-    /// Enables the receive-end interrupt.
-    pub fn enable_rx_end_interrupt(&self, channel: RxChannelIndex, enable: bool) {
-        match (channel, enable) {
-            (RxChannelIndex::Zero, true) => self.rmt.int_ena.set_ch4_rx_end_int_ena(),
-            (RxChannelIndex::Zero, false) => self.rmt.int_ena.clr_ch4_rx_end_int_ena(),
-            (RxChannelIndex::One, true) => self.rmt.int_ena.set_ch5_rx_end_int_ena(),
-            (RxChannelIndex::One, false) => self.rmt.int_ena.clr_ch5_rx_end_int_ena(),
-            (RxChannelIndex::Two, true) => self.rmt.int_ena.set_ch6_rx_end_int_ena(),
-            (RxChannelIndex::Two, false) => self.rmt.int_ena.clr_ch6_rx_end_int_ena(),
-            (RxChannelIndex::Three, true) => self.rmt.int_ena.set_ch7_rx_end_int_ena(),
-            (RxChannelIndex::Three, false) => self.rmt.int_ena.clr_ch7_rx_end_int_ena(),
-        }
-    }
-
-    /// Number of pulse codes the last reception left in RAM.
-    ///
-    /// It comes from the write cursor minus the channel's block start, so it
-    /// counts codes, not pairs, and can include a trailing end marker.
-    pub fn rx_count(&self, channel: RxChannelIndex) -> usize {
-        let cursor = self.rx_status(channel).write_cursor() as usize;
-        let start = (channel as usize + 4) * RAM_WORDS_PER_CHANNEL;
-        cursor.saturating_sub(start) * 2
-    }
-
-    /// Drains the received codes into `buffer`, stopping at an end marker or
-    /// when the buffer is full. Returns how many pulses were stored.
-    pub fn read_pulses(&self, channel: RxChannelIndex, buffer: &mut [Pulse]) -> usize {
-        // Hand the RAM back to the APB side before reading it.
-        self.rx_conf1(channel).set_mem_owner(false);
-        let count = self.rx_count(channel).min(buffer.len());
-        let ram = self.rx_ram(channel);
-        let mut written = 0;
-        while written < count {
-            // SAFETY: the cursor never exceeds the channel's 48-word blocks,
-            // so `written / 2` is inside the RAM.
-            let word = unsafe { (&*ram.add(written / 2)).read_bits() };
-            for code in [word as u16, (word >> 16) as u16] {
-                if written >= count || written >= buffer.len() {
-                    return written;
-                }
-                let pulse = Pulse::from_code(code);
-                if pulse.is_end() {
-                    return written;
-                }
-                buffer[written] = pulse;
-                written += 1;
-            }
-        }
-        written
-    }
-
-    /// Receives one burst into `buffer`: starts the channel, waits for the idle
-    /// threshold to end it, then drains the RAM.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::Timeout`] when the channel is still receiving after
-    /// `timeout_us` microseconds.
-    pub fn receive(
-        &self,
-        channel: RxChannelIndex,
-        buffer: &mut [Pulse],
-        timeout_us: u64,
-    ) -> Result<usize, Error> {
-        self.receive_with(channel, buffer, timeout_us, || Ok(()))
-    }
-
-    /// Like [`receive`](Self::receive), but runs `trigger` after the receiver
-    /// is listening, which is what a loopback needs: the transmitter has to
-    /// start after the receiver, or the first edge is missed.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::Timeout`] when the channel is still receiving after
-    /// `timeout_us` microseconds, plus whatever `trigger` returns.
-    pub fn receive_with<F>(
-        &self,
-        channel: RxChannelIndex,
-        buffer: &mut [Pulse],
-        timeout_us: u64,
-        trigger: F,
-    ) -> Result<usize, Error>
-    where
-        F: FnOnce() -> Result<(), Error>,
-    {
-        self.clear_rx_done(channel);
-        self.start_rx(channel);
-        trigger()?;
-
-        if wait_until(timeout_us, || self.rx_done(channel)).is_none() {
-            self.stop_rx(channel);
-            return Err(Error::Timeout);
-        }
-        Ok(self.read_pulses(channel, buffer))
-    }
-
-    fn reset_rx_clock_divider(&self, channel: RxChannelIndex) {
-        match channel {
-            RxChannelIndex::Zero => self.rmt.ref_cnt_rst.trigger_rx_ref_cnt_rst_ch4(),
-            RxChannelIndex::One => self.rmt.ref_cnt_rst.trigger_rx_ref_cnt_rst_ch5(),
-            RxChannelIndex::Two => self.rmt.ref_cnt_rst.trigger_rx_ref_cnt_rst_ch6(),
-            RxChannelIndex::Three => self.rmt.ref_cnt_rst.trigger_rx_ref_cnt_rst_ch7(),
-        }
+    /// `N` is 0–3; anything else fails to compile.
+    #[inline]
+    pub fn rx_channel<const N: u8>(&self) -> RxChannel<'_, N> {
+        const { assert!(N < 4, "this controller has four receive channels, 0 to 3") };
+        RxChannel(self)
     }
 }
 
-/// Polls `done` until it returns true or `timeout_us` microseconds pass.
+/// One transmit channel, `N` of four.
+///
+/// The handle carries the channel number in its type, so two channels cannot be
+/// mixed up; the register names behind it are literals generated once per
+/// channel. Transmit channel `N` and receive channel `N` share the same 48-word
+/// RAM blocks, so a channel is either transmitting or receiving.
+pub struct TxChannel<'a, const N: u8>(&'a Rmt);
+
+/// One receive channel, `N` of four, on hardware channels 4–7.
+pub struct RxChannel<'a, const N: u8>(&'a Rmt);
+
+/// Generates a transmit channel's methods.
+///
+/// The second argument is the channel's number in the *interrupt bit table*,
+/// which is not the same as its index: the four transmit channels occupy bits
+/// 0–3, mirroring the register block where every one of their accessors is
+/// called `…_ch0` because the register *type* already carries the channel.
+macro_rules! tx_body {
+    ($n:literal) => {
+        pastey::paste! {
+            impl<'a> TxChannel<'a, $n> {
+                /// Applies `config` to this channel.
+                ///
+                /// # Errors
+                ///
+                /// [`Error::Divider`] when the channel divider is zero,
+                /// [`Error::Blocks`] when `blocks` is more than the channel can
+                /// own: channel 0 owns four blocks, channel 3 only one.
+                pub fn configure(&self, config: &TxConfig) -> Result<(), Error> {
+                    if config.divider == 0 {
+                        return Err(Error::Divider);
+                    }
+                    const USABLE: u8 = 4 - $n;
+                    if config.blocks == 0 || config.blocks > USABLE {
+                        return Err(Error::Blocks);
+                    }
+                    let regs = self.0.regs();
+                    regs.ref_cnt_rst.[<trigger_tx_ref_cnt_rst_ch $n>]();
+                    let conf = &regs.[<tx_ch $n conf0>];
+                    if matches!(config.idle_level, Level::High) {
+                        conf.[<set_idle_out_lv_ch0>]();
+                    } else {
+                        conf.[<clr_idle_out_lv_ch0>]();
+                    }
+                    if config.idle_output {
+                        conf.[<set_idle_out_en_ch0>]();
+                    } else {
+                        conf.[<clr_idle_out_en_ch0>]();
+                    }
+                    // A divider of 256 is written as zero.
+                    conf.[<write_div_cnt_ch0>](if config.divider >= 256 {
+                        0
+                    } else {
+                        u32::from(config.divider)
+                    });
+                    conf.[<write_mem_size_ch0>](u32::from(config.blocks));
+                    match config.carrier {
+                        Some(carrier) => {
+                            if carrier.on_high {
+                                conf.[<set_carrier_out_lv_ch0>]();
+                            } else {
+                                conf.[<clr_carrier_out_lv_ch0>]();
+                            }
+                            if carrier.only_while_active {
+                                conf.[<set_carrier_eff_en_ch0>]();
+                            } else {
+                                conf.[<clr_carrier_eff_en_ch0>]();
+                            }
+                            conf.[<set_carrier_en_ch0>]();
+                        }
+                        None => conf.[<clr_carrier_en_ch0>](),
+                    }
+                    conf.[<trigger_conf_update_ch0>]();
+                    if let Some(carrier) = config.carrier {
+                        self.set_carrier_duty(carrier.high, carrier.low);
+                    }
+                    Ok(())
+                }
+
+                /// Sets the carrier's high and low durations, in ticks minus one.
+                pub fn set_carrier_duty(&self, high: u16, low: u16) {
+                    let duty = &self.0.regs().[<ch $n carrier_duty>];
+                    duty.write_carrier_high_ch(u32::from(high));
+                    duty.write_carrier_low_ch(u32::from(low));
+                }
+
+                /// Writes a pulse sequence into RAM and starts it.
+                ///
+                /// An end marker is appended when `pulses` does not end with
+                /// one, so at most `capacity()` pulses fit. The call returns once
+                /// the transmitter is running; use
+                /// [`wait_done`](Self::wait_done) for the end.
+                ///
+                /// # Errors
+                ///
+                /// [`Error::TooLong`] when the sequence does not fit the
+                /// configured blocks.
+                pub fn transmit(&self, pulses: &[Pulse]) -> Result<(), Error> {
+                    self.write_pulses(pulses)?;
+                    self.start();
+                    Ok(())
+                }
+
+                /// Loads a pulse sequence without starting the transmitter.
+                /// Returns how many codes were written, end marker included.
+                ///
+                /// # Errors
+                ///
+                /// [`Error::TooLong`] when the sequence does not fit the
+                /// configured blocks.
+                pub fn write_pulses(&self, pulses: &[Pulse]) -> Result<usize, Error> {
+                    let capacity = self.capacity();
+                    let mut count = pulses.len();
+                    if count == 0 || !pulses[count - 1].is_end() {
+                        count += 1;
+                    }
+                    if count > capacity {
+                        return Err(Error::TooLong);
+                    }
+
+                    let regs = self.0.regs();
+                    regs.ref_cnt_rst.[<trigger_tx_ref_cnt_rst_ch $n>]();
+                    let conf = &regs.[<tx_ch $n conf0>];
+                    conf.[<trigger_mem_rd_rst_ch0>]();
+                    conf.[<trigger_apb_mem_rst_ch0>]();
+                    // SAFETY: the pointer is the base of this channel's pulse
+                    // RAM, and `index` stays below `capacity`.
+                    let ram = &regs.[<tx_ch $n _mem0>] as *const _
+                        as *const crate::pac::common::VolatileCell<u32>;
+                    let code = |index: usize| {
+                        if index < pulses.len() {
+                            pulses[index].code()
+                        } else {
+                            Pulse::END.code()
+                        }
+                    };
+                    let mut index = 0;
+                    while index < count {
+                        unsafe {
+                            (&*ram.add(index / 2))
+                                .write_bits(code(index) | (code(index + 1) << 16));
+                        }
+                        index += 2;
+                    }
+                    Ok(count)
+                }
+
+                /// Starts transmitting what is already in RAM.
+                pub fn start(&self) {
+                    let conf = &self.0.regs().[<tx_ch $n conf0>];
+                    conf.[<trigger_conf_update_ch0>]();
+                    conf.[<trigger_tx_start_ch0>]();
+                }
+
+                /// Stops the transmitter immediately.
+                pub fn stop(&self) {
+                    let conf = &self.0.regs().[<tx_ch $n conf0>];
+                    conf.[<set_tx_stop_ch0>]();
+                    conf.[<trigger_conf_update_ch0>]();
+                }
+
+                /// Enables continuous transmission: the RAM is sent over and over.
+                pub fn set_conti_mode(&self, enable: bool) {
+                    let conf = &self.0.regs().[<tx_ch $n conf0>];
+                    if enable {
+                        conf.[<set_tx_conti_mode_ch0>]();
+                    } else {
+                        conf.[<clr_tx_conti_mode_ch0>]();
+                    }
+                    conf.[<trigger_conf_update_ch0>]();
+                }
+
+                /// Whether the transmitter has finished the sequence.
+                pub fn done(&self) -> bool {
+                    self.0.regs().int_raw.[<ch $n _tx_end_int_raw>]()
+                }
+
+                /// Clears the transmit-end status.
+                pub fn clear_done(&self) {
+                    self.0
+                        .regs()
+                        .int_clr
+                        .[<trigger_ch $n _tx_end_int_clr>]();
+                }
+
+                /// Enables or disables the transmit-end interrupt.
+                pub fn enable_end_interrupt(&self, enable: bool) {
+                    let int_ena = &self.0.regs().int_ena;
+                    if enable {
+                        int_ena.[<set_ch $n _tx_end_int_ena>]();
+                    } else {
+                        int_ena.[<clr_ch $n _tx_end_int_ena>]();
+                    }
+                }
+
+                /// Spins until the sequence has been sent.
+                ///
+                /// # Errors
+                ///
+                /// [`Error::Timeout`] when the transmitter is still running
+                /// after `timeout_us` microseconds.
+                pub fn wait_done(&self, timeout_us: u64) -> Result<(), Error> {
+                    wait_until(timeout_us, || self.done()).ok_or(Error::Timeout)
+                }
+
+                /// Sends `pulses` and waits for the transmitter to finish.
+                ///
+                /// # Errors
+                ///
+                /// The same as [`transmit`](Self::transmit) and
+                /// [`wait_done`](Self::wait_done).
+                pub fn send(&self, pulses: &[Pulse], timeout_us: u64) -> Result<(), Error> {
+                    self.clear_done();
+                    self.transmit(pulses)?;
+                    self.wait_done(timeout_us)
+                }
+
+                /// Pulse codes the configured blocks can hold.
+                pub fn capacity(&self) -> usize {
+                    let blocks = self.0.regs().[<tx_ch $n conf0>].[<mem_size_ch0>]();
+                    if blocks == 0 {
+                        PULSES_PER_BLOCK
+                    } else {
+                        blocks as usize * PULSES_PER_BLOCK
+                    }
+                }
+
+                /// The transmitter's state-machine value; zero means idle.
+                pub fn state(&self) -> u32 {
+                    self.0.regs().[<tx_ch $n status>].[<state_ch0>]()
+                }
+
+                /// Whether the channel's RAM is empty.
+                pub fn memory_empty(&self) -> bool {
+                    self.0.regs().[<tx_ch $n status>].[<mem_empty_ch0>]()
+                }
+            }
+        }
+    };
+}
+
+/// Generates a receive channel's methods.
+///
+/// The receive channels sit at interrupt bits 4–7, which is why this takes the
+/// hardware number as a second argument.
+macro_rules! rx_body {
+    ($n:literal, $h:literal) => {
+        pastey::paste! {
+            impl<'a> RxChannel<'a, $n> {
+                /// Applies `config` to this channel.
+                ///
+                /// # Errors
+                ///
+                /// [`Error::Divider`] when the channel divider is zero,
+                /// [`Error::Blocks`] when `blocks` is more than the channel can
+                /// own: channel 0 owns four blocks, channel 3 only one.
+                pub fn configure(&self, config: &RxConfig) -> Result<(), Error> {
+                    if config.divider == 0 {
+                        return Err(Error::Divider);
+                    }
+                    const USABLE: u8 = 4 - $n;
+                    if config.blocks == 0 || config.blocks > USABLE {
+                        return Err(Error::Blocks);
+                    }
+                    let regs = self.0.regs();
+                    regs.ref_cnt_rst.[<trigger_rx_ref_cnt_rst_ch $h>]();
+                    let conf0 = &regs.[<rx_ch $n conf0>];
+                    // Carrier demodulation is on out of reset, and with the
+                    // default thresholds it strips every pulse that is not a
+                    // carrier, leaving the receiver with no edges at all.
+                    conf0.[<clr_carrier_en_ch4>]();
+                    conf0.[<write_div_cnt_ch4>](if config.divider >= 256 {
+                        0
+                    } else {
+                        u32::from(config.divider)
+                    });
+                    conf0.[<write_idle_thres_ch4>](u32::from(config.idle_threshold));
+                    conf0.[<write_mem_size_ch4>](u32::from(config.blocks));
+
+                    let conf1 = &regs.[<rx_ch $n conf1>];
+                    match config.filter_threshold {
+                        Some(threshold) => {
+                            conf1.[<write_rx_filter_thres_ch4>](u32::from(threshold));
+                            conf1.[<set_rx_filter_en_ch4>]();
+                        }
+                        None => conf1.[<clr_rx_filter_en_ch4>](),
+                    }
+                    conf1.[<trigger_conf_update_ch4>]();
+                    Ok(())
+                }
+
+                /// Starts receiving. The channel stops on its own once the input
+                /// stays at one level for longer than the idle threshold.
+                pub fn start(&self) {
+                    let conf1 = &self.0.regs().[<rx_ch $n conf1>];
+                    conf1.[<trigger_mem_wr_rst_ch4>]();
+                    conf1.[<trigger_apb_mem_rst_ch4>]();
+                    // The receiver can only write the RAM while it owns it; APB
+                    // reads and receiver writes must not overlap.
+                    conf1.[<set_mem_owner_ch4>]();
+                    conf1.[<set_rx_en_ch4>]();
+                    conf1.[<trigger_conf_update_ch4>]();
+                }
+
+                /// Stops receiving.
+                pub fn stop(&self) {
+                    let conf1 = &self.0.regs().[<rx_ch $n conf1>];
+                    conf1.[<clr_rx_en_ch4>]();
+                    conf1.[<trigger_conf_update_ch4>]();
+                }
+
+                /// Whether a reception has finished.
+                pub fn done(&self) -> bool {
+                    self.0.regs().int_raw.[<ch $h _rx_end_int_raw>]()
+                }
+
+                /// Clears the receive-end status.
+                pub fn clear_done(&self) {
+                    self.0
+                        .regs()
+                        .int_clr
+                        .[<trigger_ch $h _rx_end_int_clr>]();
+                }
+
+                /// Enables or disables the receive-end interrupt.
+                pub fn enable_end_interrupt(&self, enable: bool) {
+                    let int_ena = &self.0.regs().int_ena;
+                    if enable {
+                        int_ena.[<set_ch $h _rx_end_int_ena>]();
+                    } else {
+                        int_ena.[<clr_ch $h _rx_end_int_ena>]();
+                    }
+                }
+
+                /// Number of pulse codes the last reception left in RAM.
+                ///
+                /// It comes from the write cursor minus the channel's block
+                /// start, so it counts codes, not pairs, and can include a
+                /// trailing end marker.
+                pub fn count(&self) -> usize {
+                    let cursor = self.0.regs().[<rx_ch $n status>].[<mem_waddr_ex_ch4>]() as usize;
+                    let start = ($h as usize) * RAM_WORDS_PER_CHANNEL;
+                    cursor.saturating_sub(start) * 2
+                }
+
+                /// Drains the received codes into `buffer`, stopping at an end
+                /// marker or when the buffer is full. Returns how many pulses
+                /// were stored.
+                pub fn read_pulses(&self, buffer: &mut [Pulse]) -> usize {
+                    let regs = self.0.regs();
+                    // Hand the RAM back to the APB side before reading it.
+                    regs.[<rx_ch $n conf1>].[<clr_mem_owner_ch4>]();
+                    let mut written = 0;
+                    let count = self.count().min(buffer.len());
+                    // SAFETY: the cursor never exceeds the channel's blocks, so
+                    // `written / 2` stays inside its RAM.
+                    let ram = &regs.[<rx_ch $n _mem0>] as *const _
+                        as *const crate::pac::common::VolatileCell<u32>;
+                    while written < count {
+                        let word = unsafe { (&*ram.add(written / 2)).read_bits() };
+                        for code in [word as u16, (word >> 16) as u16] {
+                            if written >= count || written >= buffer.len() {
+                                return written;
+                            }
+                            let pulse = Pulse::from_code(code);
+                            if pulse.is_end() {
+                                return written;
+                            }
+                            buffer[written] = pulse;
+                            written += 1;
+                        }
+                    }
+                    written
+                }
+
+                /// Receives one burst into `buffer`: starts the channel, waits
+                /// for the idle threshold to end it, then drains the RAM.
+                ///
+                /// # Errors
+                ///
+                /// [`Error::Timeout`] when the channel is still receiving after
+                /// `timeout_us` microseconds.
+                pub fn receive(&self, buffer: &mut [Pulse], timeout_us: u64) -> Result<usize, Error> {
+                    self.receive_with(buffer, timeout_us, || Ok(()))
+                }
+
+                /// Like [`receive`](Self::receive), but runs `trigger` once the
+                /// receiver is listening, which is what a loopback needs: the
+                /// transmitter has to start after the receiver, or the first edge
+                /// is missed.
+                ///
+                /// # Errors
+                ///
+                /// [`Error::Timeout`] when the channel is still receiving after
+                /// `timeout_us` microseconds, plus whatever `trigger` returns.
+                pub fn receive_with<F>(
+                    &self,
+                    buffer: &mut [Pulse],
+                    timeout_us: u64,
+                    trigger: F,
+                ) -> Result<usize, Error>
+                where
+                    F: FnOnce() -> Result<(), Error>,
+                {
+                    self.clear_done();
+                    self.start();
+                    trigger()?;
+                    if wait_until(timeout_us, || self.done()).is_none() {
+                        self.stop();
+                        return Err(Error::Timeout);
+                    }
+                    Ok(self.read_pulses(buffer))
+                }
+            }
+        }
+    };
+}
+
+tx_body!(0);
+tx_body!(1);
+tx_body!(2);
+tx_body!(3);
+
+rx_body!(0, 4);
+rx_body!(1, 5);
+rx_body!(2, 6);
+rx_body!(3, 7);
+
 fn wait_until(timeout_us: u64, mut done: impl FnMut() -> bool) -> Option<()> {
     let deadline = crate::delay::micros().wrapping_add(timeout_us);
     while !done() {

@@ -20,9 +20,7 @@ defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 use esp32p4_hal::delay::Delay;
 use esp32p4_hal::gpio::signal::OutputSignal;
 use esp32p4_hal::gpio::{Pin, PinOps, Pins};
-use esp32p4_hal::ledc::{
-    ChannelConfig, ChannelIndex, ClockSource, FadeRange, Ledc, Level, TimerConfig, TimerIndex,
-};
+use esp32p4_hal::ledc::{ChannelConfig, ClockSource, FadeRange, Ledc, Level, TimerConfig};
 use esp32p4_hal::main;
 use esp32p4_hal::pac::Peripherals;
 use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
@@ -49,25 +47,27 @@ fn main() -> ! {
 
     let ledc = Ledc::init(dp.LEDC, &dp.HP_SYS_CLKRST);
     ledc.set_clock_source(&dp.HP_SYS_CLKRST, ClockSource::Xtal40m);
-    ledc.configure_timer(
-        TimerIndex::Zero,
-        TimerConfig {
+    // The timer number lives in the handle's type from here on.
+    let timer = ledc.timer::<0>();
+    timer
+        .configure(TimerConfig {
             clock: ClockSource::Xtal40m,
             frequency: FREQUENCY,
             resolution: RESOLUTION,
-        },
-    )
-    .unwrap();
+        })
+        .unwrap();
 
     let mut pwm = pins.pin::<PWM_PIN>();
     pwm.route_output_signal(OutputSignal::LEDC_LS_SIG_OUT_PAD_OUT0);
     // Keep the input path alive so the same pad can be sampled back.
     pwm.set_input_buffer_enabled(true);
 
-    ledc.configure_channel(ChannelIndex::Zero, ChannelConfig::new(TimerIndex::Zero));
-    ledc.start(TimerIndex::Zero);
+    let channel = ledc.channel::<0>();
+    channel.bind(&timer);
+    channel.configure(ChannelConfig::new());
+    timer.start();
 
-    let max = ledc.max_duty(TimerIndex::Zero);
+    let max = timer.max_duty();
     defmt::info!(
         "timer: {=u32} Hz, {=u32} bit, max duty {=u32}",
         FREQUENCY,
@@ -76,7 +76,7 @@ fn main() -> ! {
     );
 
     for percent in DUTIES {
-        ledc.set_duty(ChannelIndex::Zero, max * percent / 100);
+        channel.set_duty(max * percent / 100);
         // The new duty lands on the next overflow, so let a few periods pass.
         delay.delay_ms(5);
 
@@ -84,41 +84,41 @@ fn main() -> ! {
         defmt::info!(
             "duty {=u32}%: readback {=u32}, pin high {=u32}.{=u32}%",
             percent,
-            ledc.duty(ChannelIndex::Zero),
+            channel.duty(),
             high * 100 / SAMPLES,
             (high * 10_000 / SAMPLES) % 100
         );
     }
 
     // Ramp from zero to full: 100 steps of one period each, 100 ms in total.
-    ledc.set_duty(ChannelIndex::Zero, 0);
-    ledc.set_fade_range(
-        ChannelIndex::Zero,
-        0,
-        FadeRange {
-            increasing: true,
-            cycles: 1,
-            scale: (max / 100) as u16,
-            steps: 100,
-        },
-    )
-    .unwrap();
-    ledc.set_fade_range_count(ChannelIndex::Zero, 1).unwrap();
-    ledc.clear_fade_done(ChannelIndex::Zero);
-    ledc.start_fade(ChannelIndex::Zero);
+    channel.set_duty(0);
+    channel
+        .set_fade_range(
+            0,
+            FadeRange {
+                increasing: true,
+                cycles: 1,
+                scale: (max / 100) as u16,
+                steps: 100,
+            },
+        )
+        .unwrap();
+    channel.set_fade_range_count(1).unwrap();
+    channel.clear_fade_done();
+    channel.start_fade();
 
     delay.delay_ms(10);
-    let mid = ledc.duty(ChannelIndex::Zero);
+    let mid = channel.duty();
 
     // 100 steps of one period each: 100 ms, with a wide margin.
     let mut waited = 0;
-    while !ledc.fade_done(ChannelIndex::Zero) && waited < 2_000 {
+    while !channel.fade_done() && waited < 2_000 {
         delay.delay_ms(1);
         waited += 1;
     }
-    let end = ledc.duty(ChannelIndex::Zero);
-    let done = ledc.fade_done(ChannelIndex::Zero);
-    ledc.clear_fade_done(ChannelIndex::Zero);
+    let end = channel.duty();
+    let done = channel.fade_done();
+    channel.clear_fade_done();
 
     defmt::info!(
         "fade: done {=bool}, {=u32} after 10 ms, {=u32} at the end (max {=u32})",
@@ -129,8 +129,8 @@ fn main() -> ! {
     );
 
     // Disabling the output drives the idle level instead of the waveform.
-    ledc.set_idle_level(ChannelIndex::Zero, Level::Low);
-    ledc.enable(ChannelIndex::Zero, false);
+    channel.set_idle_level(Level::Low);
+    channel.enable(false);
     delay.delay_ms(2);
     defmt::info!("idle: pin high {=bool} (expected false)", pwm.get());
 

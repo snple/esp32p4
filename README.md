@@ -1020,15 +1020,22 @@ loop {
 
 ```rust
 let ledc = Ledc::init(dp.LEDC, &dp.HP_SYS_CLKRST);
-ledc.configure_timer(TimerIndex::Zero, TimerConfig::new(5_000, 13)).unwrap();
+let timer = ledc.timer::<0>();                 // Timer<'_, 0>：编号在类型里
+timer.configure(TimerConfig::new(5_000, 13)).unwrap();
 
 let mut pin = pins.pin::<2>();
 pin.route_output_signal(OutputSignal::LEDC_LS_SIG_OUT_PAD_OUT0);
 
-ledc.configure_channel(ChannelIndex::Zero, ChannelConfig::new(TimerIndex::Zero));
-ledc.set_duty_fraction(ChannelIndex::Zero, 1, 4); // 25 %
-ledc.start(TimerIndex::Zero);
+let channel = ledc.channel::<0>();             // Channel<'_, 0>
+channel.bind(&timer);                          // 定时器只能绑到真实存在的句柄
+channel.configure(ChannelConfig::new());
+channel.set_duty(timer.duty_fraction(1, 4));   // 25 %
+timer.start();
 ```
+
+句柄带编号、寄存器名是宏生成的字面量，所以**一次调用里没有 `match`、没有 `&dyn`**：越界编号是
+`const { assert!(N < 8) }` 的编译错误。`duty_fraction` 放在定时器上，因为满量程只有定时器知道
+它的分辨率。
 
 两个只有上板才暴露的位：
 
@@ -1050,9 +1057,11 @@ ledc.start(TimerIndex::Zero);
 let rmt = Rmt::init(dp.RMT, &dp.HP_SYS_CLKRST);
 rmt.set_clock_source(&dp.HP_SYS_CLKRST, ClockSource::Xtal40m, 2)?; // 20 MHz tick
 
-rmt.configure_tx(TxChannelIndex::Zero, &TxConfig::new(1))?;
-rmt.configure_rx(RxChannelIndex::Zero, &RxConfig::new(1, 1_000))?;
-rmt.send(TxChannelIndex::Zero, &pulses, 10_000)?;
+let tx = rmt.tx_channel::<0>();                // TxChannel<'_, 0>
+let rx = rmt.rx_channel::<0>();                // RxChannel<'_, 0>
+tx.configure(&TxConfig::new(1))?;
+rx.configure(&RxConfig::new(1, 1_000))?;
+tx.send(&pulses, 10_000)?;
 ```
 
 驱动按 ESP-IDF 的做法直接读写脉冲 RAM（NONFIFO，`SYS_CONF.APB_FIFO_MASK=1`），不走 APB
@@ -1068,7 +1077,9 @@ FIFO。上板踩到的坑（都已写进注释）：
 - **一段波形的最后一个脉冲通常读不到**：idle 间隔结束接收时那个电平还在计数。
 
 示例 [`rmt`](esp32p4-examples/src/rmt.rs) 让 TX 通道 0 与 RX 通道 0 共用 GPIO2，发一段
-48 个编码的 WS2812 数据，回读的 47 个完整脉冲电平与时长全部一致。
+48 个编码的 WS2812 数据，回读的 47 个完整脉冲电平与时长全部一致。随后在**通道 2** 上再跑一遍
+（GPIO17 出、GPIO21 回，用跳线），覆盖非 0 通道：那块 RAM 在另一个地址、只拥有两块，回读 15 个
+脉冲同样零错配。
 
 ## 脉冲计数（PCNT）
 
@@ -1077,10 +1088,14 @@ FIFO。上板踩到的坑（都已写进注释）：
 
 ```rust
 let pcnt = Pcnt::init(dp.PCNT, &dp.HP_SYS_CLKRST);
-pcnt.configure_channel(UnitIndex::Zero, pcnt::ChannelIndex::Zero, ChannelConfig::rising_edge());
-pcnt.set_limits(UnitIndex::Zero, 0, 800);
-pcnt.enable(UnitIndex::Zero, Trigger::HIGH_LIMIT);
+let unit = pcnt.unit::<0>();                   // Unit<'_, 0>
+unit.channel::<0>().configure(ChannelConfig::rising_edge()); // Channel<'_, 0, 0>
+unit.set_limits(0, 800);
+unit.enable(Trigger::HIGH_LIMIT);
 ```
+
+单元与通道这两维编号都在类型里（`Unit<'_, N>`、`Channel<'_, N, C>`），所以既不会把单元 1 的
+配置写到单元 0 上，也不会混用通道 0 和 1；`&dyn` 那套按单元返回寄存器 trait 的写法已经去掉。
 
 - **脉冲模式与控制模式的三档编码不同**：脉冲是 `0=保持/1=加/2=减`，控制是
   `0=加/1=减/2=保持`，所以分成 `EdgeAction` 与 `ControlMode` 两个枚举；

@@ -27,7 +27,7 @@ use esp32p4_hal::mcpwm::{
     ClockSource, DeadTime, GeneratorConfig, Mcpwm0, OperatorOutput, TimerConfig,
 };
 use esp32p4_hal::pac::Peripherals;
-use esp32p4_hal::rmt::{ClockSource as RmtClock, Pulse, Rmt, RxChannelIndex, RxConfig};
+use esp32p4_hal::rmt::{ClockSource as RmtClock, Pulse, Rmt, RxConfig};
 use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
 
 /// Pad shared by the MCPWM output and the RMT receiver.
@@ -68,7 +68,8 @@ fn main() -> ! {
     rmt.set_clock_source(&dp.HP_SYS_CLKRST, RmtClock::Xtal40m, 1)
         .unwrap();
     // 4000 ticks = 100 µs, above the longest level of a 20 kHz period.
-    rmt.configure_rx(RxChannelIndex::Zero, &RxConfig::new(1, 4_000))
+    rmt.rx_channel::<0>()
+        .configure(&RxConfig::new(1, 4_000))
         .unwrap();
 
     let period = u32::from(timer.period());
@@ -218,11 +219,12 @@ fn check_complementary(mcpwm: &Mcpwm0, rmt: &Rmt, delay: &Delay, period: u32) {
 /// ticks.
 fn measure(rmt: &Rmt, delay: &Delay) -> (u32, u32) {
     let mut pulses = [Pulse::default(); 16];
-    rmt.clear_rx_done(RxChannelIndex::Zero);
-    rmt.start_rx(RxChannelIndex::Zero);
+    let rx = rmt.rx_channel::<0>();
+    rx.clear_done();
+    rx.start();
     delay.delay_ms(3);
-    rmt.stop_rx(RxChannelIndex::Zero);
-    let count = rmt.read_pulses(RxChannelIndex::Zero, &mut pulses);
+    rx.stop();
+    let count = rx.read_pulses(&mut pulses);
     // The first level is whatever the receiver caught mid-pulse, so leave it
     // out of the average.
     let pulses = if count > 2 {

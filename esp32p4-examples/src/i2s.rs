@@ -38,7 +38,7 @@ use esp32p4_hal::i2s::{
 };
 use esp32p4_hal::main;
 use esp32p4_hal::pac::{HP_SYS_CLKRST, Peripherals};
-use esp32p4_hal::pcnt::{self, ChannelConfig as PcntChannel, Pcnt, Trigger, UnitIndex};
+use esp32p4_hal::pcnt::{self, ChannelConfig as PcntChannel, Pcnt, Trigger};
 use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
 
 /// Pad carrying `I2S0O_BCK_out`.
@@ -90,12 +90,11 @@ fn main() -> ! {
     let i2s = I2s0::init(dp.I2S0, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
     let sampler = I2s1::init(dp.I2S1, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
     let counter = Pcnt::init(dp.PCNT, &dp.HP_SYS_CLKRST);
-    counter.configure_channel(
-        UnitIndex::Zero,
-        pcnt::ChannelIndex::Zero,
-        PcntChannel::rising_edge(),
-    );
-    counter.set_limits(UnitIndex::Zero, 0, 30000);
+    let counter_unit = counter.unit::<0>();
+    counter_unit
+        .channel::<0>()
+        .configure(PcntChannel::rising_edge());
+    counter_unit.set_limits(0, 30000);
     let dma = AhbDma::init(dp.AHB_DMA, &dp.HP_SYS_CLKRST);
     let clkrst = &dp.HP_SYS_CLKRST;
     let lpaon = &dp.LP_AON_CLKRST;
@@ -158,7 +157,7 @@ fn main() -> ! {
             clkrst,
             &dma.tx_channel::<0>(),
             &dma.rx_channel::<1>(),
-            &counter,
+            &counter_unit,
             &mut ws_alt2,
             &mut bck_alt2,
             &mut tx_buffer,
@@ -715,7 +714,7 @@ fn check_pdm(
     clkrst: &HP_SYS_CLKRST,
     tx: &impl esp32p4_hal::dma::TransmitChannel,
     probe: &impl esp32p4_hal::dma::ReceiveChannel,
-    counter: &Pcnt,
+    counter: &pcnt::Unit<'_, 0>,
     ws: &mut impl PinOps,
     bck: &mut impl PinOps,
     tx_buffer: &mut [u8],
@@ -806,14 +805,14 @@ fn check_pdm(
 }
 
 /// Rising edges per second on the pad `pin`, counted over a millisecond.
-fn edges_hz(counter: &Pcnt, pin: &mut impl PinOps, delay: &Delay) -> u32 {
+fn edges_hz(unit: &pcnt::Unit<'_, 0>, pin: &mut impl PinOps, delay: &Delay) -> u32 {
     pin.route_input_signal(InputSignal::PCNT_SIG_CH0_PAD_IN0);
-    counter.clear(UnitIndex::Zero);
-    counter.enable(UnitIndex::Zero, Trigger::default());
+    unit.clear();
+    unit.enable(Trigger::default());
     delay.delay_ms(1);
-    counter.pause(UnitIndex::Zero, true);
-    let edges = counter.count(UnitIndex::Zero);
-    counter.pause(UnitIndex::Zero, false);
+    unit.pause(true);
+    let edges = unit.count();
+    unit.pause(false);
     pin.release_input_signal(InputSignal::PCNT_SIG_CH0_PAD_IN0);
     edges.max(0) as u32 * 1000
 }

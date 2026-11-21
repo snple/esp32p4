@@ -31,7 +31,7 @@ use esp32p4_hal::mcpwm::{
     SyncSource, TimerConfig, TripConfig, TripMode,
 };
 use esp32p4_hal::pac::Peripherals;
-use esp32p4_hal::rmt::{ClockSource as RmtClock, Pulse, Rmt, RxChannelIndex, RxConfig};
+use esp32p4_hal::rmt::{ClockSource as RmtClock, Pulse, Rmt, RxConfig};
 use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
 
 /// Pad that carries the PWM output and feeds `CAP0` plus the RMT receiver.
@@ -101,7 +101,8 @@ fn main() -> ! {
     let rmt = Rmt::init(dp.RMT, &dp.HP_SYS_CLKRST);
     rmt.set_clock_source(&dp.HP_SYS_CLKRST, RmtClock::Xtal40m, 1)
         .unwrap();
-    rmt.configure_rx(RxChannelIndex::Zero, &RxConfig::new(1, 4_000))
+    rmt.rx_channel::<0>()
+        .configure(&RxConfig::new(1, 4_000))
         .unwrap();
 
     let etm = Etm::init(dp.SOC_ETM, &dp.HP_SYS_CLKRST);
@@ -434,11 +435,12 @@ fn check_etm(mcpwm: &Mcpwm0, etm: &Etm, delay: &Delay) {
 /// 40 MHz ticks.
 fn measure_short_pulses(rmt: &Rmt, delay: &Delay, limit: u16) -> (u32, u32) {
     let mut pulses = [Pulse::default(); 16];
-    rmt.clear_rx_done(RxChannelIndex::Zero);
-    rmt.start_rx(RxChannelIndex::Zero);
+    let rx = rmt.rx_channel::<0>();
+    rx.clear_done();
+    rx.start();
     delay.delay_ms(3);
-    rmt.stop_rx(RxChannelIndex::Zero);
-    let count = rmt.read_pulses(RxChannelIndex::Zero, &mut pulses);
+    rx.stop();
+    let count = rx.read_pulses(&mut pulses);
 
     let mut high_sum = 0u32;
     let mut high_count = 0u32;
@@ -624,11 +626,12 @@ fn count_high(delay: &Delay, read: impl Fn() -> bool) -> u32 {
 /// ticks.
 fn measure(rmt: &Rmt, delay: &Delay) -> (u32, u32) {
     let mut pulses = [Pulse::default(); 16];
-    rmt.clear_rx_done(RxChannelIndex::Zero);
-    rmt.start_rx(RxChannelIndex::Zero);
+    let rx = rmt.rx_channel::<0>();
+    rx.clear_done();
+    rx.start();
     delay.delay_ms(3);
-    rmt.stop_rx(RxChannelIndex::Zero);
-    let count = rmt.read_pulses(RxChannelIndex::Zero, &mut pulses);
+    rx.stop();
+    let count = rx.read_pulses(&mut pulses);
     // The first level is whatever the receiver caught mid-pulse.
     let pulses = if count > 2 {
         &pulses[1..count]

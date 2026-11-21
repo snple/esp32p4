@@ -17,10 +17,10 @@ defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 use esp32p4_hal::delay::Delay;
 use esp32p4_hal::gpio::signal::{InputSignal, OutputSignal};
 use esp32p4_hal::gpio::{PinOps, Pins};
-use esp32p4_hal::ledc::{ChannelConfig, ChannelIndex, ClockSource, Ledc, TimerConfig, TimerIndex};
+use esp32p4_hal::ledc::{ChannelConfig, ClockSource, Ledc, TimerConfig};
 use esp32p4_hal::main;
 use esp32p4_hal::pac::Peripherals;
-use esp32p4_hal::pcnt::{self, ChannelConfig as PcntChannel, Pcnt, Trigger, UnitIndex};
+use esp32p4_hal::pcnt::{ChannelConfig as PcntChannel, Pcnt, Trigger};
 use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
 
 /// Pad shared by the LEDC output and the PCNT input.
@@ -44,47 +44,42 @@ fn main() -> ! {
     pin.route_input_signal(InputSignal::PCNT_SIG_CH0_PAD_IN0);
 
     let ledc = Ledc::init(dp.LEDC, &dp.HP_SYS_CLKRST);
-    ledc.configure_timer(
-        TimerIndex::One,
-        TimerConfig {
+    let timer = ledc.timer::<1>();
+    timer
+        .configure(TimerConfig {
             clock: ClockSource::Xtal40m,
             frequency: FREQUENCY,
             resolution: 10,
-        },
-    )
-    .unwrap();
-    ledc.configure_channel(ChannelIndex::One, ChannelConfig::new(TimerIndex::One));
-    ledc.set_duty(ChannelIndex::One, 512);
+        })
+        .unwrap();
+    let channel = ledc.channel::<1>();
+    channel.bind(&timer);
+    channel.configure(ChannelConfig::new());
+    channel.set_duty(512);
 
     let pcnt = Pcnt::init(dp.PCNT, &dp.HP_SYS_CLKRST);
-    pcnt.configure_channel(
-        UnitIndex::Zero,
-        pcnt::ChannelIndex::Zero,
-        PcntChannel::rising_edge(),
-    );
+    let unit = pcnt.unit::<0>();
+    unit.channel::<0>().configure(PcntChannel::rising_edge());
     // Drop edges shorter than 10 APB cycles (a few hundred ns).
-    pcnt.configure_filter(UnitIndex::Zero, Some(10)).unwrap();
-    pcnt.set_limits(UnitIndex::Zero, 0, 800);
-    pcnt.set_thresholds(UnitIndex::Zero, 250, 750);
-    pcnt.enable(
-        UnitIndex::Zero,
-        Trigger {
-            high_limit: true,
-            low_limit: true,
-            threshold0: true,
-            threshold1: true,
-            zero: true,
-        },
-    );
-    pcnt.clear(UnitIndex::Zero);
-    pcnt.clear_latched(UnitIndex::Zero);
+    unit.configure_filter(Some(10)).unwrap();
+    unit.set_limits(0, 800);
+    unit.set_thresholds(250, 750);
+    unit.enable(Trigger {
+        high_limit: true,
+        low_limit: true,
+        threshold0: true,
+        threshold1: true,
+        zero: true,
+    });
+    unit.clear();
+    unit.clear_latched();
 
-    ledc.start(TimerIndex::One);
+    timer.start();
     delay.delay_ms(WINDOW_MS);
-    ledc.stop(TimerIndex::One);
+    timer.stop();
 
-    let count = pcnt.count(UnitIndex::Zero);
-    let latched = pcnt.latched(UnitIndex::Zero);
+    let count = unit.count();
+    let latched = unit.latched();
 
     defmt::info!(
         "pcnt: {=u32} edges in {=u32} ms ({=u32} kHz), counter {=i16}",
@@ -100,7 +95,7 @@ fn main() -> ! {
         latched.threshold0,
         latched.threshold1,
         latched.zero,
-        pcnt.pending(UnitIndex::Zero)
+        unit.pending()
     );
     // 1000 edges with an 800-step wrap leave ~200; the window boundary can add
     // or drop one edge.
@@ -110,16 +105,16 @@ fn main() -> ! {
         count
     );
 
-    pcnt.clear(UnitIndex::Zero);
-    pcnt.clear_latched(UnitIndex::Zero);
-    pcnt.pause(UnitIndex::Zero, true);
-    ledc.start(TimerIndex::One);
+    unit.clear();
+    unit.clear_latched();
+    unit.pause(true);
+    timer.start();
     delay.delay_ms(10);
-    let paused = pcnt.count(UnitIndex::Zero);
-    pcnt.pause(UnitIndex::Zero, false);
+    let paused = unit.count();
+    unit.pause(false);
     delay.delay_ms(10);
-    let running = pcnt.count(UnitIndex::Zero);
-    ledc.stop(TimerIndex::One);
+    let running = unit.count();
+    timer.stop();
     defmt::info!(
         "pcnt pause: {=i16} while paused, {=i16} after resuming",
         paused,

@@ -23,9 +23,9 @@
 | `uart` | [uart.rs](../esp32p4-hal/src/uart.rs) | UART0–4：轮询收发、帧格式、流控、按源中断、GPIO 矩阵引脚路由 |
 | `i2c` | [i2c.rs](../esp32p4-hal/src/i2c.rs) | I2C0/1 主机：任意 SCL、7 位地址、写/读/写读、总线恢复、按源中断 |
 | `adc` | [adc.rs](../esp32p4-hal/src/adc.rs) | ADC1/2 单次转换与 eFuse 校准、HP 数字控制器样式表扫描（定时器 + GDMA-AHB）、IIR 滤波器与阈值监控器 |
-| `ledc` | [ledc.rs](../esp32p4-hal/src/ledc.rs) | 4 定时器 + 8 通道 PWM、小数分频、相位偏移、16 段占空比渐变 |
-| `rmt` | [rmt.rs](../esp32p4-hal/src/rmt.rs) | 4 发 4 收、脉冲 RAM 波形收发、载波、空闲阈值与接收滤波 |
-| `pcnt` | [pcnt.rs](../esp32p4-hal/src/pcnt.rs) | 4 单元 × 2 通道脉冲计数、边沿/控制动作、滤波、限值与五个观察点 |
+| `ledc` | [ledc.rs](../esp32p4-hal/src/ledc.rs) | 4 定时器 + 8 通道 PWM、小数分频、相位偏移、16 段占空比渐变；`timer::<N>()` / `channel::<N>()` 句柄 |
+| `rmt` | [rmt.rs](../esp32p4-hal/src/rmt.rs) | 4 发 4 收、脉冲 RAM 波形收发、载波、空闲阈值与接收滤波；`tx_channel::<N>()` / `rx_channel::<N>()` 句柄 |
+| `pcnt` | [pcnt.rs](../esp32p4-hal/src/pcnt.rs) | 4 单元 × 2 通道脉冲计数、边沿/控制动作、滤波、限值与五个观察点；`unit::<N>()` / `unit.channel::<C>()` 句柄 |
 | `mcpwm` | [mcpwm.rs](../esp32p4-hal/src/mcpwm.rs) | 2 控制器 × 3 定时器/操作器、比较器、输出动作、死区、强制电平、同步、故障跳闸、捕获、载波、事件比较器、中断与 ETM 钩子 |
 | `etm` | [etm.rs](../esp32p4-hal/src/etm.rs) | SOC_ETM 的 50 个通道：事件/任务 id 连接与使能 |
 | `twai` | [twai.rs](../esp32p4-hal/src/twai.rs) | TWAI0/1/2 经典 CAN 2.0B（无 CAN-FD）：位时序、过滤器、标准/扩展/远程帧收发、自接收、状态与错误计数、按源中断 |
@@ -125,6 +125,18 @@
    调用方不再需要写「第几号」，并可用 `name()` / `ALL` / `into()` 取名字、遍历、接到 ETM。
    代价是句柄类型不同者不能放进同一个数组，`for timer in [t0, t1]` 这类循环要展开；比较器
    超周期不再有运行期校验，改由文档约定。
+   **LEDC、RMT、PCNT 随后按同一套骨架重写**：`ledc.timer::<N>()` / `ledc.channel::<N>()`、
+   `rmt.tx_channel::<N>()` / `rmt.rx_channel::<N>()`、`pcnt.unit::<N>()` 与
+   `unit.channel::<C>()`。原来 LEDC 靠 `on_timer!`/`on_channel!` 两个宏在**每次调用**里 match，
+   PCNT 和 RMT 更进一步：用 4 个 / 5 个私有寄存器 trait 加 `&dyn` 把「第几号单元」的分支推迟到
+   运行期（`fn conf0(&self, unit) -> &dyn UnitConf0`）。现在每个编号一份由宏生成的 `impl`，
+   寄存器名是字面量（`u1_conf0`、`tx_ch2conf0`、`ch5_rx_end_int_raw`），越界编号是
+   `const { assert!(N < 4) }` 的编译错误。三个模块合计：索引 `match` 从 45 处降到 0，
+   `&dyn` 从 9 处降到 0，行数 2441 → 1887。唯一保留的 `match` 都是 `enum → 寄存器字段值` 的
+   `const fn`（`ClockSource`、`EdgeAction`、`Option<T>`），编译期就折叠掉。
+   接口代价与 MCPWM 相同：通道编号进了类型，`for ch in [ch0, ch1]` 要展开；LEDC 的
+   `set_duty_fraction` 挪到定时器上（`timer.duty_fraction(n, d)`），因为满量程只有定时器知道
+   自己的分辨率。
 8. **SDIO slave**。
    **I2S** 已完成标准双槽模式与 TDM：三个控制器的时钟树（`HP_SYS_CLKRST` 里的源选择与分数
    分频、外设内的 BCK 分频）、Philips / MSB 对齐、主/从、8–32 bit 槽、mono 或立体声、

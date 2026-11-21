@@ -8,6 +8,11 @@
 //!
 //! Every level and duration the receiver decodes is compared against what was
 //! sent; a mismatch panics with both sequences in the log.
+//!
+//! A second loopback then repeats the check on channel 2, so a channel index
+//! other than zero is covered too: its RAM lives at a different address and it
+//! owns fewer blocks. That one goes out on `GPIO17` and comes back on `GPIO21`
+//! through a jumper.
 
 #![no_std]
 #![no_main]
@@ -22,13 +27,15 @@ use esp32p4_hal::gpio::signal::{InputSignal, OutputSignal};
 use esp32p4_hal::gpio::{Level, PinOps, Pins};
 use esp32p4_hal::main;
 use esp32p4_hal::pac::Peripherals;
-use esp32p4_hal::rmt::{
-    ClockSource, Pulse, Rmt, RxChannelIndex, RxConfig, TxChannelIndex, TxConfig,
-};
+use esp32p4_hal::rmt::{ClockSource, Pulse, Rmt, RxConfig, TxConfig};
 use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
 
 /// Pad shared by the transmitter and the receiver.
 const PIN: u32 = 2;
+/// Pad carrying channel 2's transmit signal.
+const TX_PIN: u32 = 17;
+/// Pad feeding channel 2's receiver.
+const RX_PIN: u32 = 21;
 
 /// Group divider: 40 MHz / 2 = 20 MHz, so one tick is 50 ns.
 const DIVIDER: u32 = 2;
@@ -68,10 +75,10 @@ fn main() -> ! {
     pin.route_output_signal(OutputSignal::RMT_SIG_PAD_OUT0);
     pin.route_input_signal(InputSignal::RMT_SIG_PAD_IN0);
 
-    rmt.configure_tx(TxChannelIndex::Zero, &TxConfig::new(1))
-        .unwrap();
-    rmt.configure_rx(RxChannelIndex::Zero, &RxConfig::new(1, IDLE_TICKS))
-        .unwrap();
+    let tx = rmt.tx_channel::<0>();
+    let rx = rmt.rx_channel::<0>();
+    tx.configure(&TxConfig::new(1)).unwrap();
+    rx.configure(&RxConfig::new(1, IDLE_TICKS)).unwrap();
 
     // Green, red, blue.
     let mut sent = [Pulse::default(); 49];
@@ -85,10 +92,8 @@ fn main() -> ! {
     count += 1;
 
     let mut received = [Pulse::default(); 64];
-    let decoded = rmt
-        .receive_with(RxChannelIndex::Zero, &mut received, 20_000, || {
-            rmt.send(TxChannelIndex::Zero, &sent[..count], 10_000)
-        })
+    let decoded = rx
+        .receive_with(&mut received, 20_000, || tx.send(&sent[..count], 10_000))
         .unwrap();
 
     // The last pulse or two are still being counted when the idle gap ends the
@@ -119,6 +124,39 @@ fn main() -> ! {
         mismatches
     );
     assert_eq!(mismatches, 0, "RMT loopback mismatch");
+
+    // The same shape again on channel 2, whose RAM lives at a different
+    // address: if the per-channel offsets were wrong this would decode nothing.
+    let mut out = pins.pin::<TX_PIN>();
+    out.route_output_signal(OutputSignal::RMT_SIG_PAD_OUT2);
+    let mut back = pins.pin::<RX_PIN>();
+    back.route_input_signal(InputSignal::RMT_SIG_PAD_IN2);
+
+    let tx2 = rmt.tx_channel::<2>();
+    let rx2 = rmt.rx_channel::<2>();
+    // Channel 2 owns two RAM blocks, so the sequence has to fit 192 codes.
+    tx2.configure(&TxConfig::new(1)).unwrap();
+    rx2.configure(&RxConfig::new(1, IDLE_TICKS)).unwrap();
+    let mut received2 = [Pulse::default(); 64];
+    let decoded2 = rx2
+        .receive_with(&mut received2, 20_000, || tx2.send(&sent[..16], 10_000))
+        .unwrap();
+    let compared2 = decoded2.min(16);
+    let mut mismatches2 = 0;
+    for index in 0..compared2 {
+        if received2[index].level != sent[index].level
+            || received2[index].period != sent[index].period
+        {
+            mismatches2 += 1;
+        }
+    }
+    defmt::info!(
+        "rmt loopback ch2: {=usize} decoded, {=usize} compared, {=usize} mismatches",
+        decoded2,
+        compared2,
+        mismatches2
+    );
+    assert_eq!(mismatches2, 0, "RMT channel 2 loopback mismatch");
 
     loop {
         delay.delay_ms(1_000);
