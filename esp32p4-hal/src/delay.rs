@@ -72,7 +72,7 @@ impl<T: DelayUs> DelayUs for crate::Steal<T> {
 /// does not have to thread a handle through every register sequence.
 #[inline]
 pub fn delay_us(us: u32) {
-    // SAFETY: reading the shared counter aliases no write, and the bootloader
+    // SAFETY: reading this core's counter aliases no write, and the bootloader
     // leaves it running.
     unsafe { crate::machine_timer::MachineTimer::steal() }.delay_us(us);
 }
@@ -96,6 +96,6 @@ pub fn delay_ms(ms: u32) {
 /// the measured rate.
 #[inline]
 pub fn micros() -> u64 {
-    // SAFETY: reading the shared counter aliases no write.
+    // SAFETY: reading this core's counter aliases no write.
     unsafe { crate::machine_timer::MachineTimer::steal() }.micros()
 }

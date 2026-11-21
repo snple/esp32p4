@@ -56,18 +56,23 @@ static CORE1_ID: AtomicU32 = AtomicU32::new(u32::MAX);
 
 /// Machine timer ticks each core has served, and the step each re-arms with.
 ///
-/// The comparators are per core while the counter behind them is shared, so the
-/// two periods below have to stay independent.
+/// Everything here is per core, so the two periods stay independent.
 static TIMER_TICKS: [AtomicU32; 2] = [const { AtomicU32::new(0) }; 2];
 static TIMER_STEP: [AtomicU32; 2] = [const { AtomicU32::new(0) }; 2];
 
 /// `CPU_CLK` on this board, which is also the machine timer's rate.
 const CPU_HZ: u32 = 90_000_000;
 
+/// The value core 1 writes into the counter: far below any running count, so a
+/// core that sees it knows the write reached it.
+const RELOAD_TICKS: u64 = 1_000;
+
 /// Round handshake: core 1 counts while this is [`PHASE_WORK`].
 const PHASE_IDLE: u32 = 0;
 const PHASE_WORK: u32 = 1;
 const PHASE_CLOCK: u32 = 3;
+/// Core 1 rewrites the counter, so core 0 can see whether the write is visible.
+const PHASE_RELOAD: u32 = 4;
 const PHASE_DONE: u32 = 2;
 static PHASE: AtomicU32 = AtomicU32::new(PHASE_IDLE);
 
@@ -163,11 +168,17 @@ fn core1_main() -> ! {
         } else if phase == PHASE_CLOCK {
             read_clock_hard(CoreId::Core1.as_index());
             PHASE.store(PHASE_DONE, Ordering::Release);
+        } else if phase == PHASE_RELOAD {
+            // Move the counter to a value core 0 cannot mistake for its own
+            // sequence. If the two cores share one counter this rewinds core 0's
+            // clock too; if each has its own, core 0 keeps counting.
+            timer.set_counter(RELOAD_TICKS);
+            PHASE.store(PHASE_DONE, Ordering::Release);
         }
     }
 }
 
-/// Reads the shared clock back to back, counting reads that jump.
+/// Reads this core's clock back to back, counting reads that jump.
 ///
 /// Both cores hammer the one snapshot register at the same time; the values have
 /// to stay consistent and monotonic. This cannot reproduce the rare failure mode
@@ -234,7 +245,8 @@ fn main() -> ! {
     loop {
         check_counters(&mc);
         check_signal();
-        check_shared_clock();
+        check_clock_reads();
+        check_separate_counters();
         check_per_core_timers();
         check_identity_seen_by_core1();
         delay::delay_ms(1_000);
@@ -359,8 +371,8 @@ fn check_identity_seen_by_core1() {
     report("core id", ok);
 }
 
-/// Both cores read the shared clock at once, and it stays consistent.
-fn check_shared_clock() {
+/// Each core reads its own clock back to back, and it never jumps.
+fn check_clock_reads() {
     CLOCK_TORN[0].store(0, Ordering::Release);
     CLOCK_TORN[1].store(0, Ordering::Release);
     CLOCK_READS[0].store(0, Ordering::Release);
@@ -383,21 +395,65 @@ fn check_shared_clock() {
     let torn = CLOCK_TORN[0].load(Ordering::Acquire) + CLOCK_TORN[1].load(Ordering::Acquire);
     let reads = CLOCK_READS[0].load(Ordering::Acquire) + CLOCK_READS[1].load(Ordering::Acquire);
     defmt::info!(
-        "shared clock: {=u32} reads from both cores, {=u32} inconsistent, core 1 finished {=bool}",
+        "clock reads: {=u32} from both cores, {=u32} inconsistent, core 1 finished {=bool}",
         reads,
         torn,
         phase == PHASE_DONE
     );
     report(
-        "shared clock",
+        "clock reads",
         torn == 0 && reads >= 2 * CLOCK_READS_PER_CORE && phase == PHASE_DONE,
     );
 }
 
+/// Core 1 rewrites its counter, and core 0's clock does not notice.
+///
+/// This is the experiment that separates "one counter for the chip" from "one
+/// counter per core running at the same rate": read-only comparisons cannot tell
+/// them apart, because two counters fed by the same clock and started together
+/// stay in step. Writing one from the other core is the only way to tell, and the
+/// answer for ESP32-P4 is that `mtime` is core-local — the write moves core 1's
+/// clock only.
+fn check_separate_counters() {
+    let timer = unsafe { MachineTimer::steal() };
+    let before = timer.now();
+
+    PHASE.store(PHASE_RELOAD, Ordering::Release);
+    let mut waited = 0u32;
+    while PHASE.load(Ordering::Acquire) != PHASE_DONE {
+        if waited == 50_000_000 {
+            break;
+        }
+        waited += 1;
+        core::hint::spin_loop();
+    }
+    let finished = PHASE.load(Ordering::Acquire) == PHASE_DONE;
+    PHASE.store(PHASE_IDLE, Ordering::Release);
+
+    let after = timer.now();
+    // Core 0 kept counting: `after` is past `before`, not reset to `RELOAD_TICKS`.
+    let separate = finished && after >= before;
+
+    // Put the clock back before anything armed against it notices. If the cores
+    // share the counter this restores both; if they do not, it only rewinds core
+    // 0's, which costs at most the few microseconds this check took.
+    timer.set_counter(before);
+    let step = u64::from(TIMER_STEP[0].load(Ordering::Acquire));
+    timer.set_target(timer.now() + step);
+
+    defmt::info!(
+        "separate counters: core 0 read {=u64} before, {=u64} after core 1 wrote {=u64} to its own",
+        before,
+        after,
+        RELOAD_TICKS
+    );
+    report("separate counters", separate);
+}
+
 /// Each core's machine timer ticks on its own comparator.
 ///
-/// Both run off the one shared counter, but the comparators, the interrupts and
-/// the handler tables are per core: core 0 asks for a tick every millisecond and
+/// Each counter and comparator is per core: core 0 asks for a tick every
+/// millisecond and
 /// core 1 every two, so twenty milliseconds of running has to produce about
 /// twenty on one and ten on the other.
 fn check_per_core_timers() {

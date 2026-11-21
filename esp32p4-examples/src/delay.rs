@@ -2,7 +2,7 @@
 //!
 //! `delay::delay_us` / `delay::delay_ms` wait by reading this core's CLINT
 //! counter, so they need no timer handle and two cores waiting at the same time do
-//! not interfere — both are only reading a shared counter. The conversion from
+//! not interfere — each core only reads its own counter. The conversion from
 //! microseconds to ticks uses `CPU_CLK`, which moves with the CPU divider.
 //!
 //! Three checks per round:

@@ -1,15 +1,19 @@
-//! The CLINT's machine timer: a per-core comparator on a shared counter.
+//! The CLINT's machine timer: this core's counter, comparator and interrupt.
 //!
-//! This is the RISC-V equivalent of ARM's SysTick — each core has its own
-//! 64-bit comparator and its own interrupt, so core 0 and core 1 can tick
-//! independently — except that the counter behind it is **one** counter for the
-//! chip, not one per core.
+//! This is the RISC-V equivalent of ARM's SysTick, and it is entirely per core:
+//! `mtime`, `mtimecmp` and the interrupt are separate for each hart, so core 0 and
+//! core 1 keep their own time and tick independently. The two counters run at the
+//! same rate (`CPU_CLK`) and the bootloader starts them together, which is why
+//! read-only comparisons make them look like one counter — they are not. Writing
+//! one core's `mtimeload` does not move the other core's clock.
 //!
 //! # Where the registers are
 //!
 //! The CLINT has no PAC entry: like the CLIC, its registers sit in a core-local
 //! window at a fixed address, and each core sees its own copy at the same
-//! address. That is what makes the comparator and the interrupt per core.
+//! address. One core can also reach the *other* core's copy at
+//! `0x2001_0000 + offset` (the SVD calls that `CLINT_OTHER_CORE`), which is how a
+//! core pokes the other's `msip`.
 //!
 //! | Register | Offset | Notes |
 //! |----------|--------|-------|
@@ -18,16 +22,19 @@
 //! | `mtimecmphi`   | `0x4004` | comparator, high half |
 //! | `mtimeloadlo`  | `0x4008` | counter reload, low half |
 //! | `mtimeloadhi`  | `0x400C` | counter reload, high half |
-//! | `mtimectl`     | `0x4010` | enable, overflow flag, sampling mode |
+//! | `mtimectl`     | `0x4010` | `EN` bit 0, `OVF` bit 1, `SAM` bits 2-3 |
 //! | `mtimelo`      | `0xBFF8` | counter, low half (read-only) |
 //! | `mtimehi`      | `0xBFFC` | counter, high half (read-only) |
 //!
-//! # What is shared and what is not
+//! # The one bit that is not per core
 //!
-//! The counter and its enable bit are shared: `MTIME_EN` is implemented only in
-//! core 0's copy of `mtimectl`, and writing it in core 1's has no effect. The
-//! comparator and the interrupt are per core — the interrupt is CLIC id 7, which
-//! is not one of the 32 lines the peripheral matrix drives, so it goes through
+//! `MTIME_EN` is implemented in core 0's `mtimectl` only, so enabling the timer
+//! works from core 0 and does nothing on core 1. Everything else — the counter
+//! value, the reload, the comparator, the overflow flag, the sampling mode — is
+//! this core's own.
+//!
+//! The interrupt is CLIC id 7, which is not one of the 32 lines the peripheral
+//! matrix drives, so it goes through
 //! [`crate::interrupt::set_machine_timer_handler`] rather than
 //! [`crate::interrupt::claim`].
 //!
@@ -118,6 +125,9 @@ const MTIMECTL: usize = CLINT_BASE + 0x4010;
 const MTIMECMPLO: usize = CLINT_BASE + 0x4000;
 /// `mtimecmphi` at `CLINT_BASE + 0x4004`.
 const MTIMECMPHI: usize = CLINT_BASE + 0x4004;
+const MTIMELOADLO: usize = CLINT_BASE + 0x4008;
+/// `mtimeloadhi` at `CLINT_BASE + 0x400C`.
+const MTIMELOADHI: usize = CLINT_BASE + 0x400C;
 /// `mtimelo` at `CLINT_BASE + 0xBFF8`.
 const MTIMELO: usize = CLINT_BASE + 0xBFF8;
 /// `mtimehi` at `CLINT_BASE + 0xBFFC`.
@@ -125,10 +135,12 @@ const MTIMEHI: usize = CLINT_BASE + 0xBFFC;
 
 /// `mtimectl.MTIME_EN`.
 const MTIMECTL_EN: u32 = 1 << 0;
-/// `mtimectl.MTIME_OVF`.
-const MTIMECTL_OVF: u32 = 1 << 3;
-/// `mtimectl.MTIME_SAM`, sampling the other half when either half is read.
-const MTIMECTL_SAM_BOTH: u32 = 0b11 << 4;
+/// `mtimectl.MTIME_OVF`, bit 1.
+const MTIMECTL_OVF: u32 = 1 << 1;
+/// `mtimectl.MTIME_SAM`, bits 2-3: value 3 samples the other half when either
+/// half is read, which is what makes the 64-bit read in [`MachineTimer::now`]
+/// atomic.
+const MTIMECTL_SAM_BOTH: u32 = 0b11 << 2;
 
 /// Whether this core's machine timer interrupt has a handler.
 ///
@@ -174,8 +186,8 @@ fn write(address: usize, value: u32) {
 
 /// This core's machine timer.
 ///
-/// Owning one says nothing about the shared counter: every core has a handle, and
-/// which core enabled the counter is not observable from here.
+/// Owning one says nothing about the other core's: every core has its own counter
+/// and comparator, and which core enabled its timer is not observable from here.
 pub struct MachineTimer {
     _private: (),
 }
@@ -222,8 +234,9 @@ impl MachineTimer {
         let this = Self { _private: () };
 
         // Sample the other half of the counter whenever either half is read, so
-        // `now` needs no retry loop even though the counter is shared. Read,
-        // modify and write: `EN` and `OVF` belong to the bootloader and to
+        // `now` needs no retry loop: without it, the low half could wrap between
+        // the two reads and the value would be 2^32 short. Read, modify and
+        // write: `EN` and `OVF` belong to the bootloader and to
         // `clear_overflow`, and a plain store would wipe the bits set above.
         write(MTIMECTL, read(MTIMECTL) | MTIMECTL_SAM_BOTH);
         this.clear_overflow();
@@ -277,15 +290,29 @@ impl MachineTimer {
         self.now() / self.ticks_per_us().max(1)
     }
 
-    /// The counter, as 64 bits of ticks since the chip came out of reset.
+    /// This core's counter, as 64 bits of ticks since it started.
     ///
     /// The two halves are sampled consistently: [`init`](Self::init) sets the
-    /// sampling mode that latches the high half when the low half is read.
+    /// sampling mode that latches the high half when the low half is read. The
+    /// value is not comparable with the other core's counter.
     #[inline]
     pub fn now(&self) -> u64 {
         let lo = u64::from(read(MTIMELO));
         let hi = u64::from(read(MTIMEHI));
         (hi << 32) | lo
+    }
+
+    /// Rewrites the counter to `ticks`.
+    ///
+    /// Only this core's counter moves: ESP32-P4 gives each hart its own `mtime`,
+    /// so the other core keeps counting from wherever it was. This is also how the
+    /// multicore example proves the two are separate.
+    ///
+    /// Anything armed against an absolute deadline is now wrong: re-arm it after
+    /// calling this.
+    pub fn set_counter(&self, ticks: u64) {
+        write(MTIMELOADLO, ticks as u32);
+        write(MTIMELOADHI, (ticks >> 32) as u32);
     }
 
     /// The comparator value.
