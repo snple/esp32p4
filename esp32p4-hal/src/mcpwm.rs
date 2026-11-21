@@ -20,6 +20,17 @@
 //!   [`Mcpwm0::fault`] / [`Mcpwm0::capture_timer`] build them, with `N`
 //!   range-checked at compile time
 //!
+//! Events and tasks follow the same rule and are typed per controller
+//! ([`mc0::Event`] / [`mc1::Event`], same for [`mc0::Task`]): `EVT_EN`,
+//! `TASK_EN`, the `INT_*` registers and the `SOC_ETM` ids are one contiguous bit
+//! table per controller with the *same* layout in both, so a shared offset type
+//! would let an event of one controller be fed to the other by accident. The
+//! handles name the signal (`timer.zero_event()`, `capture.capture_task()`,
+//! `fault.mask()`); the values are `#[repr(u8)]` enums whose discriminant *is*
+//! the bit offset, report `name()`, list every signal in `Event::ALL` /
+//! `Task::ALL`, and convert into `etm::EventId` / `etm::TaskId` with `into()`,
+//! so the ETM wiring is a single hop:
+//!
 //! Each handle's inherent implementation is generated once per instance by a
 //! macro, so the register access lives in a single place per family while the
 //! compiler picks the right registers at the call site. The result is the shape
@@ -28,12 +39,15 @@
 //! decodes a *value* (a counting mode, a trip shape, an event's bit offset),
 //! never an instance.
 //!
-//! The one thing that is *not* an instance is an event or a task: `EVT_EN`,
-//! `TASK_EN`, the `INT_*` registers and the `SOC_ETM` ids form one contiguous
-//! bit table per controller, so a signal is an offset. The handles hand those
-//! out too — [`mc0::Timer::zero_event`], [`mc0::Capture::capture_task`],
-//! [`mc0::Fault::mask`] and friends — so no API asks the caller to name an
-//! instance by number.
+//! ```ignore
+//! // 每个定时器零点触发一次 CAP1 捕获。
+//! let timer = mcpwm.timer::<0>();
+//! let capture = mcpwm.capture::<1>();
+//! mcpwm.enable_event(timer.zero_event(), true);
+//! mcpwm.enable_task(capture.capture_task(), true);
+//! channel.connect(timer.zero_event(), capture.capture_task());
+//! ```
+//!
 //!
 //! # Features
 //!
@@ -56,7 +70,7 @@
 //!   ([`crate::etm`]) after being enabled here
 //! - Event comparators: two extra counter values per operator that only feed
 //!   the ETM, for doing something at a fixed point of the PWM period
-//! - Interrupts: each [`Event`] has an interrupt bit that can be enabled,
+//! - Interrupts: each [`mc0::Event`] has an interrupt bit that can be enabled,
 //!   polled and acknowledged; [`Mcpwm0::SOURCE`] is the line to claim with
 //!   [`crate::interrupt::claim`]
 //! - Edge-aligned and complementary PWM built from those pieces
@@ -114,7 +128,7 @@
 //!   `EVT_EN` bit, and a task only acts once [`Mcpwm0::enable_task`] set its
 //!   `TASK_EN` bit; the matrix itself is [`crate::etm`].
 //! - `EVT_EN`, `INT_ENA`, `INT_RAW`, `INT_ST` and `INT_CLR` share one bit layout,
-//!   so the same [`Event`] indexes all of them. `INT_CLR` is
+//!   so the same [`mc0::Event`] indexes all of them. `INT_CLR` is
 //!   write-1-to-clear and `INT_ST` only reports sources whose enable bit is
 //!   set — an interrupt that is not enabled stays invisible there.
 
@@ -632,48 +646,11 @@ pub struct CarrierConfig {
 // ETM
 // ============================================================================
 
-/// One event of a controller, as its offset in the event bit table.
-///
-/// An event is not an instance: `EVT_EN`, the `INT_*` registers and the
-/// `SOC_ETM` event ids are one contiguous table per controller, so a signal is
-/// identified by its offset. The handles build these values
-/// ([`mc0::Timer::zero_event`](mc0::Timer) and friends), which keeps the
-/// instance identity in the handle's type instead of in a number written at the
-/// call site.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Event(u8);
+/// How many events one controller has.
+const EVENT_COUNT: u8 = 30;
 
-impl Event {
-    /// The offset in the event bit table, which is also the offset from the
-    /// controller's first ETM event id.
-    pub const fn raw(self) -> u8 {
-        self.0
-    }
-
-    const fn at(offset: u8) -> Self {
-        Self(offset)
-    }
-}
-
-/// One task of a controller, as its offset in the task bit table.
-///
-/// Built by the handles, like [`Event`].
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Task(u8);
-
-impl Task {
-    /// The offset in the task bit table, which is also the offset from the
-    /// controller's first ETM task id.
-    pub const fn raw(self) -> u8 {
-        self.0
-    }
-
-    const fn at(offset: u8) -> Self {
-        Self(offset)
-    }
-}
+/// How many tasks one controller has.
+const TASK_COUNT: u8 = 22;
 
 /// One of the two extra event comparators of an operator
 /// (`OPn_TSTMP_E1` / `OPn_TSTMP_E2`).
@@ -912,27 +889,27 @@ macro_rules! timer_body {
 
                 /// The event raised when this timer stops counting.
                 pub const fn stop_event(&self) -> Event {
-                    Event::at($n)
+                    Event::[<Timer $n Stop>]
                 }
 
                 /// The event raised when this timer reaches zero.
                 pub const fn zero_event(&self) -> Event {
-                    Event::at(3 + $n)
+                    Event::[<Timer $n Zero>]
                 }
 
                 /// The event raised when this timer reaches its period.
                 pub const fn period_event(&self) -> Event {
-                    Event::at(6 + $n)
+                    Event::[<Timer $n Period>]
                 }
 
                 /// The task that runs a sync event on this timer.
                 pub const fn sync_task(&self) -> Task {
-                    Task::at(7 + $n)
+                    Task::[<Timer $n Sync>]
                 }
 
                 /// The task that reloads this timer's period register.
                 pub const fn update_period_task(&self) -> Task {
-                    Task::at(10 + $n)
+                    Task::[<Timer $n UpdatePeriod>]
                 }
             }
         }
@@ -1246,43 +1223,43 @@ macro_rules! operator_body {
 
                 /// The event raised when the counter matches timestamp A.
                 pub const fn timestamp_a_event(&self) -> Event {
-                    Event::at(9 + $n)
+                    Event::[<Operator $n TimestampA>]
                 }
 
                 /// The event raised when the counter matches timestamp B.
                 pub const fn timestamp_b_event(&self) -> Event {
-                    Event::at(12 + $n)
+                    Event::[<Operator $n TimestampB>]
                 }
 
                 /// The event raised when this operator applies a cycle-by-cycle
                 /// trip.
                 pub const fn cycle_by_cycle_event(&self) -> Event {
-                    Event::at(21 + $n)
+                    Event::[<Operator $n CycleByCycleTrip>]
                 }
 
                 /// The event raised when this operator applies a one-shot trip.
                 pub const fn one_shot_event(&self) -> Event {
-                    Event::at(24 + $n)
+                    Event::[<Operator $n OneShotTrip>]
                 }
 
                 /// The task that reloads timestamp A's active register.
                 pub const fn update_timestamp_a_task(&self) -> Task {
-                    Task::at($n)
+                    Task::[<Operator $n UpdateTimestampA>]
                 }
 
                 /// The task that reloads timestamp B's active register.
                 pub const fn update_timestamp_b_task(&self) -> Task {
-                    Task::at(3 + $n)
+                    Task::[<Operator $n UpdateTimestampB>]
                 }
 
                 /// The task that applies a one-shot trip to this operator.
                 pub const fn one_shot_task(&self) -> Task {
-                    Task::at(13 + $n)
+                    Task::[<Operator $n OneShotTrip>]
                 }
 
                 /// The task that clears a latched one-shot trip of this operator.
                 pub const fn release_task(&self) -> Task {
-                    Task::at(16 + $n)
+                    Task::[<Operator $n ReleaseTrip>]
                 }
             }
         }
@@ -1320,12 +1297,12 @@ macro_rules! fault_body {
 
                 /// The event raised when this input asserts.
                 pub const fn event(&self) -> Event {
-                    Event::at(15 + $n)
+                    Event::[<Fault $n Assert>]
                 }
 
                 /// The event raised when this input is released again.
                 pub const fn cleared_event(&self) -> Event {
-                    Event::at(18 + $n)
+                    Event::[<Fault $n Clear>]
                 }
 
                 /// A mask holding just this input, for [`TripConfig::sources`].
@@ -1390,12 +1367,12 @@ macro_rules! capture_body {
 
                 /// The event raised when this channel captures.
                 pub const fn event(&self) -> Event {
-                    Event::at(27 + $n)
+                    Event::[<Capture $n Captured>]
                 }
 
                 /// The task that captures on this channel.
                 pub const fn capture_task(&self) -> Task {
-                    Task::at(19 + $n)
+                    Task::[<Capture $n Capture>]
                 }
             }
         }
@@ -1412,11 +1389,322 @@ macro_rules! capture_body {
 // `mc1::Timer<'_, 0>` are generated from the same source text.
 
 macro_rules! impl_api {
-    ($api:ident, $ctrl:ident) => {
+    ($api:ident, $ctrl:ident, $evt_base:literal, $task_base:literal) => {
         pub mod $api {
-            //! Typed handles of this controller.
+            //! Typed handles and signal identifiers of this controller.
 
             use super::*;
+
+            /// One event of this controller.
+            ///
+            /// An event is not an instance: `EVT_EN`, the `INT_*` registers and
+            /// the `SOC_ETM` event ids form one contiguous table per controller,
+            /// so a signal is a bit offset. The discriminant *is* that offset,
+            /// which keeps the identity, the bit position and the name in one
+            /// place — the handles build the value (`timer.zero_event()` and
+            /// friends) and the compiler checks that nothing is missing.
+            ///
+            /// The type is per controller, so an event of MCPWM0 cannot be fed
+            /// to MCPWM1: the two controllers have identical bit tables, and a
+            /// shared type would silently address the wrong one.
+            #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+            #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+            #[repr(u8)]
+            pub enum Event {
+                /// Timer 0 stopped counting.
+                Timer0Stop = 0,
+                /// Timer 1 stopped counting.
+                Timer1Stop = 1,
+                /// Timer 2 stopped counting.
+                Timer2Stop = 2,
+                /// Timer 0 reached zero.
+                Timer0Zero = 3,
+                /// Timer 1 reached zero.
+                Timer1Zero = 4,
+                /// Timer 2 reached zero.
+                Timer2Zero = 5,
+                /// Timer 0 reached its period.
+                Timer0Period = 6,
+                /// Timer 1 reached its period.
+                Timer1Period = 7,
+                /// Timer 2 reached its period.
+                Timer2Period = 8,
+                /// Operator 0's counter matched timestamp A.
+                Operator0TimestampA = 9,
+                /// Operator 1's counter matched timestamp A.
+                Operator1TimestampA = 10,
+                /// Operator 2's counter matched timestamp A.
+                Operator2TimestampA = 11,
+                /// Operator 0's counter matched timestamp B.
+                Operator0TimestampB = 12,
+                /// Operator 1's counter matched timestamp B.
+                Operator1TimestampB = 13,
+                /// Operator 2's counter matched timestamp B.
+                Operator2TimestampB = 14,
+                /// Fault input 0 asserted.
+                Fault0Assert = 15,
+                /// Fault input 1 asserted.
+                Fault1Assert = 16,
+                /// Fault input 2 asserted.
+                Fault2Assert = 17,
+                /// Fault input 0 was released.
+                Fault0Clear = 18,
+                /// Fault input 1 was released.
+                Fault1Clear = 19,
+                /// Fault input 2 was released.
+                Fault2Clear = 20,
+                /// Operator 0 applied a cycle-by-cycle trip.
+                Operator0CycleByCycleTrip = 21,
+                /// Operator 1 applied a cycle-by-cycle trip.
+                Operator1CycleByCycleTrip = 22,
+                /// Operator 2 applied a cycle-by-cycle trip.
+                Operator2CycleByCycleTrip = 23,
+                /// Operator 0 applied a one-shot trip.
+                Operator0OneShotTrip = 24,
+                /// Operator 1 applied a one-shot trip.
+                Operator1OneShotTrip = 25,
+                /// Operator 2 applied a one-shot trip.
+                Operator2OneShotTrip = 26,
+                /// Capture channel 0 captured.
+                Capture0Captured = 27,
+                /// Capture channel 1 captured.
+                Capture1Captured = 28,
+                /// Capture channel 2 captured.
+                Capture2Captured = 29,
+            }
+
+            // The bit order is the TRM's event table order; these fail to
+            // compile if a variant is moved.
+            const _: () = assert!(Event::Timer0Stop as u8 == 0);
+            const _: () = assert!(Event::Timer0Zero as u8 == 3);
+            const _: () = assert!(Event::Timer0Period as u8 == 6);
+            const _: () = assert!(Event::Operator0TimestampA as u8 == 9);
+            const _: () = assert!(Event::Operator0TimestampB as u8 == 12);
+            const _: () = assert!(Event::Fault0Assert as u8 == 15);
+            const _: () = assert!(Event::Fault0Clear as u8 == 18);
+            const _: () = assert!(Event::Operator0CycleByCycleTrip as u8 == 21);
+            const _: () = assert!(Event::Operator0OneShotTrip as u8 == 24);
+            const _: () = assert!(Event::Capture0Captured as u8 == 27);
+            const _: () = assert!(Event::Capture2Captured as u8 == 29);
+
+            impl Event {
+                /// Every event, in bit-table order, for bulk operations such as
+                /// clearing all pending interrupts.
+                pub const ALL: [Self; super::EVENT_COUNT as usize] = [
+                    Self::Timer0Stop,
+                    Self::Timer1Stop,
+                    Self::Timer2Stop,
+                    Self::Timer0Zero,
+                    Self::Timer1Zero,
+                    Self::Timer2Zero,
+                    Self::Timer0Period,
+                    Self::Timer1Period,
+                    Self::Timer2Period,
+                    Self::Operator0TimestampA,
+                    Self::Operator1TimestampA,
+                    Self::Operator2TimestampA,
+                    Self::Operator0TimestampB,
+                    Self::Operator1TimestampB,
+                    Self::Operator2TimestampB,
+                    Self::Fault0Assert,
+                    Self::Fault1Assert,
+                    Self::Fault2Assert,
+                    Self::Fault0Clear,
+                    Self::Fault1Clear,
+                    Self::Fault2Clear,
+                    Self::Operator0CycleByCycleTrip,
+                    Self::Operator1CycleByCycleTrip,
+                    Self::Operator2CycleByCycleTrip,
+                    Self::Operator0OneShotTrip,
+                    Self::Operator1OneShotTrip,
+                    Self::Operator2OneShotTrip,
+                    Self::Capture0Captured,
+                    Self::Capture1Captured,
+                    Self::Capture2Captured,
+                ];
+
+                /// The offset in the event bit table, which is also the offset
+                /// from this controller's first ETM event id.
+                pub const fn raw(self) -> u8 {
+                    self as u8
+                }
+
+                /// The signal's name, e.g. `timer0-zero`.
+                pub const fn name(self) -> &'static str {
+                    match self {
+                        Self::Timer0Stop => "timer0-stop",
+                        Self::Timer1Stop => "timer1-stop",
+                        Self::Timer2Stop => "timer2-stop",
+                        Self::Timer0Zero => "timer0-zero",
+                        Self::Timer1Zero => "timer1-zero",
+                        Self::Timer2Zero => "timer2-zero",
+                        Self::Timer0Period => "timer0-period",
+                        Self::Timer1Period => "timer1-period",
+                        Self::Timer2Period => "timer2-period",
+                        Self::Operator0TimestampA => "operator0-timestamp-a",
+                        Self::Operator1TimestampA => "operator1-timestamp-a",
+                        Self::Operator2TimestampA => "operator2-timestamp-a",
+                        Self::Operator0TimestampB => "operator0-timestamp-b",
+                        Self::Operator1TimestampB => "operator1-timestamp-b",
+                        Self::Operator2TimestampB => "operator2-timestamp-b",
+                        Self::Fault0Assert => "fault0-assert",
+                        Self::Fault1Assert => "fault1-assert",
+                        Self::Fault2Assert => "fault2-assert",
+                        Self::Fault0Clear => "fault0-clear",
+                        Self::Fault1Clear => "fault1-clear",
+                        Self::Fault2Clear => "fault2-clear",
+                        Self::Operator0CycleByCycleTrip => "operator0-cycle-by-cycle-trip",
+                        Self::Operator1CycleByCycleTrip => "operator1-cycle-by-cycle-trip",
+                        Self::Operator2CycleByCycleTrip => "operator2-cycle-by-cycle-trip",
+                        Self::Operator0OneShotTrip => "operator0-one-shot-trip",
+                        Self::Operator1OneShotTrip => "operator1-one-shot-trip",
+                        Self::Operator2OneShotTrip => "operator2-one-shot-trip",
+                        Self::Capture0Captured => "capture0-captured",
+                        Self::Capture1Captured => "capture1-captured",
+                        Self::Capture2Captured => "capture2-captured",
+                    }
+                }
+            }
+
+            impl From<Event> for crate::etm::EventId {
+                fn from(event: Event) -> Self {
+                    Self::new($evt_base + event.raw())
+                }
+            }
+
+            /// One task of this controller.
+            ///
+            /// Built by the handles, like [`Event`], and per controller for the
+            /// same reason.
+            #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+            #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+            #[repr(u8)]
+            pub enum Task {
+                /// Reload operator 0's timestamp A.
+                Operator0UpdateTimestampA = 0,
+                /// Reload operator 1's timestamp A.
+                Operator1UpdateTimestampA = 1,
+                /// Reload operator 2's timestamp A.
+                Operator2UpdateTimestampA = 2,
+                /// Reload operator 0's timestamp B.
+                Operator0UpdateTimestampB = 3,
+                /// Reload operator 1's timestamp B.
+                Operator1UpdateTimestampB = 4,
+                /// Reload operator 2's timestamp B.
+                Operator2UpdateTimestampB = 5,
+                /// Stop every timer and hold the outputs.
+                StopGenerators = 6,
+                /// Run a sync event on timer 0.
+                Timer0Sync = 7,
+                /// Run a sync event on timer 1.
+                Timer1Sync = 8,
+                /// Run a sync event on timer 2.
+                Timer2Sync = 9,
+                /// Reload timer 0's period.
+                Timer0UpdatePeriod = 10,
+                /// Reload timer 1's period.
+                Timer1UpdatePeriod = 11,
+                /// Reload timer 2's period.
+                Timer2UpdatePeriod = 12,
+                /// Apply a one-shot trip to operator 0.
+                Operator0OneShotTrip = 13,
+                /// Apply a one-shot trip to operator 1.
+                Operator1OneShotTrip = 14,
+                /// Apply a one-shot trip to operator 2.
+                Operator2OneShotTrip = 15,
+                /// Clear operator 0's latched one-shot trip.
+                Operator0ReleaseTrip = 16,
+                /// Clear operator 1's latched one-shot trip.
+                Operator1ReleaseTrip = 17,
+                /// Clear operator 2's latched one-shot trip.
+                Operator2ReleaseTrip = 18,
+                /// Capture on channel 0.
+                Capture0Capture = 19,
+                /// Capture on channel 1.
+                Capture1Capture = 20,
+                /// Capture on channel 2.
+                Capture2Capture = 21,
+            }
+
+            // The bit order is the TRM's task table order; these fail to
+            // compile if a variant is moved.
+            const _: () = assert!(Task::Operator0UpdateTimestampA as u8 == 0);
+            const _: () = assert!(Task::Operator0UpdateTimestampB as u8 == 3);
+            const _: () = assert!(Task::StopGenerators as u8 == 6);
+            const _: () = assert!(Task::Timer0Sync as u8 == 7);
+            const _: () = assert!(Task::Timer0UpdatePeriod as u8 == 10);
+            const _: () = assert!(Task::Operator0OneShotTrip as u8 == 13);
+            const _: () = assert!(Task::Operator0ReleaseTrip as u8 == 16);
+            const _: () = assert!(Task::Capture0Capture as u8 == 19);
+            const _: () = assert!(Task::Capture2Capture as u8 == 21);
+
+            impl Task {
+                /// Every task, in bit-table order.
+                pub const ALL: [Self; super::TASK_COUNT as usize] = [
+                    Self::Operator0UpdateTimestampA,
+                    Self::Operator1UpdateTimestampA,
+                    Self::Operator2UpdateTimestampA,
+                    Self::Operator0UpdateTimestampB,
+                    Self::Operator1UpdateTimestampB,
+                    Self::Operator2UpdateTimestampB,
+                    Self::StopGenerators,
+                    Self::Timer0Sync,
+                    Self::Timer1Sync,
+                    Self::Timer2Sync,
+                    Self::Timer0UpdatePeriod,
+                    Self::Timer1UpdatePeriod,
+                    Self::Timer2UpdatePeriod,
+                    Self::Operator0OneShotTrip,
+                    Self::Operator1OneShotTrip,
+                    Self::Operator2OneShotTrip,
+                    Self::Operator0ReleaseTrip,
+                    Self::Operator1ReleaseTrip,
+                    Self::Operator2ReleaseTrip,
+                    Self::Capture0Capture,
+                    Self::Capture1Capture,
+                    Self::Capture2Capture,
+                ];
+
+                /// The offset in the task bit table, which is also the offset
+                /// from this controller's first ETM task id.
+                pub const fn raw(self) -> u8 {
+                    self as u8
+                }
+
+                /// The signal's name, e.g. `timer0-sync`.
+                pub const fn name(self) -> &'static str {
+                    match self {
+                        Self::Operator0UpdateTimestampA => "operator0-update-timestamp-a",
+                        Self::Operator1UpdateTimestampA => "operator1-update-timestamp-a",
+                        Self::Operator2UpdateTimestampA => "operator2-update-timestamp-a",
+                        Self::Operator0UpdateTimestampB => "operator0-update-timestamp-b",
+                        Self::Operator1UpdateTimestampB => "operator1-update-timestamp-b",
+                        Self::Operator2UpdateTimestampB => "operator2-update-timestamp-b",
+                        Self::StopGenerators => "stop-generators",
+                        Self::Timer0Sync => "timer0-sync",
+                        Self::Timer1Sync => "timer1-sync",
+                        Self::Timer2Sync => "timer2-sync",
+                        Self::Timer0UpdatePeriod => "timer0-update-period",
+                        Self::Timer1UpdatePeriod => "timer1-update-period",
+                        Self::Timer2UpdatePeriod => "timer2-update-period",
+                        Self::Operator0OneShotTrip => "operator0-one-shot-trip",
+                        Self::Operator1OneShotTrip => "operator1-one-shot-trip",
+                        Self::Operator2OneShotTrip => "operator2-one-shot-trip",
+                        Self::Operator0ReleaseTrip => "operator0-release-trip",
+                        Self::Operator1ReleaseTrip => "operator1-release-trip",
+                        Self::Operator2ReleaseTrip => "operator2-release-trip",
+                        Self::Capture0Capture => "capture0-capture",
+                        Self::Capture1Capture => "capture1-capture",
+                        Self::Capture2Capture => "capture2-capture",
+                    }
+                }
+            }
+
+            impl From<Task> for crate::etm::TaskId {
+                fn from(task: Task) -> Self {
+                    Self::new($task_base + task.raw())
+                }
+            }
 
             /// A timer.
             ///
@@ -1545,8 +1833,8 @@ macro_rules! impl_api {
     };
 }
 
-impl_api!(mc0, Mcpwm0);
-impl_api!(mc1, Mcpwm1);
+impl_api!(mc0, Mcpwm0, 60, 113);
+impl_api!(mc1, Mcpwm1, 96, 135);
 
 // ============================================================================
 // Controllers
@@ -1706,29 +1994,19 @@ macro_rules! impl_mcpwm {
                 // ============================================================
 
                 /// Exposes one of this controller's events to the ETM matrix.
-                pub fn enable_event(&self, event: Event, enable: bool) {
+                pub fn enable_event(&self, event: $api::Event, enable: bool) {
                     // `EVT_EN` has one bit per event, at the event's ETM offset.
                     set_indexed_bit($mod::BASE + EVT_EN_OFFSET, u32::from(event.raw()), enable)
                 }
 
                 /// Lets an ETM task drive this controller.
-                pub fn enable_task(&self, task: Task, enable: bool) {
+                pub fn enable_task(&self, task: $api::Task, enable: bool) {
                     set_indexed_bit($mod::BASE + TASK_EN_OFFSET, u32::from(task.raw()), enable)
                 }
 
                 /// The task that stops every timer and holds the outputs.
-                pub const fn stop_generators_task(&self) -> Task {
-                    Task::at(6)
-                }
-
-                /// The `SOC_ETM` id of an event of this controller.
-                pub fn event_id(&self, event: Event) -> crate::etm::EventId {
-                    crate::etm::EventId::new($evt_base + event.raw())
-                }
-
-                /// The `SOC_ETM` id of a task of this controller.
-                pub fn task_id(&self, task: Task) -> crate::etm::TaskId {
-                    crate::etm::TaskId::new($task_base + task.raw())
+                pub const fn stop_generators_task(&self) -> $api::Task {
+                    $api::Task::StopGenerators
                 }
 
                 // ============================================================
@@ -1740,7 +2018,7 @@ macro_rules! impl_mcpwm {
                 /// The bit is the same one that [`enable_event`](Self::enable_event)
                 /// uses, so an event can drive the ETM, raise an interrupt, or
                 /// both.
-                pub fn enable_interrupt(&self, event: Event, enable: bool) {
+                pub fn enable_interrupt(&self, event: $api::Event, enable: bool) {
                     set_indexed_bit(
                         $mod::BASE + INT_ENA_OFFSET,
                         u32::from(event.raw()),
@@ -1749,12 +2027,12 @@ macro_rules! impl_mcpwm {
                 }
 
                 /// Whether an enabled event's interrupt is pending.
-                pub fn interrupt_pending(&self, event: Event) -> bool {
+                pub fn interrupt_pending(&self, event: $api::Event) -> bool {
                     read_indexed_bit($mod::BASE + INT_ST_OFFSET, u32::from(event.raw()))
                 }
 
                 /// Acknowledges one event's interrupt.
-                pub fn clear_interrupt(&self, event: Event) {
+                pub fn clear_interrupt(&self, event: $api::Event) {
                     // `INT_CLR` is write-1-to-clear.
                     write_indexed_bit($mod::BASE + INT_CLR_OFFSET, u32::from(event.raw()))
                 }

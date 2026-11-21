@@ -24,6 +24,7 @@ use esp32p4_hal::gpio::signal::{InputSignal, OutputSignal};
 use esp32p4_hal::gpio::{Level, Pin, PinOps, Pins};
 use esp32p4_hal::interrupt::{self, CpuInterrupt, Level as InterruptLevel};
 use esp32p4_hal::main;
+use esp32p4_hal::mcpwm::mc0::Event;
 use esp32p4_hal::mcpwm::{
     CaptureConfig, CaptureEdge, CarrierConfig, CbcRefresh, ClockSource, CountDirection,
     EventComparator, FaultMask, GeneratorConfig, Mcpwm0, OperatorOutput, PwmAction, SyncOutSource,
@@ -386,10 +387,7 @@ fn check_etm(mcpwm: &Mcpwm0, etm: &Etm, delay: &Delay) {
     mcpwm.enable_task(capture.capture_task(), true);
 
     let mut channel = etm.free_channel().unwrap();
-    channel.connect(
-        mcpwm.event_id(timer.zero_event()),
-        mcpwm.task_id(capture.capture_task()),
-    );
+    channel.connect(timer.zero_event(), capture.capture_task());
     channel.enable(true);
 
     mcpwm.capture_timer().start();
@@ -487,10 +485,7 @@ fn check_event_comparators(mcpwm: &Mcpwm0, etm: &Etm, delay: &Delay) {
     mcpwm.enable_task(capture2.capture_task(), true);
 
     let mut zero_channel = etm.channel(0).unwrap();
-    zero_channel.connect(
-        mcpwm.event_id(timer.zero_event()),
-        mcpwm.task_id(capture1.capture_task()),
-    );
+    zero_channel.connect(timer.zero_event(), capture1.capture_task());
     zero_channel.enable(true);
 
     mcpwm.capture_timer().start();
@@ -526,7 +521,7 @@ fn run_comparator(
     let mut channel = etm.channel(1).unwrap();
     channel.connect(
         operator.event_comparator_id(comparator),
-        mcpwm.task_id(capture2.capture_task()),
+        capture2.capture_task(),
     );
     channel.enable(true);
     delay.delay_ms(1);
@@ -585,7 +580,11 @@ fn check_interrupt(mcpwm: &Mcpwm0, delay: &Delay) {
     mcpwm.clear_interrupts();
     let cleared = !mcpwm.interrupt_pending(timer.zero_event());
     timer.stop();
-    mcpwm.enable_interrupt(timer.zero_event(), false);
+    // `Event::all()` walks the whole bit table, so a blanket disable is one
+    // loop; the check only armed one event, the rest are already off.
+    for event in Event::ALL {
+        mcpwm.enable_interrupt(event, false);
+    }
     handler.disable();
 
     let ok = (190..=210).contains(&counted) && pending && cleared;

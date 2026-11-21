@@ -3,27 +3,23 @@
 //! The ETM wires a peripheral *event* to a peripheral *task* without involving
 //! the CPU: every channel holds one event id and one task id, and the channel's
 //! enable bit arms it. The ids belong to the peripherals, so a driver exports
-//! them — for example [`Mcpwm0::event_id`](crate::mcpwm::Mcpwm0::event_id) and
-//! [`Mcpwm0::task_id`](crate::mcpwm::Mcpwm0::task_id) — and also has to enable
-//! the event/task inside the peripheral itself (an MCPWM event only reaches the
-//! matrix once its `EVT_EN` bit is set, and a task only takes effect once its
-//! `TASK_EN` bit is).
+//! types that convert into them — MCPWM's `mc0::Event`/`mc0::Task` and friends
+//! do — and also has to enable the event/task inside the peripheral itself (an
+//! MCPWM event only reaches the matrix once its `EVT_EN` bit is set, and a task
+//! only takes effect once its `TASK_EN` bit is).
 //!
 //! # Example
 //!
 //! ```ignore
-//! use esp32p4_hal::mcpwm::{CaptureChannel, Event, Task, TimerIndex};
-//!
 //! let etm = Etm::init(dp.SOC_ETM, &dp.HP_SYS_CLKRST);
 //! let mut channel = etm.free_channel().unwrap();
 //!
 //! // Every timer-zero event triggers a capture on channel 0.
-//! mcpwm.enable_event(Event::TimerZero(TimerIndex::Zero), true);
-//! mcpwm.enable_task(Task::Capture(CaptureChannel::Zero), true);
-//! channel.connect(
-//!     mcpwm.event_id(Event::TimerZero(TimerIndex::Zero)),
-//!     mcpwm.task_id(Task::Capture(CaptureChannel::Zero)),
-//! );
+//! let timer = mcpwm.timer::<0>();
+//! let capture = mcpwm.capture::<0>();
+//! mcpwm.enable_event(timer.zero_event(), true);
+//! mcpwm.enable_task(capture.capture_task(), true);
+//! channel.connect(timer.zero_event(), capture.capture_task());
 //! channel.enable(true);
 //! ```
 //!
@@ -165,9 +161,15 @@ impl Channel {
 
     /// Points the channel at an event source and a task sink.
     ///
+    /// Takes anything that converts into an [`EventId`] / [`TaskId`], so a
+    /// driver's own signal handle (`timer.zero_event()` in `mcpwm`) can be
+    /// passed straight through.
+    ///
     /// Writing the ids does not arm the channel; call [`enable`](Self::enable)
     /// once both peripherals are ready.
-    pub fn connect(&mut self, event: EventId, task: TaskId) {
+    pub fn connect(&mut self, event: impl Into<EventId>, task: impl Into<TaskId>) {
+        let event = event.into();
+        let task = task.into();
         let base = CH_EVT_ID + CH_STRIDE * self.index;
         unsafe {
             write_volatile(reg(base), u32::from(event.raw()));
