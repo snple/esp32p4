@@ -117,7 +117,9 @@
    / `capture::<N>()` / `fault::<N>()` / `capture_timer()` 这类按实例类型化的句柄，每个实例的
    inherent impl 由宏生成一次，因此模块里没有 trait、没有 `dyn`、运行期零实例分发（剩下的
    `match` 只在解码寄存器字段）。事件与任务也由句柄给出（`timer.zero_event()`、
-   `capture.capture_task()`），`Event` / `Task` 退化成位表偏移量，调用方不再需要写「第几号」。
+   `capture.capture_task()`），是 `#[repr(u8)]` 枚举、判别值就是位表偏移，且**按控制器分成
+   `mc0::Event` / `mc1::Event`**（位表布局两边相同，共用类型会让信号静默写到另一个控制器），
+   调用方不再需要写「第几号」，并可用 `name()` / `ALL` / `into()` 取名字、遍历、接到 ETM。
    代价是句柄类型不同者不能放进同一个数组，`for timer in [t0, t1]` 这类循环要展开；比较器
    超周期不再有运行期校验，改由文档约定。
 8. **TWAI（CAN-FD ×3）、I2S0/1/2（音频）、SDIO slave**。

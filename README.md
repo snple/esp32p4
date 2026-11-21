@@ -1109,11 +1109,18 @@ let timer = mcpwm.timer::<0>();
 let capture = mcpwm.capture::<1>();
 mcpwm.enable_event(timer.zero_event(), true);        // EVT_EN bit 3
 mcpwm.enable_task(capture.capture_task(), true);     // TASK_EN bit 20
-channel.connect(mcpwm.event_id(timer.zero_event()), mcpwm.task_id(capture.capture_task()));
+channel.connect(timer.zero_event(), capture.capture_task());
 ```
 
-`Event` / `Task` 本身是对应位表里的偏移量（`EVT_EN`、`TASK_EN`、`INT_*` 与 `SOC_ETM` id 都是
-一张连续位表，物理上就是一个下标），句柄在编译期把偏移算好；`raw()` 可以取回数字。
+`mc0::Event` / `mc0::Task`（MCPWM1 是 `mc1::Event` / `mc1::Task`）是 `#[repr(u8)]` 枚举，
+判别值**就是**位表偏移（`EVT_EN`、`TASK_EN`、`INT_*` 与 `SOC_ETM` id 每控制器一张连续位表），
+所以信号身份、位号和名字只有一处定义，搬动变体会在 `const` 断言和 `match` 处立刻报错。两类
+信号**按控制器分成两个类型**：两个控制器位表布局完全相同，共用类型的话把 MCPWM0 的事件喂给
+`Mcpwm1::enable_event` 会静默写到 MCPWM1 的同名位，现在那样写是编译错误。
+
+调试与批量操作：`raw()` 取回偏移，`name()` 给出信号名（`timer0-zero`、`capture1-capture` …），
+`Event::ALL` / `Task::ALL` 是整个位表，`into()` 直接转成 `etm::EventId` / `etm::TaskId`
+（`Channel::connect` 收 `impl Into<…>`，不用再经过控制器方法）。
 
 ```rust
 let mcpwm = Mcpwm0::init(dp.MCPWM0, &dp.HP_SYS_CLKRST);
@@ -1184,14 +1191,15 @@ timer.start();
   `mcpwm.capture_timer()` 句柄上的自由运行捕获定时器（`start` / `stop` / `set_phase` /
   `sync_input` / `software_sync`）。
 - **载波**：`Operator::configure_carrier` / `disable_carrier`。
-- **ETM**：`enable_event` / `enable_task` 打开 MCPWM 内部的事件与任务，`event_id` /
-  `task_id` 给出 `SOC_ETM` 的信号 id；配合新的 [`etm`](esp32p4-hal/src/etm.rs) 模块
-  （50 个通道，`connect` + `enable`）就能让任意事件触发任意任务。
+- **ETM**：`enable_event` / `enable_task` 打开 MCPWM 内部的事件与任务，句柄给出的
+  `mc0::Event` / `mc0::Task` 用 `into()` 换成 `SOC_ETM` 的信号 id（`Channel::connect`
+  直接收 `impl Into<…>`）；配合 [`etm`](esp32p4-hal/src/etm.rs) 模块（50 个通道，
+  `connect` + `enable`）就能让任意事件触发任意任务。
 - **事件比较器**：`Operator::set_event_comparator` / `enable_event_comparator` /
   `event_comparator_id` 操作每操作器多出来的两个比较点 `OPn_TSTMP_E1/E2`
   （`EventComparator::E1` / `E2`，与寄存器同名）。它们不碰输出，只产生 ETM 事件，用来在
   PWM 周期的固定位置启动一次转换、一次捕获或别的外设。
-- **中断**：`Event` 的每一位同时也是中断位，`enable_interrupt` / `interrupt_pending` /
+- **中断**：`mc0::Event` 的每一位同时也是中断位，`enable_interrupt` / `interrupt_pending` /
   `clear_interrupt` / `clear_interrupts` 直接对应 `INT_ENA` / `INT_ST` / `INT_CLR`
   （事件仍由句柄给出，如 `timer.zero_event()`）；
   `Mcpwm0::SOURCE` / `Mcpwm1::SOURCE` 是 `interrupt::claim` 要的中断源。
@@ -1203,10 +1211,7 @@ let capture = mcpwm.capture::<1>();
 mcpwm.enable_event(timer.zero_event(), true);
 mcpwm.enable_task(capture.capture_task(), true);
 let mut channel = etm.free_channel().unwrap();
-channel.connect(
-    mcpwm.event_id(timer.zero_event()),
-    mcpwm.task_id(capture.capture_task()),
-);
+channel.connect(timer.zero_event(), capture.capture_task());
 channel.enable(true);
 ```
 
