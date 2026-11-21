@@ -9,9 +9,8 @@
 //! `ref_div = 1` (`24 * 20 MHz`). The PSRAM bus then runs at half of that,
 //! 250 MHz.
 
-use crate::delay::Delay;
 use crate::regi2c::mpll;
-use esp32p4_pac::{LP_AON_CLKRST, PMU, SYSTIMER};
+use esp32p4_pac::{LP_AON_CLKRST, PMU};
 
 /// MPLL output frequency in MHz.
 pub(crate) const FREQUENCY_MHZ: u32 = 500;
@@ -26,8 +25,6 @@ const fn div_value(div: u8, ref_div: u8) -> u8 {
 
 /// Starts the MPLL at 500 MHz and waits for its calibration to finish.
 pub(crate) fn enable() {
-    let delay = Delay::init(unsafe { SYSTIMER::steal() });
-
     unsafe { PMU::steal() }.rf_pwc.set_mspi_phy_xpd();
     unsafe { LP_AON_CLKRST::steal() }
         .lp_aonclkrst_hp_clk_ctrl
@@ -60,5 +57,5 @@ pub(crate) fn enable() {
     }
     pll_ctrl.set_reg_mspi_cal_stop();
 
-    delay.delay_us(10);
+    crate::delay::delay_us(10);
 }

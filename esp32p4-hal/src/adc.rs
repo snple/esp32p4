@@ -850,7 +850,6 @@ impl Adc {
         let expected_us =
             (buffer.len() as u64 * u64::from(timer_cycles) * 1_000_000) / u64::from(controller_hz);
         let budget_us = expected_us * 2 + 20_000;
-        let _ = crate::delay::Delay::init(unsafe { esp32p4_pac::SYSTIMER::steal() });
 
         self.start_scan_timer();
         let deadline = crate::delay::micros() + budget_us;

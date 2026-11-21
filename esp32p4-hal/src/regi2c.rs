@@ -54,7 +54,7 @@
 //! second core uses the bus as well, the caller has to provide real mutual
 //! exclusion around the sequence.
 
-use esp32p4_pac::{HP_SYS_CLKRST, LP_I2C_ANA_MST, LP_PERI, PMU, SYSTIMER};
+use esp32p4_pac::{HP_SYS_CLKRST, LP_I2C_ANA_MST, LP_PERI, PMU};
 use esp32p4_rt::register::mstatus;
 
 /// An analog block, i.e. one I2C slave on the analog bus.
@@ -524,7 +524,7 @@ pub fn sar_periph_enable() {
     // Recommended by the digital design: reset the bus, power it, release the
     // reset, waiting 1 µs in between.
     pmu.rf_pwc.clr_perif_i2c_rstb();
-    crate::delay::Delay::init(unsafe { SYSTIMER::steal() }).delay_us(1);
+    crate::delay::delay_us(1);
     pmu.rf_pwc.set_xpd_perif_i2c();
     pmu.rf_pwc.set_perif_i2c_rstb();
 }

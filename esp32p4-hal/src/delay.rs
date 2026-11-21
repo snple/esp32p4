@@ -3,6 +3,19 @@
 //! The counter and the tick rate live in [`crate::time`]; this module only adds
 //! comparator 0 on top of them, which lets the core park in `wfi` instead of
 //! spinning through a delay.
+//!
+//! # Two kinds of wait
+//!
+//! [`delay_us`] and [`delay_ms`] need no handle: they spin on the free-running
+//! counter, and the counter starts itself on first use. Drivers that have to
+//! pause for a few microseconds in the middle of a register sequence use these,
+//! because they cannot own `SYSTIMER` — the application may already hold it —
+//! and because parking the core inside such a sequence is not wanted anyway.
+//!
+//! [`Delay`] is the owned handle for lengths where parking the core pays off:
+//! its `sleep_*` methods arm comparator 0 and use `wfi`. That needs comparator 0
+//! routed to a CPU interrupt line, which happens on the first use of either
+//! [`Delay::init`] or [`sleep_ms`] and never again.
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -36,17 +49,72 @@ pub struct Delay {
     systimer: SYSTIMER,
 }
 
+/// Routes comparator 0 to its CPU interrupt line, once.
+///
+/// Idempotent: the line belongs to the program, not to one `Delay` instance, so
+/// whichever entry point runs first installs it and the rest are a single atomic
+/// swap. Doing it here rather than requiring a [`Delay`] to exist means a caller
+/// cannot forget it and then park the core with `wfi` on a comparator nothing
+/// will ever acknowledge.
+fn route_target0() {
+    time::start();
+
+    if INTERRUPT_ROUTED.swap(true, Ordering::AcqRel) {
+        return;
+    }
+
+    // SAFETY: the handler only clears the comparator and sets a flag, and it
+    // cannot fire before a comparator is armed.
+    let handler = unsafe {
+        interrupt::claim(
+            Interrupt::SYSTIMER_TARGET0,
+            interrupt::lines::SYSTIMER_TARGET0,
+            Level::LOW,
+            target0_isr,
+        )
+    };
+    handler.enable();
+    handler.leak();
+}
+
 /// Sleep for `ms` milliseconds, waking early on any interrupt.
 ///
 /// Driver-friendly wrapper around [`Delay::sleep_ms`] for code that does not
-/// own a [`Delay`] handle. [`Delay::init`] must have run at least once so the
-/// timer is counting and its interrupt is routed.
+/// own a [`Delay`] handle; the comparator is routed on first use.
 #[inline]
 pub fn sleep_ms(ms: u32) -> bool {
+    route_target0();
     Delay {
         systimer: unsafe { SYSTIMER::steal() },
     }
     .sleep_ms(ms)
+}
+
+/// Waits at least `us` microseconds, without owning the timer.
+///
+/// Spins on the shared counter, so it works before any [`Delay`] exists and
+/// takes no lock or peripheral handle. Use [`Delay::delay_us`] instead only when
+/// a handle is already at hand; both wait the same length.
+#[inline]
+pub fn delay_us(us: u32) {
+    spin_ticks(us as u64 * TICKS_PER_US);
+}
+
+/// Waits at least `ms` milliseconds, without owning the timer.
+///
+/// See [`delay_us`] for when to use this rather than a [`Delay`] handle.
+#[inline]
+pub fn delay_ms(ms: u32) {
+    spin_ticks(ms as u64 * 1000 * TICKS_PER_US);
+}
+
+/// Spins until `ticks` counter ticks have passed.
+#[inline]
+fn spin_ticks(ticks: u64) {
+    let start = time::read_ticks();
+    while time::read_ticks().wrapping_sub(start) < ticks {
+        core::hint::spin_loop();
+    }
 }
 
 /// Microseconds since boot, readable without owning the timer.
@@ -64,29 +132,7 @@ impl Delay {
     /// to its interrupt line.
     #[inline]
     pub fn init(systimer: SYSTIMER) -> Self {
-        time::start();
-
-        // Route target 0 to its CPU interrupt line so `sleep_us` can park the
-        // core instead of spinning. The line is unmasked but only fires once
-        // `sleep_us` arms a comparator, and interrupts stay globally off until
-        // the application enables them.
-        if !INTERRUPT_ROUTED.swap(true, Ordering::AcqRel) {
-            // SAFETY: the handler only clears the comparator and sets a flag,
-            // and it cannot fire before a comparator is armed.
-            let handler = unsafe {
-                interrupt::claim(
-                    Interrupt::SYSTIMER_TARGET0,
-                    interrupt::lines::SYSTIMER_TARGET0,
-                    Level::LOW,
-                    target0_isr,
-                )
-            };
-            handler.enable();
-            // The delay driver is created on every `micros()` call, so the line
-            // belongs to the program rather than to one instance.
-            handler.leak();
-        }
-
+        route_target0();
         Self { systimer }
     }
 

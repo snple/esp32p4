@@ -34,9 +34,8 @@
 //! The sensor's ETM tasks and events are not modelled; neither is the
 //! low-power-core side of the wake-up path.
 
-use esp32p4_pac::{LP_PERI, LP_TSENS, SYSTIMER};
+use esp32p4_pac::{LP_PERI, LP_TSENS};
 
-use crate::delay::Delay;
 use crate::regi2c;
 
 /// `I2C_SARADC_TSENS_DAC` in the analogue block: the low four bits of the
@@ -318,11 +317,7 @@ impl TemperatureSensor {
 /// Waits the sensor's settling time.
 ///
 /// The sensor has no timebase of its own that software could poll, so this uses
-/// the system timer. It is started on first use, which is also what
-/// [`crate::delay::Delay`] does.
+/// the system timer. It must not take the timer: the caller may own it already.
 fn delay_us(us: u32) {
-    // SAFETY: the delay driver only ever touches SYSTIMER's counter and
-    // comparator 0, and it tolerates being constructed repeatedly.
-    let delay = Delay::init(unsafe { SYSTIMER::steal() });
-    delay.delay_us(us);
+    crate::delay::delay_us(us);
 }

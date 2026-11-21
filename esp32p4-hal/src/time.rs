@@ -59,6 +59,13 @@ pub(crate) fn start() {
 /// `VALUE_VALID` says when the copy is done.
 #[inline]
 pub(crate) fn read_ticks() -> u64 {
+    // A stopped counter reads as 0 forever, which turns every deadline into an
+    // infinite wait. Checking here means no caller has to remember to start the
+    // timer first; the load is one cycle against the handshake below.
+    if !STARTED.load(Ordering::Relaxed) {
+        start();
+    }
+
     let systimer = unsafe { &*SYSTIMER::PTR };
 
     systimer.unit0_op.trigger_timer_unit0_update();

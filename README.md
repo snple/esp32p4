@@ -1600,7 +1600,18 @@ alias.unmap();
 | [`systimer`](esp32p4-hal/src/systimer.rs) | `SYSTIMER` COMP1 / COMP2 | 同上 | 绝对 deadline（一次性）与固定周期闹钟，带中断 |
 | [`timer`](esp32p4-hal/src/timer/mod.rs) | `TIMG0` / `TIMG1`，各 2 路 + 1 个 MWDT | 可配预分频，默认 1 µs | `TimerGroup0/1` → `Timer00/01/10/11` 通用计数器 + `Watchdog0/1` 看门狗 |
 
-`time` 只读计数器，永远自由运行；`Delay` 在它上面借 comparator 0 睡到指定 tick（`sleep_ms` 睡一段时间，`sleep_until(Instant)` 睡到某个时刻）。
+`time` 只读计数器，永远自由运行（计数器的启动也是按需的：第一次读 tick 时自己打开时钟门，
+所以 `Instant::now()` / `delay::micros()` 在任何驱动存在之前就可用）；`Delay` 在它上面借
+comparator 0 睡到指定 tick（`sleep_ms` 睡一段时间，`sleep_until(Instant)` 睡到某个时刻）。
+
+按用途分两种等待，别混用：
+
+- **`delay::delay_us` / `delay::delay_ms`**：不需要任何句柄，自旋等够时间。驱动内部的寄存器
+  时序（`regi2c` 上电、PSRAM PHY 稳定、温度传感器建立时间等）只能用它——那些驱动拿不到
+  `SYSTIMER` 的所有权（可能已经在应用手里），也不该在寄存器序列中间把核停下来；
+- **`Delay` 句柄**：适合较长的等待，`sleep_*` 用 `wfi` 把核停下来。它要占用 comparator 0
+  并把 target 0 接到 CPU 中断线，这件事在第一次 `Delay::init` 或 `sleep_ms` 时做一次，
+  之后不再重复。
 
 ```rust
 let start = Instant::now();

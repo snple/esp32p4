@@ -114,7 +114,7 @@ pub(crate) fn phy_ldo_init() {
     pmu.ext_ldo_p10p3a_ana.write_bits(0xa000_0000);
 
     // Let the outputs settle before the PHY is exercised.
-    crate::delay::Delay::init(unsafe { esp32p4_pac::SYSTIMER::steal() }).delay_us(50);
+    crate::delay::delay_us(50);
 }
 
 /// Enables the PSRAM bus/function clocks and selects the MPLL as source.
@@ -388,7 +388,7 @@ pub(crate) fn rev3_workaround() {
         let _ = core::ptr::read_volatile((crate::mmu::UNCACHED_BASE) as *const u32);
         let _ = core::ptr::read_volatile((crate::mmu::UNCACHED_BASE + 0x80) as *const u32);
     }
-    crate::delay::Delay::init(unsafe { esp32p4_pac::SYSTIMER::steal() }).delay_us(1);
+    crate::delay::delay_us(1);
 
     reset_module();
 
