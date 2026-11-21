@@ -43,7 +43,7 @@ fn main() -> ! {
     let dp = Peripherals::take().unwrap();
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
-    let delay = Delay::init(dp.SYSTIMER);
+    let delay = Delay::init();
 
     let ledc = Ledc::init(dp.LEDC, &dp.HP_SYS_CLKRST);
     ledc.set_clock_source(&dp.HP_SYS_CLKRST, ClockSource::Xtal40m);

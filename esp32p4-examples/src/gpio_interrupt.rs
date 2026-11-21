@@ -70,7 +70,7 @@ fn main() -> ! {
     // SAFETY: the GPIO line is claimed and its handler is installed.
     unsafe { interrupt::enable() };
 
-    let delay = Delay::init(dp.SYSTIMER);
+    let delay = Delay::init();
     loop {
         if PRESSED.swap(false, Ordering::Relaxed) {
             led.toggle();

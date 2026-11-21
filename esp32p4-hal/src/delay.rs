@@ -1,120 +1,186 @@
-//! Blocking delays using the system timer.
+//! Blocking delays: spin on the shared counter, or park the core on its own.
 //!
-//! The counter and the tick rate live in [`crate::time`]; this module only adds
-//! comparator 0 on top of them, which lets the core park in `wfi` instead of
-//! spinning through a delay.
+//! # Two mechanisms, because `SYSTIMER` is one peripheral for the whole chip
 //!
-//! # Two kinds of wait
+//! `SYSTIMER` has a single counter, three comparators, and both HP cores reach
+//! the same registers. Spinning on the counter is harmless — a read only triggers
+//! the snapshot handshake — so [`delay_us`] and [`delay_ms`] are free functions
+//! that need no handle and work on any core.
 //!
-//! [`delay_us`] and [`delay_ms`] need no handle: they spin on the free-running
-//! counter, and the counter starts itself on first use. Drivers that have to
-//! pause for a few microseconds in the middle of a register sequence use these,
-//! because they cannot own `SYSTIMER` — the application may already hold it —
-//! and because parking the core inside such a sequence is not wanted anyway.
+//! Parking the core is different. It needs a comparator to wake it up, and a
+//! comparator is a single hardware object: the core that armed it is the one that
+//! has to acknowledge it. Handing the same comparator to both cores means one
+//! core's wakeup disarms the other's — the second core then sits in `wfi` until
+//! some unrelated interrupt arrives, which is exactly the failure mode a shared
+//! timer invites. The CLINT machine timer gives each core a comparator of its
+//! own, so [`Delay::sleep_ticks`] uses that and two cores can sleep at once.
 //!
-//! [`Delay`] is the owned handle for lengths where parking the core pays off:
-//! its `sleep_*` methods arm comparator 0 and use `wfi`. That needs comparator 0
-//! routed to a CPU interrupt line, which happens on the first use of either
-//! [`Delay::init`] or [`sleep_ms`] and never again.
+//! [`crate::systimer::Systimer`] consequently owns all three `SYSTIMER`
+//! comparators, and nothing here touches them.
+//!
+//! # Tick rates
+//!
+//! Spinning measures `SYSTIMER` ticks: 16 MHz straight from the crystal, so the
+//! rate never moves. Sleeping measures machine timer ticks, which are CPU cycles
+//! and therefore follow the CPU frequency. The conversion is calibrated against
+//! `SYSTIMER` — an independent reference, so no frequency is written into the
+//! code — and re-calibrated whenever [`crate::clock::generation`] reports that the
+//! clock tree moved.
+//!
+//! # One machine timer interrupt per core
+//!
+//! Sleeping claims this core's machine timer interrupt (CLIC id 7) the first time
+//! it parks. A program that wants that interrupt for its own tick should use
+//! [`crate::machine_timer::MachineTimer`] instead of sleeping: the second claimant
+//! panics rather than silently taking over.
 
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-use esp32p4_pac::SYSTIMER;
+use crate::clock;
+use crate::interrupt::{self, Level};
+use crate::machine_timer::MachineTimer;
+use crate::multicore::CoreId;
+use crate::time::{self, Instant, TICKS_PER_US};
 
-use crate::interrupt::{self, Interrupt, Level};
-use crate::time::{self, TICKS_PER_US};
+/// Set by this core's wakeup handler, consumed by [`Delay::sleep_ticks`].
+static FIRED: [AtomicBool; CoreId::COUNT] = [const { AtomicBool::new(false) }; CoreId::COUNT];
 
-/// Set by the target-0 interrupt handler, consumed by [`Delay::sleep_us`].
-static TIMER_FIRED: AtomicBool = AtomicBool::new(false);
+/// Whether the wakeup handler is installed on this core.
+static INSTALLED: [AtomicBool; CoreId::COUNT] = [const { AtomicBool::new(false) }; CoreId::COUNT];
 
-/// Whether the target-0 interrupt has been routed.
+/// Machine timer ticks per microsecond, and the clock generation it holds for.
 ///
-/// Every [`Delay`] instance shares comparator 0, so the routing must not run
-/// more than once.
-static INTERRUPT_ROUTED: AtomicBool = AtomicBool::new(false);
+/// Zero means "not calibrated yet"; [`crate::clock::generation`] starts at one, so
+/// the two can never be confused.
+static MTIME_TICKS_PER_US: AtomicU32 = AtomicU32::new(0);
+static MTIME_GENERATION: AtomicU32 = AtomicU32::new(0);
 
-/// Target-0 interrupt handler.
+/// Length of the calibration window, in `SYSTIMER` ticks.
 ///
-/// The comparator is single-shot: acknowledge it here, and let the caller's
-/// `wfi` loop notice the flag. `SYSTIMER` is reached by pointer because an
-/// interrupt handler cannot borrow the driver.
-fn target0_isr() {
-    let systimer = unsafe { &*SYSTIMER::PTR };
-    systimer.int_clr.trigger_target0_int_clr();
-    TIMER_FIRED.store(true, Ordering::Release);
+/// Two hundred microseconds: even at the slowest CPU frequency this chip runs at,
+/// the window spans thousands of machine timer ticks, so dividing the two
+/// measurements gives the rate to well under 0.1 %.
+const CALIBRATION_TICKS: u64 = 200 * TICKS_PER_US;
+
+/// How many times the calibration retries until two runs agree.
+const CALIBRATION_TRIES: u32 = 3;
+
+/// This core's wakeup handler.
+///
+/// The machine timer interrupt is level-triggered on `counter >= comparator`, so
+/// acknowledging it means moving the comparator out of the way — which is also
+/// what makes an early wake-up leave no pending request behind.
+fn wakeup_isr() {
+    // SAFETY: `Delay` only arms this core's comparator, and the handler cannot
+    // fire before it has.
+    let timer = unsafe { MachineTimer::steal() };
+    timer.set_target(u64::MAX);
+    FIRED[CoreId::current().as_index()].store(true, Ordering::Release);
 }
 
-/// Blocking delay driver backed by `SYSTIMER` unit 0.
-pub struct Delay {
-    systimer: SYSTIMER,
-}
-
-/// Routes comparator 0 to its CPU interrupt line, once.
-///
-/// Idempotent: the line belongs to the program, not to one `Delay` instance, so
-/// whichever entry point runs first installs it and the rest are a single atomic
-/// swap. Doing it here rather than requiring a [`Delay`] to exist means a caller
-/// cannot forget it and then park the core with `wfi` on a comparator nothing
-/// will ever acknowledge.
-fn route_target0() {
-    time::start();
-
-    if INTERRUPT_ROUTED.swap(true, Ordering::AcqRel) {
+/// Installs the wakeup handler on this core, once.
+fn install_wakeup(core: usize) {
+    if INSTALLED[core].swap(true, Ordering::AcqRel) {
         return;
     }
-
-    // SAFETY: the handler only clears the comparator and sets a flag, and it
-    // cannot fire before a comparator is armed.
-    let handler = unsafe {
-        interrupt::claim(
-            Interrupt::SYSTIMER_TARGET0,
-            interrupt::lines::SYSTIMER_TARGET0,
-            Level::LOW,
-            target0_isr,
-        )
-    };
-    handler.enable();
-    handler.leak();
+    // Panics if something else already owns this core's machine timer interrupt,
+    // which beats two drivers quietly overwriting each other's handler.
+    // SAFETY: nothing else in this module touches the comparator.
+    unsafe { MachineTimer::steal() }.enable_interrupt(Level::LOW, wakeup_isr);
 }
 
-/// Sleep for `ms` milliseconds, waking early on any interrupt.
+/// Machine timer ticks per microsecond, measured against `SYSTIMER`.
 ///
-/// Driver-friendly wrapper around [`Delay::sleep_ms`] for code that does not
-/// own a [`Delay`] handle; the comparator is routed on first use.
-#[inline]
-pub fn sleep_ms(ms: u32) -> bool {
-    route_target0();
-    Delay {
-        systimer: unsafe { SYSTIMER::steal() },
+/// Re-measures when the clock tree has moved since the cached value was taken, so
+/// a program that changes the CPU frequency keeps getting correct sleeps.
+fn mtime_ticks_per_us() -> u64 {
+    let generation = clock::generation();
+    if MTIME_GENERATION.load(Ordering::Acquire) == generation {
+        let cached = MTIME_TICKS_PER_US.load(Ordering::Relaxed);
+        if cached != 0 {
+            return u64::from(cached);
+        }
     }
-    .sleep_ms(ms)
+    calibrate(generation)
 }
 
-/// Waits at least `us` microseconds, without owning the timer.
+/// Measures the machine timer against `SYSTIMER`.
 ///
-/// Spins on the shared counter, so it works before any [`Delay`] exists and
-/// takes no lock or peripheral handle. Use [`Delay::delay_us`] instead only when
-/// a handle is already at hand; both wait the same length.
+/// Both counters are sampled as a pair, machine timer first, at each end of the
+/// window. That order matters: the two `SYSTIMER` reads then happen at the same
+/// offset from their machine timer reads, so the read cost cancels and only the
+/// *difference* in read cost between the two ends shows up in the ratio. Sampling
+/// one before and one after the window instead biased the first measurement
+/// enough to make the first sleep 20 % short (measured).
+///
+/// Two runs have to agree before the value is kept, which catches the slow first
+/// access to the machine timer registers.
+#[cold]
+fn calibrate(generation: u32) -> u64 {
+    // SAFETY: reading the counter needs no ownership, and this core's comparator
+    // is only read.
+    let timer = unsafe { MachineTimer::steal() };
+
+    let mut ticks = 0u64;
+    let mut previous = 0u64;
+    for _ in 0..CALIBRATION_TRIES {
+        let mtime_start = timer.now();
+        let systimer_start = time::read_ticks();
+        while time::read_ticks().wrapping_sub(systimer_start) < CALIBRATION_TICKS {
+            core::hint::spin_loop();
+        }
+        let mtime_delta = timer.now().wrapping_sub(mtime_start);
+        let systimer_delta = time::read_ticks().wrapping_sub(systimer_start);
+
+        // `SYSTIMER` counts 16 ticks per microsecond, so the ratio of the two
+        // deltas is microseconds × 16 and the division lands on ticks per
+        // microsecond.
+        ticks = (mtime_delta * TICKS_PER_US / systimer_delta).max(1);
+        if previous != 0 && ticks.abs_diff(previous) * 1_000 <= previous {
+            break;
+        }
+        previous = ticks;
+    }
+
+    MTIME_TICKS_PER_US.store(ticks as u32, Ordering::Release);
+    MTIME_GENERATION.store(generation, Ordering::Release);
+    ticks
+}
+
+/// Waits at least `us` microseconds, without owning anything.
+///
+/// Spins on the shared counter, so it works before any [`Delay`] exists and on
+/// either core. Use it — not [`Delay::sleep_us`] — inside a register sequence:
+/// parking the core there would cost more than the wait.
 #[inline]
 pub fn delay_us(us: u32) {
-    spin_ticks(us as u64 * TICKS_PER_US);
+    spin_ticks(u64::from(us) * TICKS_PER_US);
 }
 
-/// Waits at least `ms` milliseconds, without owning the timer.
+/// Waits at least `ms` milliseconds, without owning anything.
 ///
-/// See [`delay_us`] for when to use this rather than a [`Delay`] handle.
+/// See [`delay_us`] for when to use this rather than sleeping.
 #[inline]
 pub fn delay_ms(ms: u32) {
-    spin_ticks(ms as u64 * 1000 * TICKS_PER_US);
+    spin_ticks(u64::from(ms) * 1_000 * TICKS_PER_US);
 }
 
-/// Spins until `ticks` counter ticks have passed.
+/// Spins until `ticks` `SYSTIMER` ticks have passed.
 #[inline]
 fn spin_ticks(ticks: u64) {
     let start = time::read_ticks();
     while time::read_ticks().wrapping_sub(start) < ticks {
         core::hint::spin_loop();
     }
+}
+
+/// Sleep for `ms` milliseconds on this core, waking early on any interrupt.
+///
+/// Driver-friendly wrapper around [`Delay::sleep_ms`] for code that has no handle
+/// at hand. Not reentrant: it arms the same per-core comparator a [`Delay`] would.
+#[inline]
+pub fn sleep_ms(ms: u32) -> bool {
+    Delay::init().sleep_ms(ms)
 }
 
 /// Microseconds since boot, readable without owning the timer.
@@ -125,18 +191,24 @@ pub fn micros() -> u64 {
     time::Instant::now().as_ticks() / TICKS_PER_US
 }
 
+/// Blocking delays for the core that creates it.
+///
+/// Owns no peripheral: spinning reads the shared counter, and sleeping uses this
+/// core's machine timer. That is what lets each core hold its own.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Delay;
+
 impl Delay {
-    /// Create a delay driver.
+    /// Creates a handle for the calling core.
     ///
-    /// Starts the counter if that has not happened yet and routes comparator 0
-    /// to its interrupt line.
+    /// Nothing is claimed here; the machine timer interrupt is taken on the first
+    /// sleep.
     #[inline]
-    pub fn init(systimer: SYSTIMER) -> Self {
-        route_target0();
-        Self { systimer }
+    pub const fn init() -> Self {
+        Self
     }
 
-    /// Read the current 52-bit counter value.
+    /// Read the current `SYSTIMER` counter value.
     #[inline]
     fn ticks(&self) -> u64 {
         time::read_ticks()
@@ -148,48 +220,71 @@ impl Delay {
         self.ticks() / TICKS_PER_US
     }
 
-    /// Wait for at least `us` microseconds.
+    /// Wait for at least `us` microseconds, spinning.
     #[inline]
     pub fn delay_us(&self, us: u32) {
-        let start = self.ticks();
-        let target = us as u64 * TICKS_PER_US;
-        while self.ticks().wrapping_sub(start) < target {
-            core::hint::spin_loop();
-        }
+        delay_us(us);
     }
 
-    /// Wait for at least `ms` milliseconds.
+    /// Wait for at least `ms` milliseconds, spinning.
     #[inline]
     pub fn delay_ms(&self, ms: u32) {
-        let start = self.ticks();
-        let target = ms as u64 * 1000 * TICKS_PER_US;
-        while self.ticks().wrapping_sub(start) < target {
-            core::hint::spin_loop();
-        }
+        delay_ms(ms);
     }
 
     /// Sleep for `us` microseconds, waking early on any interrupt.
     ///
-    /// See [`Delay::sleep_ticks`] for the details.
-    #[inline]
+    /// The deadline is kept in `SYSTIMER` ticks, which are the crystal's 16 MHz and
+    /// do not move, and the machine timer only arms the wakeup. A conversion that
+    /// came out short — a calibration taken while the CPU frequency was still
+    /// settling, say — therefore costs one more short sleep instead of a sleep that
+    /// ends early: no sleep returns before its deadline.
     pub fn sleep_us(&self, us: u32) -> bool {
-        self.sleep_ticks(us as u64 * TICKS_PER_US)
+        if us == 0 {
+            return true;
+        }
+        let deadline = self.ticks() + u64::from(us) * TICKS_PER_US;
+        self.sleep_until_ticks(deadline)
     }
 
     /// Sleep for `ms` milliseconds, waking early on any interrupt.
-    ///
-    /// See [`Delay::sleep_ticks`] for the details.
-    #[inline]
     pub fn sleep_ms(&self, ms: u32) -> bool {
-        self.sleep_ticks(ms as u64 * 1000 * TICKS_PER_US)
+        if ms == 0 {
+            return true;
+        }
+        let deadline = self.ticks() + u64::from(ms) * 1_000 * TICKS_PER_US;
+        self.sleep_until_ticks(deadline)
     }
 
-    /// Sleep for `ticks` counter ticks, waking early on any interrupt.
+    /// Sleeps until a `SYSTIMER` deadline, re-arming if a wakeup came early.
+    fn sleep_until_ticks(&self, deadline: u64) -> bool {
+        // Every re-arm shortens the estimate, so a handful of rounds covers even a
+        // wildly wrong one; after that the remainder is short enough to spin.
+        for _ in 0..4 {
+            let now = self.ticks();
+            let Some(remaining) = deadline.checked_sub(now) else {
+                return true;
+            };
+            let ticks = remaining.div_ceil(TICKS_PER_US) * mtime_ticks_per_us();
+            if !self.sleep_ticks(ticks) {
+                return false;
+            }
+        }
+        let now = self.ticks();
+        if now >= deadline {
+            return true;
+        }
+        spin_ticks(deadline - now);
+        true
+    }
+
+    /// Sleep for `ticks` machine timer ticks, waking early on any interrupt.
     ///
-    /// Arms the target-0 comparator and parks the core with `wfi`, so the CPU
-    /// stops instead of spinning. Returns `true` if the full period elapsed,
-    /// `false` if an interrupt woke the core first — the caller is expected to
-    /// run its handler and call again, which is what a poll loop does.
+    /// Arms this core's own comparator and parks the core with `wfi`, so the CPU
+    /// stops instead of spinning — and because the comparator is per core, another
+    /// core sleeping at the same time is not disturbed. Returns `true` if the full
+    /// period elapsed, `false` if an interrupt woke the core first, which is what
+    /// the caller of a poll loop expects.
     ///
     /// Global interrupts must be enabled for the timer to wake the core; with
     /// `mstatus.MIE` clear this falls back to spinning.
@@ -198,48 +293,33 @@ impl Delay {
             return true;
         }
 
-        let deadline = self.ticks().wrapping_add(ticks);
+        let core = CoreId::current().as_index();
+        install_wakeup(core);
 
-        self.systimer
-            .target0_lo
-            .write_timer_target0_lo(deadline as u32);
-        self.systimer
-            .target0_hi
-            .write_timer_target0_hi((deadline >> 32) as u32);
-        // Unit 0 counts, and the comparator is single-shot (`PERIOD = 0`).
-        // `TARGET0_WORK_EN` resets to zero, so the comparator does nothing
-        // until it is set here — without it the `wfi` below would only wake on
-        // some other interrupt.
-        self.systimer.target0_conf.clr_target0_timer_unit_sel();
-        self.systimer.target0_conf.clr_target0_period_mode();
-        self.systimer.conf.set_target0_work_en();
-        self.systimer.comp0_load.trigger_timer_comp0_load();
-        // A previous sleep that ended on the counter check (rather than on the
-        // comparator interrupt) leaves the request latched. Enabling the source
-        // would then fire it immediately and end this sleep at once — the
-        // measured effect was every other 20 ms sleep returning in 0 us.
-        self.systimer.int_clr.trigger_target0_int_clr();
-        TIMER_FIRED.store(false, Ordering::Release);
-        self.systimer.int_ena.set_target0_int_ena();
+        // SAFETY: the comparator belongs to this core and only this code arms it.
+        let timer = unsafe { MachineTimer::steal() };
+        let deadline = timer.now().wrapping_add(ticks);
+
+        FIRED[core].store(false, Ordering::Release);
+        timer.set_target(deadline);
 
         let mut elapsed = true;
         // Any interrupt ends the sleep: the handler may have produced work the
-        // caller has to service (a received frame, a completed transmission),
-        // and the caller re-arms the comparator when it comes back.
-        let epoch = interrupt::epoch();
+        // caller has to service, and the caller re-arms when it comes back.
+        let epoch = interrupt::local_epoch();
         loop {
-            if TIMER_FIRED.swap(false, Ordering::AcqRel) {
+            if FIRED[core].swap(false, Ordering::AcqRel) {
                 // Woken by the comparator; check the clock in case another
                 // interrupt fired first.
-                elapsed = self.ticks() >= deadline;
+                elapsed = timer.now() >= deadline;
                 break;
             }
 
-            if self.ticks() >= deadline {
+            if timer.now() >= deadline {
                 break;
             }
 
-            if interrupt::epoch() != epoch {
+            if interrupt::local_epoch() != epoch {
                 elapsed = false;
                 break;
             }
@@ -251,27 +331,17 @@ impl Delay {
             }
         }
 
-        self.systimer.int_ena.clr_target0_int_ena();
-        self.systimer.conf.clr_target0_work_en();
+        // Acknowledge, and disarm when the loop left early.
+        timer.set_target(u64::MAX);
         elapsed
     }
 
     /// Sleep until `deadline`, waking early on any interrupt.
     ///
     /// Same contract as [`Delay::sleep_ticks`]: `true` if the deadline was
-    /// reached, `false` if an interrupt woke the core first. A deadline that
-    /// has already passed returns immediately.
-    pub fn sleep_until(&self, deadline: crate::time::Instant) -> bool {
-        let now = self.ticks();
-        match deadline.as_ticks().checked_sub(now) {
-            Some(ticks) => self.sleep_ticks(ticks),
-            None => true,
-        }
-    }
-
-    /// Release the underlying `SYSTIMER` peripheral.
-    #[inline]
-    pub fn release(self) -> SYSTIMER {
-        self.systimer
+    /// reached, `false` if an interrupt woke the core first. A deadline that has
+    /// already passed returns immediately.
+    pub fn sleep_until(&self, deadline: Instant) -> bool {
+        self.sleep_until_ticks(deadline.as_ticks())
     }
 }

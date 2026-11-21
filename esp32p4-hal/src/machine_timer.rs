@@ -64,7 +64,10 @@
 //! unsafe { esp32p4_hal::interrupt::enable() };
 //! ```
 
+use core::sync::atomic::{AtomicBool, Ordering};
+
 use crate::interrupt::{self, Level};
+use crate::multicore::CoreId;
 
 /// Base of the CLINT window.
 ///
@@ -95,6 +98,13 @@ const MTIMECTL_EN: u32 = 1 << 0;
 const MTIMECTL_OVF: u32 = 1 << 3;
 /// `mtimectl.MTIME_SAM`, sampling the other half when either half is read.
 const MTIMECTL_SAM_BOTH: u32 = 0b11 << 4;
+
+/// Whether this core's machine timer interrupt has a handler.
+///
+/// There is one machine timer interrupt per core (CLIC id 7), so two drivers
+/// cannot both have it: the second claim panics instead of silently replacing the
+/// first handler.
+static CLAIMED: [AtomicBool; CoreId::COUNT] = [const { AtomicBool::new(false) }; CoreId::COUNT];
 
 /// Counter ticks per microsecond, at `cpu_hz`.
 ///
@@ -239,7 +249,18 @@ impl MachineTimer {
     /// The interrupt fires while the counter is at or past the comparator, so the
     /// handler has to move the comparator forward (or mask the interrupt) to
     /// acknowledge it.
+    ///
+    /// # Panics
+    ///
+    /// Panics when this core's machine timer interrupt already has a handler:
+    /// [`crate::delay::Delay::sleep_ticks`] takes it the first time it parks the
+    /// core, and a program that wants its own periodic tick has to pick one or the
+    /// other.
     pub fn enable_interrupt(&self, level: Level, handler: fn()) {
+        assert!(
+            !CLAIMED[CoreId::current().as_index()].swap(true, Ordering::AcqRel),
+            "this core's machine timer interrupt is already in use"
+        );
         interrupt::set_machine_timer_handler(handler);
         interrupt::set_machine_timer_level(level.number());
         interrupt::unmask_machine_timer();
@@ -257,6 +278,7 @@ impl MachineTimer {
     pub fn release_interrupt(&self) {
         interrupt::mask_machine_timer();
         interrupt::clear_machine_timer_handler();
+        CLAIMED[CoreId::current().as_index()].store(false, Ordering::Release);
     }
 
     /// Whether this core's machine timer interrupt is unmasked.

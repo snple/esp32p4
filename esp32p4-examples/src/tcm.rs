@@ -99,7 +99,7 @@ fn main() -> ! {
     tcm::init_parity();
     defmt::info!("scratchpad parity check on: {}", tcm::parity_enabled());
 
-    let delay = Delay::init(dp.SYSTIMER);
+    let delay = Delay::init();
     let mut round = 0u32;
     loop {
         defmt::info!(

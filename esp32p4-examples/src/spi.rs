@@ -74,7 +74,7 @@ fn slave_pattern(len: usize) -> [u8; 64] {
 fn main() -> ! {
     let dp = Peripherals::take().unwrap();
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
-    let delay = Delay::init(dp.SYSTIMER);
+    let delay = Delay::init();
     let pins = esp32p4_hal::gpio::Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
 
     let master = Spi2::init(

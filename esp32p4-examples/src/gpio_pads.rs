@@ -111,7 +111,7 @@ fn main() -> ! {
     led.into_output();
     defmt::info!("LED pad function: {}", led.mux_function().map(|f| f.name()));
 
-    let delay = esp32p4_hal::delay::Delay::init(dp.SYSTIMER);
+    let delay = esp32p4_hal::delay::Delay::init();
     loop {
         led.toggle();
         delay.delay_ms(500);

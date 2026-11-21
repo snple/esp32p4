@@ -55,7 +55,7 @@ const SD_DAT3: u32 = 42;
 fn main() -> ! {
     let dp = Peripherals::take().unwrap();
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
-    let delay = Delay::init(dp.SYSTIMER);
+    let delay = Delay::init();
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
 
     // Power the card first: the on-chip LDO in `SdHost::init` supplies the

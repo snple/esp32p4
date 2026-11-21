@@ -32,7 +32,7 @@ fn main() -> ! {
 
     defmt::info!("hello from ESP32-P4");
 
-    let delay = Delay::init(dp.SYSTIMER);
+    let delay = Delay::init();
     let mut ticks = 0u32;
     loop {
         defmt::debug!("tick {}", ticks);

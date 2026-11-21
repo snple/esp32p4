@@ -36,7 +36,7 @@ fn main() -> ! {
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
     let mut led = pins.pin::<LED_PIN>();
     led.into_output();
-    let delay = Delay::init(dp.SYSTIMER);
+    let delay = Delay::init();
 
     let group = TimerGroup0::init(dp.TIMG0, &dp.HP_SYS_CLKRST);
 

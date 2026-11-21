@@ -1,9 +1,21 @@
 //! Alarms on the system timer's comparators.
 //!
 //! `SYSTIMER` unit 0 is the monotonic clock behind [`crate::time::Instant`]: it
-//! is 52 bits wide, ticks at a fixed 16 MHz and never stops. [`Systimer`] owns
-//! the peripheral and hands out its comparators: [`Alarm1`] sits on COMP1,
-//! [`Alarm2`] on COMP2, and [`Delay`] uses COMP0.
+//! is 52 bits wide, ticks at a fixed 16 MHz and never stops. [`Systimer`] owns the
+//! peripheral and hands out its comparators — [`Alarm0`] on COMP0, [`Alarm1`] on
+//! COMP1, [`Alarm2`] on COMP2 — all three of them.
+//!
+//! # One `SYSTIMER`, one owner
+//!
+//! The peripheral is chip-wide: one counter, three comparators, the same registers
+//! from either core. This type is the only place that programs them, so a program
+//! that wants an alarm owns the `Systimer` and takes the alarm it needs. Sleeping
+//! does *not* come through here — [`crate::delay::Delay`] parks the core on the
+//! per-core CLINT machine timer instead, precisely so that the two cores do not
+//! have to share a comparator. Sharing one `Systimer` between the cores is left to
+//! the caller (a lock), because the alarms are stateful hardware.
+//!
+//! All three comparators are usable now: COMP0 used to belong to the delay driver.
 //!
 //! An alarm has two modes:
 //!
@@ -18,6 +30,7 @@
 //!
 //! | Type | Hardware | Matrix source |
 //! |------|----------|---------------|
+//! | [`Alarm0`] | COMP0 | `Interrupt::SYSTIMER_TARGET0` |
 //! | [`Alarm1`] | COMP1 | `Interrupt::SYSTIMER_TARGET1` |
 //! | [`Alarm2`] | COMP2 | `Interrupt::SYSTIMER_TARGET2` |
 //!
@@ -56,7 +69,6 @@ use esp32p4_pac::SYSTIMER;
 use pastey::paste;
 
 use crate::Steal;
-use crate::delay::Delay;
 use crate::interrupt::{self, CpuInterrupt, Interrupt, InterruptHandler, Level};
 use crate::time::{self, Duration, Instant};
 
@@ -273,7 +285,12 @@ macro_rules! impl_alarm {
 }
 
 impl_alarm! {
-    /// The first spare comparator, `SYSTIMER` COMP1.
+    /// The first comparator, `SYSTIMER` COMP0.
+    Alarm0, 0, SYSTIMER_TARGET0, alarm0, 2
+}
+
+impl_alarm! {
+    /// The second comparator, `SYSTIMER` COMP1.
     Alarm1, 1, SYSTIMER_TARGET1, alarm1, 0
 }
 
@@ -288,16 +305,18 @@ impl_alarm! {
 
 /// `SYSTIMER`: the free-running counter and the comparators built on it.
 ///
-/// The type owns the peripheral and the CPU lines its alarms use. Comparator 0
-/// belongs to [`Delay`], which gets its own handle to the same registers from
-/// [`delay`](Self::delay).
+/// The type owns the peripheral and the CPU lines its alarms use.
 pub struct Systimer {
     /// `None` once [`release`](Self::release) took the peripheral back.
     systimer: Option<SYSTIMER>,
+    /// Comparator 0, the source of `SYSTIMER_TARGET0`.
+    pub alarm0: Alarm0,
     /// Comparator 1, the source of `SYSTIMER_TARGET1`.
     pub alarm1: Alarm1,
     /// Comparator 2, the source of `SYSTIMER_TARGET2`.
     pub alarm2: Alarm2,
+    /// The CPU line comparator 0 has claimed, if any.
+    irq0: RefCell<Option<InterruptHandler>>,
     /// The CPU line the first alarm has claimed, if any.
     irq1: RefCell<Option<InterruptHandler>>,
     /// The CPU line the second alarm has claimed, if any.
@@ -308,17 +327,20 @@ impl Systimer {
     /// Take the system timer and its alarms.
     ///
     /// Starts the counter if nothing else has, so the alarms have a clock to
-    /// compare against, and leaves both comparators stopped and disarmed.
+    /// compare against, and leaves every comparator stopped and disarmed.
     pub fn init(systimer: SYSTIMER) -> Self {
         time::start();
 
         let this = Self {
             systimer: Some(systimer),
+            alarm0: Alarm0::new(),
             alarm1: Alarm1::new(),
             alarm2: Alarm2::new(),
+            irq0: RefCell::new(None),
             irq1: RefCell::new(None),
             irq2: RefCell::new(None),
         };
+        this.alarm0.disarm();
         this.alarm1.disarm();
         this.alarm2.disarm();
         this
@@ -328,20 +350,10 @@ impl Systimer {
     ///
     /// The CPU lines are released first, exactly as on drop.
     pub fn release(mut self) -> SYSTIMER {
+        self.disable_alarm0_interrupt();
         self.disable_alarm1_interrupt();
         self.disable_alarm2_interrupt();
         self.systimer.take().expect("the timer releases once")
-    }
-
-    /// A blocking delay driver on comparator 0.
-    ///
-    /// Comparator 0 is shared by every [`Delay`], so it is a driver of its own
-    /// rather than a part of this type; it reaches the same counter through its
-    /// own handle.
-    pub fn delay(&self) -> Delay {
-        // SAFETY: this type owns the peripheral; the delay only touches
-        // comparator 0 and the counter.
-        Delay::init(unsafe { SYSTIMER::steal() })
     }
 
     /// Route `alarm1` to `line` and call `handler` in interrupt context.
@@ -351,6 +363,20 @@ impl Systimer {
     /// [`Alarm1::set_target`], [`Alarm1::set_target_ticks`] or
     /// [`Alarm1::set_period`], and global interrupts have to be enabled with
     /// [`interrupt::enable`].
+    pub fn enable_alarm0_interrupt(&self, line: CpuInterrupt, handler: fn()) {
+        self.claim(
+            &self.irq0,
+            Alarm0::INDEX,
+            Alarm0::SOURCE,
+            Alarm0::SHIM,
+            line,
+            handler,
+        );
+        self.alarm0.clear();
+        self.alarm0.unmask_interrupt();
+    }
+
+    /// Route `alarm1` to `line` and call `handler` in interrupt context.
     pub fn enable_alarm1_interrupt(&self, line: CpuInterrupt, handler: fn()) {
         self.claim(
             &self.irq1,
@@ -362,6 +388,17 @@ impl Systimer {
         );
         self.alarm1.clear();
         self.alarm1.unmask_interrupt();
+    }
+
+    /// Mask `alarm0`'s interrupt and give its CPU line back.
+    pub fn disable_alarm0_interrupt(&self) {
+        self.alarm0.mask_interrupt();
+        self.release_line(&self.irq0, Alarm0::INDEX);
+    }
+
+    /// Whether `alarm0`'s interrupt is unmasked.
+    pub fn alarm0_interrupt_enabled(&self) -> bool {
+        self.alarm0.interrupt_enabled()
     }
 
     /// Mask `alarm1`'s interrupt and give its CPU line back.
@@ -439,6 +476,7 @@ impl Systimer {
 
 impl Drop for Systimer {
     fn drop(&mut self) {
+        self.disable_alarm0_interrupt();
         self.disable_alarm1_interrupt();
         self.disable_alarm2_interrupt();
     }

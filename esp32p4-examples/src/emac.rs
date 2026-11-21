@@ -50,7 +50,7 @@ fn main() -> ! {
     // The USB Serial/JTAG logger silently drops everything until its clock
     // gate is open, so the port is opened before the first log statement.
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
-    let delay = Delay::init(dp.SYSTIMER);
+    let delay = Delay::init();
 
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
 

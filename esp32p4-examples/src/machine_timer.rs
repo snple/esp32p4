@@ -74,7 +74,7 @@ fn on_tick() {
 fn main() -> ! {
     let dp = Peripherals::take().unwrap();
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
-    let delay = Delay::init(dp.SYSTIMER);
+    let delay = Delay::init();
     let clock = ClockTree::init(dp.HP_SYS_CLKRST, dp.LP_AON_CLKRST);
 
     let timer = MachineTimer::init();

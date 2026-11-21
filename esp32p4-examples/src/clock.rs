@@ -58,7 +58,7 @@ fn main() -> ! {
         );
     }
 
-    let delay = Delay::init(dp.SYSTIMER);
+    let delay = Delay::init();
     loop {
         delay.delay_ms(1000);
         defmt::debug!("cpu {} MHz", clocks.cpu_hz() / 1_000_000);

@@ -25,7 +25,7 @@ use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
 fn main() -> ! {
     let dp = Peripherals::take().unwrap();
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
-    let delay = Delay::init(dp.SYSTIMER);
+    let delay = Delay::init();
 
     let mut sensor = TemperatureSensor::init(dp.LP_TSENS, &dp.LP_PERI);
 

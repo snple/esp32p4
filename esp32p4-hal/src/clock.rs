@@ -82,6 +82,25 @@ pub const APB_MAX_HZ: u32 = 100_000_000;
 /// once they are in effect.
 const SOC_CLK_DIV_UPDATE_BIT: u32 = 1 << 4;
 
+/// Bumped whenever the clock tree changes, so derived rates can be re-derived.
+static GENERATION: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(1);
+
+/// A counter that changes whenever any of the setters below moves the clock tree.
+///
+/// The CLINT machine timer counts CPU cycles, so anything that converts between
+/// it and wall-clock time — [`crate::delay`] parking the core, for instance — has
+/// to notice that the CPU frequency moved. Reading this before and after caching a
+/// conversion is enough to tell.
+#[inline]
+pub fn generation() -> u32 {
+    GENERATION.load(core::sync::atomic::Ordering::Acquire)
+}
+
+/// Marks the clock tree as changed.
+fn bump_generation() {
+    GENERATION.fetch_add(1, core::sync::atomic::Ordering::Release);
+}
+
 /// The frequencies of the clock sources, as the board runs them.
 ///
 /// The analog PLL configuration is not readable in a revision-independent way,
@@ -675,6 +694,7 @@ impl ClockTree {
         self.lp
             .lp_aonclkrst_hp_clk_ctrl
             .write_lp_aonclkrst_hp_root_clk_src_sel(src.select());
+        bump_generation();
     }
 
     /// Program the whole divider chain at once.
@@ -723,6 +743,7 @@ impl ClockTree {
             self.set_sys_divider(dividers.sys);
             self.set_apb_divider(dividers.apb);
         }
+        bump_generation();
     }
 
     /// Run the CPU on the CPLL at `mhz`.

@@ -59,7 +59,7 @@ fn main() -> ! {
     explicit.extend(0..128u64);
     assert_eq!(explicit.len(), 128);
 
-    let delay = Delay::init(dp.SYSTIMER);
+    let delay = Delay::init();
     loop {
         led.toggle();
         delay.delay_ms(500);

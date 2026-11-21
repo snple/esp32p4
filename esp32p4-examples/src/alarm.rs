@@ -21,6 +21,7 @@ defmt::timestamp!("{=u64:us}", esp32p4_hal::delay::micros());
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
+use esp32p4_hal::delay::Delay;
 use esp32p4_hal::gpio::Pins;
 use esp32p4_hal::interrupt::{self, CpuInterrupt};
 use esp32p4_hal::main;
@@ -45,10 +46,11 @@ fn main() -> ! {
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
     let mut led = pins.pin::<LED_PIN>();
     led.into_output();
-    // The timer owns the peripheral and the alarms' CPU lines; the delay
-    // driver shares comparator 0 through its own handle.
+    // The timer owns the peripheral and the alarms' CPU lines. The delay driver
+    // does not share a comparator with it: sleeping parks the core on the
+    // per-core machine timer, so all three comparators stay available here.
     let systimer = Systimer::init(dp.SYSTIMER);
-    let delay = systimer.delay();
+    let delay = Delay::init();
 
     // COMP1: an interrupt every 250 ms. The hardware re-arms the comparator,
     // so the handler only has to acknowledge it (which the shim does).

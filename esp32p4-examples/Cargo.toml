@@ -83,6 +83,10 @@ path = "src/multicore.rs"
 [[bin]]
 name = "machine_timer"
 path = "src/machine_timer.rs"
+
+[[bin]]
+name = "sleep"
+path = "src/sleep.rs"
 required-features = ["defmt"]
 
 [[bin]]

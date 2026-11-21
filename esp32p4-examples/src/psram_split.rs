@@ -100,7 +100,7 @@ fn main() -> ! {
         "DMA buffer is not in the uncached pool"
     );
 
-    let delay = Delay::init(dp.SYSTIMER);
+    let delay = Delay::init();
     loop {
         led.toggle();
         delay.delay_ms(500);

@@ -22,6 +22,7 @@
 | `gpio` | [gpio/](../esp32p4-hal/src/gpio) | 引脚电气配置、GPIO 读写、四路中断、完整的 HP GPIO 交换矩阵信号路由，以及每个焊盘的直接 IO MUX 功能表（`pins`） |
 | `uart` | [uart.rs](../esp32p4-hal/src/uart.rs) | UART0–4：轮询收发、帧格式、流控、按源中断、GPIO 矩阵引脚路由 |
 | `multicore` | [multicore.rs](../esp32p4-hal/src/multicore.rs) | 双 HP 核：启动 core 1（静态栈、自己的 CLIC）、跨核软中断、软件 Mutex；per-hart 中断矩阵与 handler 表 |
+| `delay` | [delay.rs](../esp32p4-hal/src/delay.rs) | 自旋延时（只读 `SYSTIMER`）与停核睡眠（每核 CLINT `mtimecmp`），µs→tick 运行时标定 + 变频失效 |
 | `machine_timer` | [machine_timer.rs](../esp32p4-hal/src/machine_timer.rs) | CLINT machine timer：每核 64 位比较器 + CLIC id 7 中断，计数器共享、频率 = `CPU_CLK`，`MTIME_SAM` 保证 64 位一致读 |
 | `i2c` | [i2c.rs](../esp32p4-hal/src/i2c.rs) | I2C0/1 主机与从机：任意 SCL、7 位地址、写/读/写读、总线恢复、按源中断；从机侧 32 字节 FIFO 收发、时钟拉伸、START/STOP 与地址状态 |
 | `adc` | [adc.rs](../esp32p4-hal/src/adc.rs) | ADC1/2 单次转换与 eFuse 校准、HP 数字控制器样式表扫描（定时器 + GDMA-AHB）、IIR 滤波器与阈值监控器 |
@@ -205,6 +206,8 @@
 - **抢占式调度/任务模型**：现在是裸核加静态分工，谁跑什么由调用者安排；
 - **LP 核**：第三个核（`LP_SYS`/`LP_PERI`）有自己的启动流程、中断控制器与 TCM，
   和 HP 核不是同一套；`LP_AON_CLKRST` 里已有 `hpcore/LP core` 的复位与停摆位，但驱动未写；
+- **`Systimer` 的跨核共享**：三个 alarm 都在一个所有者手里，两核同时用需要应用自己加锁；
+  想彻底消除这个约定，可以按核再分出 alarm 的所有权（现在没做，因为 alarm 数量本来就少）；
 - **CLINT 的软件中断（`msip`，CLIC id 3）** 没封装：跨核唤醒现在走 `HP_SYS` 的
   `CPU_INTR_FROM_CPU_n`，`msip` 是“叫自己”的那一路，用途不同，需要时再加；
   machine timer 已完成（见上表），是每核独立 tick 的基础；

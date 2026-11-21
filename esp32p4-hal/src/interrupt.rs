@@ -105,8 +105,8 @@ pub use esp32p4_pac::Interrupt;
 
 pub use esp32p4_rt::interrupt::{
     CPU_INTERRUPT_COUNT, MAX_LEVEL, clear_handler, current_level, disable, enable, epoch, hart,
-    in_interrupt, is_enabled, is_pending, is_unmasked, level, mask, pend, restore, set_handler,
-    set_level, sleep, unmask, unpend,
+    in_interrupt, is_enabled, is_pending, is_unmasked, level, local_epoch, mask, pend, restore,
+    set_handler, set_level, sleep, unmask, unpend,
 };
 pub use esp32p4_rt::interrupt::{
     clear_machine_timer_handler, machine_timer_pending, machine_timer_unmasked, mask_machine_timer,

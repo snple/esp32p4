@@ -121,6 +121,13 @@ static IN_HANDLER: [AtomicBool; CORES] = [const { AtomicBool::new(false) }; CORE
 /// Level of the handler that is running, or 0 outside a handler, per core.
 static HANDLER_LEVEL: [AtomicU8; CORES] = [const { AtomicU8::new(0) }; CORES];
 
+/// Bumped for every interrupt the trap entry dispatches on this core.
+///
+/// Per core, not global: a core that is parked waiting for its own timer must not
+/// be woken by a count another core incremented, which is what happened when this
+/// was one counter for the chip.
+static LOCAL_EPOCH: [AtomicU32; CORES] = [const { AtomicU32::new(0) }; CORES];
+
 /// Bumped for every interrupt the trap entry dispatches.
 ///
 /// Lets a driver that parks the core tell "the timer I armed expired" from
@@ -135,6 +142,15 @@ static IRQ_EPOCH: AtomicU32 = AtomicU32::new(0);
 #[inline]
 pub fn epoch() -> u32 {
     IRQ_EPOCH.load(Ordering::Acquire)
+}
+
+/// Number of interrupts dispatched on *this* core so far.
+///
+/// This is what a parked core compares against: an interrupt taken by the other
+/// core says nothing about whether this one was woken.
+#[inline]
+pub fn local_epoch() -> u32 {
+    LOCAL_EPOCH[hart() as usize].load(Ordering::Acquire)
 }
 
 /// Which core this code is running on.
@@ -411,6 +427,7 @@ pub fn is_pending(cpu_int: u32) -> bool {
 /// timer, and 16..=47 are the CPU interrupt lines the peripheral matrix drives.
 pub(crate) fn dispatch(id: u32) {
     IRQ_EPOCH.fetch_add(1, Ordering::Release);
+    LOCAL_EPOCH[hart() as usize].fetch_add(1, Ordering::Release);
 
     match id {
         MACHINE_TIMER_ID => {

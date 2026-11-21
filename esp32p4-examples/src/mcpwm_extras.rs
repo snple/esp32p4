@@ -67,7 +67,7 @@ fn main() -> ! {
     let dp = Peripherals::take().unwrap();
     let _serial = UsbSerialJtag::init(dp.USB_DEVICE, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
     let pins = Pins::init(dp.GPIO, dp.IO_MUX, &dp.HP_SYS_CLKRST);
-    let delay = Delay::init(dp.SYSTIMER);
+    let delay = Delay::init();
 
     let mut pin = pins.pin::<PIN>();
     pin.route_output_signal(OutputSignal::PWM0_CH0_A_PAD_OUT);

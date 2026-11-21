@@ -42,6 +42,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `usb_host_hub` | 全速 OTG 作主机：枚举 HUB，端口上电/复位后枚举下游键盘并读按键 |
 | `timer` | `TIMG0` 的两路通用定时器：100 ms 周期中断闪灯，外加 1 s 的倒计时闹钟 |
 | `machine_timer` | CLINT machine timer（每核一个的 SysTick 等价物）：对 `SYSTIMER` 实测频率、单调性、比较器中断与周期重装、溢出标志 |
+| `sleep` | 睡眠回归测试：两核同时睡、错开重叠睡、CPU 变频后再睡，全部以 `SYSTIMER` 为准测量 |
 | `alarm` | `SYSTIMER` 比较器：250 ms 周期闹钟 + 5 s 一次性 deadline，主循环用 `sleep_until` 睡到下一个检查点 |
 | `watchdog` | `TIMG0` 的 MWDT：1 s 超时复位系统，主循环每 100 ms `feed()` 一次 |
 | `emac` | 初始化 RMII 以太网（P4 Function-EV 板的 IP101）、扫描 MDIO、自动协商、打印链路状态并收发 ARP 帧 |
@@ -1598,21 +1599,55 @@ alias.unmap();
 | 模块 | 硬件 | 计数单位 | 用途 |
 |------|------|----------|------|
 | [`time`](esp32p4-hal/src/time.rs) | `SYSTIMER` unit 0 | 16 MHz tick（62.5 ns） | 单调时钟：`Instant` / `Duration`；52 位，约 8.9 年回绕 |
-| [`systimer`](esp32p4-hal/src/systimer.rs) | `SYSTIMER` COMP1 / COMP2 | 同上 | 绝对 deadline（一次性）与固定周期闹钟，带中断 |
+| [`systimer`](esp32p4-hal/src/systimer.rs) | `SYSTIMER` COMP0 / COMP1 / COMP2 | 同上 | 绝对 deadline（一次性）与固定周期闹钟，带中断 |
+| [`machine_timer`](esp32p4-hal/src/machine_timer.rs) | CLINT `mtime` / `mtimecmp`（每核一个） | 一个 CPU 周期 | `Delay` 睡眠的唤醒源；也可自己拿来做每核 tick |
 | [`timer`](esp32p4-hal/src/timer/mod.rs) | `TIMG0` / `TIMG1`，各 2 路 + 1 个 MWDT | 可配预分频，默认 1 µs | `TimerGroup0/1` → `Timer00/01/10/11` 通用计数器 + `Watchdog0/1` 看门狗 |
 
 `time` 只读计数器，永远自由运行（计数器的启动也是按需的：第一次读 tick 时自己打开时钟门，
-所以 `Instant::now()` / `delay::micros()` 在任何驱动存在之前就可用）；`Delay` 在它上面借
-comparator 0 睡到指定 tick（`sleep_ms` 睡一段时间，`sleep_until(Instant)` 睡到某个时刻）。
+所以 `Instant::now()` / `delay::micros()` 在任何驱动存在之前就可用）。**它没有任何写副作用，
+也不占 comparator 或中断线**，两核随便读。
 
 按用途分两种等待，别混用：
 
 - **`delay::delay_us` / `delay::delay_ms`**：不需要任何句柄，自旋等够时间。驱动内部的寄存器
-  时序（`regi2c` 上电、PSRAM PHY 稳定、温度传感器建立时间等）只能用它——那些驱动拿不到
-  `SYSTIMER` 的所有权（可能已经在应用手里），也不该在寄存器序列中间把核停下来；
-- **`Delay` 句柄**：适合较长的等待，`sleep_*` 用 `wfi` 把核停下来。它要占用 comparator 0
-  并把 target 0 接到 CPU 中断线，这件事在第一次 `Delay::init` 或 `sleep_ms` 时做一次，
-  之后不再重复。
+  时序（`regi2c` 上电、PSRAM PHY 稳定、温度传感器建立时间等）用它——在寄存器序列中间把核
+  停下来没有意义；
+- **`Delay::sleep_*`**：较长的等待，用 `wfi` 把核停下来。
+
+### `SYSTIMER` 是全芯片共享的：为什么睡眠不用它
+
+`SYSTIMER` 只有一个计数器、三个 comparator，两个 HP 核看到的是同一份寄存器。旧实现让
+`Delay` 抢 COMP0 来唤醒，这在双核下是错的：**一核醒来时关掉 target 0 的使能，会把另一个核
+的唤醒源一起关掉**，那个核就卡在 `wfi` 里（`TIMER_FIRED` 这个全局标志也分不清是谁的到期）。
+用锁串行化同样不行——一核睡 1 s 会把另一核的睡眠堵 1 s。
+
+现在分工是：
+
+| 用途 | 硬件 | 为什么 |
+|------|------|--------|
+| `time` / `delay_us` / `delay_ms` | `SYSTIMER` 只读 | 16 MHz 来自晶振，与 CPU 变频无关；读没有副作用 |
+| `Delay::sleep_*` | 每核自己的 CLINT `mtimecmp` | 比较器和中断都是每核的，两核可以同时睡 |
+| `Systimer` 的 3 个 alarm | `SYSTIMER` COMP0/1/2 | 一个 `Systimer` 独占，COMP0 也从 `Delay` 手里还回来了 |
+
+睡眠要保持"至少等够"的语义，所以截止时间记在 `SYSTIMER`（晶振，不随 CPU 变频变化）上，
+machine timer 只负责唤醒：早醒就按剩余量再 arm 一次，最多 4 轮，剩下的自旋。这样即使 µs→tick
+的换算有误差，也只会多花一次短睡眠，绝不会提前返回。
+
+`mtime` 数的是 CPU 周期，所以换算比例在运行时**对 `SYSTIMER` 标定**（两端成对取样，避免
+取样偏差；两次结果一致才采用），并在 [`clock::generation`](esp32p4-hal/src/clock.rs) 变化时
+重新标定——`set_dividers` / `set_root_source` / `set_cpu_frequency` 都会 bump 它。代码里没有
+写死任何频率。
+
+一个核只有一个 machine timer 中断（CLIC id 7），所以 `Delay::sleep_*` 第一次停核时把它拿走；
+想要自己的周期 tick 就用 `MachineTimer`，两者同时用会在第二次 claim 时 panic 而不是静默覆盖。
+
+示例 [`sleep`](esp32p4-examples/src/sleep.rs) 就是这一改动的回归测试：
+
+| 检查 | 实测 |
+|------|------|
+| 两核同时睡 20 ms | 各自测到 20005 / 20004 µs（第 2 轮起） |
+| 错开 5 ms 重叠睡 12 ms | 12004 / 12004 µs |
+| 改 CPU 频率后再睡 10 ms | 90↔180 MHz 每轮切换，10014 / 10004 µs |
 
 ```rust
 let start = Instant::now();
@@ -1959,8 +1994,9 @@ espflash save-image --chip esp32p4 \
   软件 `Mutex`；中断矩阵、handler 表与线占用表都按 hart 分开
 - GPIO0–GPIO53 的推挽/开漏输出与输入、IO MUX 配置、四路中断（边沿/电平、按线使能与状态清除）、
   完整的 HP GPIO 交换矩阵信号路由（`gpio::signal`）
-- SYSTIMER 阻塞延时（`sleep_ms` / `sleep_until`）与单调时钟（`time::Instant` / `Duration`）；
-  CLINT machine timer（每核 64 位比较器、CLIC id 7 中断、频率 = `CPU_CLK`）
+- 阻塞延时：自旋（`delay_us` / `delay_ms`，读 `SYSTIMER`）与停核（`Delay::sleep_*`，每核自己的
+  CLINT machine timer）；单调时钟 `time::Instant` / `Duration`；`SYSTIMER` 的 3 个 comparator
+  全归 `Systimer` 做 alarm
 - SYSTIMER 比较器闹钟（`Systimer` → `Alarm1` / `Alarm2`：绝对 deadline 与周期模式，带中断）
 - 定时器组（`TimerGroup0/1` → `Timer00/01/10/11`：4 路 54 位计数器，时钟源与预分频、增/减计数、
   软件重载、一次性与周期性闹钟中断）与主系统看门狗（`Watchdog0/1`：分阶段超时、
