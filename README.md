@@ -55,7 +55,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `ledc` | LEDC：GPIO2 上扫 0/25/50/75/100 % 占空比并回读波形，再用 100 步渐变拉到满占空比 |
 | `rmt` | RMT：GPIO2 上自发自收一段 WS2812 波形，逐脉冲比对电平与时长 |
 | `pcnt` | PCNT：用 LEDC 的 10 kHz 方波计数，验证限值回绕、标志锁存与暂停/恢复 |
-| `mcpwm` | MCPWM0：20 kHz 三档占空比配置，打印比较值、计数器与 RMT 实测高电平（输出尚未在板上出现，见下文） |
+| `mcpwm` / `mcpwm_extras` | MCPWM0：前者查计数器/强制电平/三档占空比/互补加死区，后者查同步、捕获、故障跳闸、载波、ETM、事件比较器与中断 |
 
 ## 快速开始
 
@@ -158,7 +158,17 @@ cargo run --bin defmt_log --no-default-features --features defmt-rtt
 `#[cfg(feature = "defmt-rtt")] use defmt_rtt as _;` 会让它们照常走 RTT。
 
 > `DEFMT_LOG` 必须保留（仓库已配成 `debug`）。defmt 1.x 在没有它时只编译 `error!`，
-> 所有 `info!`/`debug!` 会直接在编译期消失，看起来就像"日志没工作"。
+> 所有 `info!`/`debug!` 会直接在编译期消失，看起来就像"日志没工作"。它配在
+> `esp32p4-examples/.cargo/config.toml` 里，所以**要在那个目录下 cargo build/run**；
+> 从仓库根目录构建会绕开这份配置，日志同样会消失。
+
+如果 `espflash monitor` 把日志打成一堆二进制乱码，说明它没认出 `defmt` 帧——4.7.0
+的 `monitor` 不会自己从 flash 里找 `LOG_FORMAT` 标记，把 ELF 递给它就行：
+
+```bash
+espflash monitor --chip esp32p4 --log-format defmt \
+  --elf target/riscv32imafc-unknown-none-elf/release/mcpwm
+```
 
 ## USB Serial/JTAG
 
@@ -1081,19 +1091,152 @@ pcnt.enable(UnitIndex::Zero, Trigger::HIGH_LIMIT);
 
 [`mcpwm`](esp32p4-hal/src/mcpwm.rs) 覆盖两个控制器（`Mcpwm0`/`Mcpwm1`）的定时器、操作器
 与死区：时钟源与群分频、每定时器预分频与计数模式、比较器 A/B、按事件的输出动作
-（保持/低/高/翻转），以及 `GeneratorConfig::edge_aligned` / `::complementary` 两个常用组合。
+（保持/低/高/翻转）、死区、强制输出电平，以及 `GeneratorConfig::edge_aligned` /
+`::complementary` 两个常用组合。群时钟由 `Timer::configure` 从 `PERI_CLK_CTRL20` 回读，
+不需要再手工告诉它时钟频率。
 
-- **`TIMER_START` 是 3 位命令而不是运行标志**：`2` 才是「启动并持续运行」，`1` 是
-  「到下一个周期结束时停」，看起来像启动其实永远不计数；
+配置走**按实例类型化的句柄**：`mcpwm.timer::<N>()` / `operator::<N>()` / `capture::<N>()` /
+`fault::<N>()` / `capture_timer()` 返回该实例的句柄（`mc0::Timer<'_, N>` 等，MCPWM1 对应
+`mc1`），`N` 在编译期检查范围。每个句柄的 inherent impl 由宏按实例号生成一次，寄存器名在
+展开时替换，所以**寄存器访问只有一份代码，运行期零实例分发**——模块里没有 trait、没有
+`dyn`，剩下的 `match` 全部是在解码一个**值**（计数模式、跳闸形状、时钟源），没有一处按实例
+选寄存器。和 RP2350 的 `pwm` 模块是同一个形状。
+
+事件与任务也是句柄给的，调用方不需要（也无法）写「第几号」：
+
+```rust
+let timer = mcpwm.timer::<0>();
+let capture = mcpwm.capture::<1>();
+mcpwm.enable_event(timer.zero_event(), true);        // EVT_EN bit 3
+mcpwm.enable_task(capture.capture_task(), true);     // TASK_EN bit 20
+channel.connect(mcpwm.event_id(timer.zero_event()), mcpwm.task_id(capture.capture_task()));
+```
+
+`Event` / `Task` 本身是对应位表里的偏移量（`EVT_EN`、`TASK_EN`、`INT_*` 与 `SOC_ETM` id 都是
+一张连续位表，物理上就是一个下标），句柄在编译期把偏移算好；`raw()` 可以取回数字。
+
+```rust
+let mcpwm = Mcpwm0::init(dp.MCPWM0, &dp.HP_SYS_CLKRST);
+mcpwm.set_clock_source(&dp.HP_SYS_CLKRST, ClockSource::Xtal40m, 1)?;
+
+let timer = mcpwm.timer::<0>();
+timer.configure(&dp.HP_SYS_CLKRST, TimerConfig::new(20_000))?;
+
+mcpwm
+    .operator::<0>()
+    .configure(&timer, GeneratorConfig::complementary(1000, DeadTime::active_high(10, 30)))?;
+timer.start();
+```
+
+句柄之间不混用：`Operator::configure(&timer, …)` 的定时器号来自句柄的**类型**（`T` 直接
+作为常量写进 `OPERATORn_TIMERSEL`），所以操作器绑哪个定时器只有一个来源，也不存在写错索引
+的可能。同一实例号的句柄不是同一个类型（`Timer<'_, 0>` ≠ `Timer<'_, 1>`），因此
+`for timer in [t0, t1]` 这种写法不成立——需要各自写，或者把循环体抽成函数用宏展开。
+
+比较器与死区延迟都以定时器 tick 计，必须在周期内：超过周期的比较器永远不会命中，输出就是
+平的。这个约束没有运行期校验（校验就要按定时器号去查周期，正是要消灭的那类分派），
+`configure` 拿到的句柄就是这些数值的对齐对象。
+
+几个容易踩的点：
+
+- **`TIMER_START` 是 3 位命令而不是运行标志**：`2` 才是「启动并持续运行」，`0`/`1` 是
+  「到下一个零点/周期点停」；
+- **零点事件是 `UTEZ`/`DTEZ`，不是 `UT0`/`DT0`**：后者对应 `event_t0`，只由故障或同步
+  输入触发。把「零点置高」写进 `UT0`，发生器就再没有把输出拉高的动作——定时器照常计数、
+  寄存器回读全对，焊盘却是一条平线。这个驱动最初的「输出不出来」就是这个错配；
 - 发生器的 `UT*`/`DT*` 动作按**计数方向**区分（向上/向下），不是信号边沿；边沿对齐只需要
   写 `UT*`；
-- 死区发生器复位时是旁路的，配置 `DeadTime` 才会启用。
+- 所有配置寄存器都用**立即更新**（`0`）写入。影子寄存器的按事件更新在这里既没用、也有
+  风险：定时器还没启动时按 `TEZ` 更新，有效周期会停在复位值；
+- 死区发生器复位时对 A/B 都是旁路的，配置 `DeadTime` 才会打开，延迟按**定时器 tick**
+  （TRM 的 `PT_clk`）计；死区模块是用输出 A 生成 B 的，所以配了死区之后 `comparator_b`
+  与 `actions_b` 不会到达焊盘；
+- 延迟单元也是计数器：**定时器停着时延迟永远不会走完**，此时用 `force` 改一个要跨过
+  延迟沿的电平，焊盘上看不到——先旁路死区（或让定时器跑起来）再强制；
+- 预分频只在定时器（重新）启动时生效，改变频率要 `timer.stop()` → `timer.configure()` → `timer.start()`。
 
-**当前状态**：配置侧在板上验证通过（40 MHz 下 20 kHz 得到 period 1999，25/50/75 % 对应
-比较值 499/999/1499，动作与定时器状态回读一致，计数器在跑），但**输出电平没有出现在焊盘
-上**——包括用 `GEN_A_NCIFORCE` 强制输出，换 GPIO2/GPIO10 都一样。示例
-[`mcpwm`](esp32p4-examples/src/mcpwm.rs) 因此只打印不 assert。故障检测、捕获、载波与 ETM
-也还没接。
+**当前状态**：下表是这套驱动在板上逐层验证的结果（40 MHz 晶振，20 kHz），句柄化重写
+之后重新跑过一遍，数值与重写前一致。
+
+| 检查 | 结果 |
+|------|------|
+| 群时钟回读 / 周期 | 40 MHz → period 1999 |
+| 计数器 | 采样到 104…1938，落在 0…1999 内 |
+| 强制电平 | 拉高时 16 次读回全为高，拉低时全为低 |
+| 占空比 25/50/75 % | 比较值 499/999/1499，RMT 实测高电平 499/999/1499 tick |
+| 互补 + 死区（RED 10 / FED 30） | 实测高电平 988 = 999 − 10，说明 RED 加在上升沿 |
+
+示例 [`mcpwm`](esp32p4-examples/src/mcpwm.rs) 每秒重跑一遍这套检查，每层单独打印
+`ok`/`FAIL`。
+
+### 同步、捕获、故障、载波、ETM、事件比较器与中断
+
+[`mcpwm`](esp32p4-hal/src/mcpwm.rs) 还覆盖了 MCPWM 的其余子模块：
+
+- **同步**：`Timer::sync_input` / `enable_sync_input` / `sync_output` / `set_sync_phase` /
+  `software_sync`。同步事件把计数器重载成相位寄存器里的值并复位预分频，多个定时器因此
+  可以锁相；`SyncOutSource::Zero` / `Period` 让一个定时器成为另一个的时基源。
+- **故障检测**：`mcpwm.fault::<N>()` 的 `enable(active_high)` / `disable` / `active` 配三个
+  GPIO 故障输入的极性与使能，`mask()` 给出该输入的 `FaultMask` 供 `TripConfig::sources`
+  使用；`Operator::configure_trip` 按模式（逐周期 / 一次性）设置每个输出的动作、触发源、
+  软件触发和刷新点；`trip_status` / `release_trip` / `software_trip` 负责状态与恢复。
+- **捕获**：`Capture::configure` / `enable` / `value` / `last_rising` / `capture_now`，加
+  `mcpwm.capture_timer()` 句柄上的自由运行捕获定时器（`start` / `stop` / `set_phase` /
+  `sync_input` / `software_sync`）。
+- **载波**：`Operator::configure_carrier` / `disable_carrier`。
+- **ETM**：`enable_event` / `enable_task` 打开 MCPWM 内部的事件与任务，`event_id` /
+  `task_id` 给出 `SOC_ETM` 的信号 id；配合新的 [`etm`](esp32p4-hal/src/etm.rs) 模块
+  （50 个通道，`connect` + `enable`）就能让任意事件触发任意任务。
+- **事件比较器**：`Operator::set_event_comparator` / `enable_event_comparator` /
+  `event_comparator_id` 操作每操作器多出来的两个比较点 `OPn_TSTMP_E1/E2`
+  （`EventComparator::E1` / `E2`，与寄存器同名）。它们不碰输出，只产生 ETM 事件，用来在
+  PWM 周期的固定位置启动一次转换、一次捕获或别的外设。
+- **中断**：`Event` 的每一位同时也是中断位，`enable_interrupt` / `interrupt_pending` /
+  `clear_interrupt` / `clear_interrupts` 直接对应 `INT_ENA` / `INT_ST` / `INT_CLR`
+  （事件仍由句柄给出，如 `timer.zero_event()`）；
+  `Mcpwm0::SOURCE` / `Mcpwm1::SOURCE` 是 `interrupt::claim` 要的中断源。
+
+```rust
+// 每个定时器零点触发一次 CAP1 捕获，全程不经 CPU
+let timer = mcpwm.timer::<0>();
+let capture = mcpwm.capture::<1>();
+mcpwm.enable_event(timer.zero_event(), true);
+mcpwm.enable_task(capture.capture_task(), true);
+let mut channel = etm.free_channel().unwrap();
+channel.connect(
+    mcpwm.event_id(timer.zero_event()),
+    mcpwm.task_id(capture.capture_task()),
+);
+channel.enable(true);
+```
+
+几个在板上踩过的坑：
+
+- **载波周期是 `8 × (prescale + 1)` 个 PWM_clk**，多出来的 8 来自三位的占空比字段；按
+  `prescale + 1` 算会差 8 倍；
+- **逐周期跳闸靠 TEZ/TEP 刷新**，定时器真的在跑才会自动恢复；一次性跳闸只能 `release_trip`
+  手动清；
+- 跳闸与软件同步的触发位是**边沿触发**，驱动里统一「先写 0 再写 1」，否则隔一次就丢；
+- 同一路故障同时配了 OST 和 CBC 时，OST 会先锁住，看起来像「CBC 不恢复」——测试时要把另
+  一种模式的触发源清空；
+- **ETM 要三个时钟一起开**：`SOC_CLK_CTRL3.reg_etm_apb_clk_en`（不开则寄存器读回全 0）、
+  `SOC_CLK_CTRL1.reg_etm_sys_clk_en` 与 `SOC_ETM.CLK_EN`；MCPWM 侧还要先置 `EVT_EN` /
+  `TASK_EN` 的对应位，事件/任务才会真正进出矩阵。
+
+上板结果（GPIO2 回环到 CAP0/CAP1 与 RMT，GPIO3 驱动 FAULT0）：
+
+| 检查 | 结果 |
+|------|------|
+| 同步 | 定时器 1 自由计数到 13553 tick，打开同步输入后回到相位附近（1401），采样跨度 1952 < 一个 PWM 周期 |
+| 捕获 | 94 个上升沿，相邻捕获值之差恰为 2000 tick |
+| 故障 | OST：故障拉高后输出 0/16 高、状态置位，`release_trip` 后恢复；CBC：999 → 全低 → 恢复 999 |
+| 载波 | prescale 16 / duty 4/8 实测高 63、低 59（周期 122 ≈ 128 tick），关掉后回到 999 |
+| ETM | 通道 0 接 TEZ(63) 与 CAP1 任务(133)，95 次捕获、相邻差 2000 tick |
+| 事件比较器 | E1=500 / E2=1200，经 ETM 触发捕获，实测落在零点之后 500 / 1200 tick |
+| 中断 | 10 ms 收到 200/200 个 TEZ 中断；屏蔽 CPU 线后 `INT_ST` 置位，`clear_interrupts` 后清零 |
+
+示例 [`mcpwm_extras`](esp32p4-examples/src/mcpwm_extras.rs) 每秒重跑这七项检查（同步、捕获、
+故障、载波、ETM、事件比较器、中断）。
 
 ## eFuse 与芯片版本
 
@@ -1403,7 +1546,7 @@ espflash save-image --chip esp32p4 \
 - SPI2/SPI3 主机与从机（四种时钟模式、64 字节缓冲）、SD 卡主机（识别、容量、DMA 块读写）、
   ADC1/2 单次转换与 HP 数字控制器扫描（含 IIR 滤波与阈值监控器）、温度传感器
 - PWM 家族：LEDC（4 定时器 × 8 通道、渐变）、RMT（4 发 4 收脉冲波形）、PCNT（4 单元计数）、
-  MCPWM（定时器/比较器/发生器/死区，输出待验证）
+  MCPWM（定时器/比较器/发生器/死区/强制电平/同步/故障/捕获/载波/事件比较器/中断/ETM，上板验证）
 - CLIC 中断框架（direct 模式、按 CPU 线分发、trap 保存 FPU 上下文）与 EMAC/SYSTIMER
   中断驱动
 - `defmt` 日志支持（`Format` 实现 + 关键路径日志 + 基于 `mstatus.MIE` 的

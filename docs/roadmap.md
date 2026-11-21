@@ -26,7 +26,8 @@
 | `ledc` | [ledc.rs](../esp32p4-hal/src/ledc.rs) | 4 定时器 + 8 通道 PWM、小数分频、相位偏移、16 段占空比渐变 |
 | `rmt` | [rmt.rs](../esp32p4-hal/src/rmt.rs) | 4 发 4 收、脉冲 RAM 波形收发、载波、空闲阈值与接收滤波 |
 | `pcnt` | [pcnt.rs](../esp32p4-hal/src/pcnt.rs) | 4 单元 × 2 通道脉冲计数、边沿/控制动作、滤波、限值与五个观察点 |
-| `mcpwm` | [mcpwm.rs](../esp32p4-hal/src/mcpwm.rs) | 2 控制器 × 3 定时器/操作器、比较器、输出动作与死区（输出待验证） |
+| `mcpwm` | [mcpwm.rs](../esp32p4-hal/src/mcpwm.rs) | 2 控制器 × 3 定时器/操作器、比较器、输出动作、死区、强制电平、同步、故障跳闸、捕获、载波、事件比较器、中断与 ETM 钩子 |
+| `etm` | [etm.rs](../esp32p4-hal/src/etm.rs) | SOC_ETM 的 50 个通道：事件/任务 id 连接与使能 |
 | `tsens` | [tsens.rs](../esp32p4-hal/src/tsens.rs) | `LP_TSENS` 温度传感器：上电与时钟、5 档自动选择、毫摄氏度读数、硬件监测阈值与中断 |
 | `sdhost` | [sdhost.rs](../esp32p4-hal/src/sdhost.rs) | SD 卡主机（`SDHOST`）：识别（CMD0/8/2/3/9/7、ACMD41/6）、CSD 容量解码、1/4 位总线、内部 DMA 的块读写 |
 | `spi` | [spi.rs](../esp32p4-hal/src/spi.rs) | GP-SPI2/3 主机与从机：CPU 传输（64 B 缓冲）、时钟模式 0–3、位序、硬件 CS 时序、任意引脚路由 |
@@ -103,8 +104,22 @@
    - RMT：TX/RX 全通道、脉冲 RAM（NONFIFO）、载波、空闲阈值与接收滤波，GPIO2 上 WS2812
      自发自收逐脉冲比对通过；顺带修正了 SVD 的 RMT 基址与缺失的 RAM 寄存器；
    - PCNT：4 单元 × 2 通道、边沿/控制动作、滤波、限值与五个观察点，用 LEDC 方波计数验证。
-   **MCPWM** 只完成了配置侧（定时器/比较器/发生器/死区），上板配置正确但输出电平没有到达
-   焊盘，需要继续查（先怀疑时钟门控或输出使能路径）；故障检测、捕获、载波与 ETM 未接。
+   **MCPWM** 的全部子模块都已完成并在板上验证：定时器、操作器、死区、强制电平、同步、
+   故障检测（CBC/OST + 软件跳闸）、捕获、载波与 ETM 钩子。之前「输出电平到不了焊盘」的
+   原因已经定位：零点动作被写进了 `UT0`/`DT0`（那是 `event_t0`，即故障/同步输入的动作），而
+   真正的零点是 `UTEZ`/`DTEZ`，于是发生器没有任何把输出拉高的动作——定时器在跑、寄存器回读
+   全对、焊盘却是平线。同一轮还修了 FED/RED 延迟对调、把「反转 A/B 输出」误接到 `OUTSWAP`
+   （那是交换 A/B）、以及按 `TEZ` 更新的周期寄存器（定时器未启动时有效值停在复位值）等
+   问题。示例 `mcpwm` 查波形层（计数器 / 强制电平 / 三档占空比 / 互补加死区），
+   `mcpwm_extras` 查其余七项（同步 / 捕获 / 跳闸 / 载波 / ETM / 事件比较器 / 中断），结果
+   见 README。MCPWM 这一章到这里没有剩下的功能了。
+   驱动本身随后按 RP2350 `pwm` 的形状重写过一遍：配置走 `mcpwm.timer::<N>()` / `operator::<N>()`
+   / `capture::<N>()` / `fault::<N>()` / `capture_timer()` 这类按实例类型化的句柄，每个实例的
+   inherent impl 由宏生成一次，因此模块里没有 trait、没有 `dyn`、运行期零实例分发（剩下的
+   `match` 只在解码寄存器字段）。事件与任务也由句柄给出（`timer.zero_event()`、
+   `capture.capture_task()`），`Event` / `Task` 退化成位表偏移量，调用方不再需要写「第几号」。
+   代价是句柄类型不同者不能放进同一个数组，`for timer in [t0, t1]` 这类循环要展开；比较器
+   超周期不再有运行期校验，改由文档约定。
 8. **TWAI（CAN-FD ×3）、I2S0/1/2（音频）、SDIO slave**。
    ~~USB OTG host~~ 已完成：`esp32p4-usb` 的 `host` 模块（枚举、控制/bulk/interrupt
    传输、HID boot 键盘、HUB）加 `esp32p4-usb` 的 DWC 主机模式驱动；高速 HUB
@@ -126,8 +141,8 @@
 
 ## 5. 第 3 层：锦上添花
 
-I3C、UHCI、SOC_ETM（事件矩阵）、APM/访问权限、eFuse 编程、运行时 Flash 读写
-（现在烧录完全依赖 `espflash`）。
+I3C、UHCI、APM/访问权限、eFuse 编程、运行时 Flash 读写（现在烧录完全依赖 `espflash`）。
+SOC_ETM 的通道机制（`etm` 模块）与 MCPWM 侧的信号 id 已就位，其余外设的 id 还没封装。
 
 ## 6. 推荐节奏
 
