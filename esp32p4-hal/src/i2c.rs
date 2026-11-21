@@ -1,9 +1,10 @@
-//! I2C (Inter-Integrated Circuit) master.
+//! I2C (Inter-Integrated Circuit) master and slave.
 //!
-//! I2C0 and I2C1 are the two high-performance controllers. Only master mode is
-//! implemented, and every wait uses a wall-clock deadline rather than an
-//! iteration count, so a slave that stretches the clock cannot cause a
-//! spurious timeout.
+//! I2C0 and I2C1 are the two high-performance controllers. Each one is either a
+//! [`I2c0`] master or an [`I2c0Slave`] slave; the two types own the same
+//! peripheral, so a controller cannot be both at once. Every wait uses a
+//! wall-clock deadline rather than an iteration count, so a slave that stretches
+//! the clock cannot cause a spurious timeout.
 //!
 //! SCL and SDA are GPIO-matrix signals, so any GPIO can carry them (unlike the
 //! dedicated pads of the USB and EMAC PHYs, see [`crate::gpio::pins`]).
@@ -17,6 +18,17 @@
 //! - NACK, arbitration-lost and timeout reporting, bus-busy detection
 //! - Bus recovery by pulsing SCL, and a controller state-machine reset
 //! - Per-source interrupt enable, status and clear
+//!
+//! As a slave:
+//!
+//! - 7-bit addresses, with the general call address `0x00` if asked for
+//! - Receive and transmit through 32-byte FIFOs, blocking or by hand
+//! - Clock stretching, so a master waits instead of over- or underrunning a
+//!   FIFO, with the cause readable and the release under software control. The
+//!   master blocks while the slave holds SCL, so a stretching slave must be
+//!   serviced from an interrupt or another thread — a single-threaded polling
+//!   loop deadlocks. [`SlaveConfig::stretch`] turns it off for the polled case.
+//! - START and STOP detection, addressed state and the master's direction
 //!
 //! Both SDA and SCL are open-drain, so the pads need external pull-up
 //! resistors. [`I2c0::set_pins`] configures the pads and the GPIO matrix; the
@@ -59,6 +71,28 @@
 //!         // found a device
 //!     }
 //! }
+//! ```
+//!
+//! As a slave the same controller answers to an address instead of driving the
+//! bus:
+//!
+//! ```ignore
+//! use esp32p4_hal::i2c::{I2c1Slave, SlaveConfig};
+//!
+//! let slave = I2c1Slave::init(
+//!     dp.I2C1,
+//!     &SlaveConfig::default().address(0x55),
+//!     &dp.HP_SYS_CLKRST,
+//! );
+//! slave.set_pins(pins.pin::<20>(), pins.pin::<21>());
+//!
+//! // Collect what the master writes, up to its stop condition.
+//! let mut request = [0u8; 4];
+//! let len = slave.read(&mut request).unwrap();
+//!
+//! // Answer the next read transfer; the bytes come out of the FIFO as the
+//! // master clocks them.
+//! slave.write(&[0xde, 0xad, 0xbe, 0xef]).unwrap();
 //! ```
 
 use esp32p4_pac::{HP_SYS_CLKRST, I2C0, I2C1};
@@ -160,6 +194,100 @@ impl I2cConfig {
     }
 }
 
+/// Configuration of a slave.
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct SlaveConfig {
+    /// The 7-bit address the slave answers to.
+    pub address: u8,
+    /// Clock source; sets the resolution of the SDA timing.
+    pub clock: I2cClock,
+    /// How long the blocking calls wait, in microseconds.
+    pub timeout_us: u64,
+    /// Hold SCL low while the FIFOs need attention.
+    ///
+    /// On, a master waits instead of overrunning a full receive FIFO or
+    /// underrunning an empty transmit FIFO. The cost is that the master blocks
+    /// inside its own transfer, so the slave has to be serviced *while* the
+    /// transfer runs — from [`SOURCE`](I2c0Slave::SOURCE)'s interrupt, or from
+    /// another thread. A single-threaded polling loop deadlocks instead.
+    ///
+    /// Off, the transfer runs at line rate and the caller has to keep up: one
+    /// transfer has to fit the 32-byte FIFOs, and the FIFOs wrap rather than
+    /// refuse data, so anything beyond that overwrites what was not read.
+    pub stretch: bool,
+    /// Answer the general call address `0x00` as well.
+    pub general_call: bool,
+    /// Enable the SCL/SDA input glitch filter.
+    pub glitch_filter: bool,
+}
+
+impl Default for SlaveConfig {
+    fn default() -> Self {
+        Self {
+            address: 0x55,
+            clock: I2cClock::Xtal,
+            timeout_us: 100_000,
+            stretch: true,
+            general_call: false,
+            glitch_filter: true,
+        }
+    }
+}
+
+impl SlaveConfig {
+    /// Sets the 7-bit address.
+    pub const fn address(mut self, address: u8) -> Self {
+        self.address = address;
+        self
+    }
+
+    /// Selects the clock source.
+    pub const fn clock(mut self, clock: I2cClock) -> Self {
+        self.clock = clock;
+        self
+    }
+
+    /// Sets how long the blocking calls wait.
+    pub const fn timeout_us(mut self, timeout_us: u64) -> Self {
+        self.timeout_us = timeout_us;
+        self
+    }
+
+    /// Enables or disables clock stretching.
+    pub const fn stretch(mut self, enabled: bool) -> Self {
+        self.stretch = enabled;
+        self
+    }
+
+    /// Enables or disables answering the general call address.
+    pub const fn general_call(mut self, enabled: bool) -> Self {
+        self.general_call = enabled;
+        self
+    }
+
+    /// Enables or disables the input glitch filter.
+    pub const fn glitch_filter(mut self, enabled: bool) -> Self {
+        self.glitch_filter = enabled;
+        self
+    }
+}
+
+/// Why a slave holds SCL low.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum StretchCause {
+    /// The master addressed this slave for a read and waits for data.
+    AddressMatch,
+    /// The transmit FIFO ran empty while the master was reading.
+    TransmitEmpty,
+    /// The receive FIFO is full.
+    ReceiveFull,
+    /// The slave holds SCL to decide the acknowledge bit
+    /// (`SLAVE_BYTE_ACK_CTL_EN`).
+    SendingAck,
+}
+
 /// Errors reported by a transfer.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -212,6 +340,22 @@ pub enum Interrupt {
     Nack = 10,
     /// The SCL state machine timed out.
     SclTimeOut = 13,
+    /// A byte was sent or received.
+    ByteTransferDone = 4,
+    /// A START condition was seen, master or slave.
+    StartDetect = 15,
+    /// A slave holds SCL low: address match, FIFO full or FIFO empty.
+    SlaveStretch = 16,
+    /// The general call address `0x00` was received.
+    GeneralCall = 17,
+    /// A slave saw an address that is not its own.
+    SlaveAddressUnmatch = 18,
+    /// The receive FIFO overflowed.
+    RxFifoOverflow = 2,
+    /// The transmit FIFO overflowed.
+    TxFifoOverflow = 11,
+    /// The receive FIFO was read while empty.
+    RxFifoUnderflow = 12,
 }
 
 impl Interrupt {
@@ -229,6 +373,9 @@ const EVENT_MASK: u32 = Interrupt::TransferComplete.mask()
     | Interrupt::SclTimeOut.mask()
     | Interrupt::ArbitrationLost.mask()
     | Interrupt::EndDetect.mask();
+
+/// Every interrupt source, used to clear the latched flags in one write.
+const ALL_INTERRUPTS: u32 = 0x7_ffff;
 
 /// Encodes one command word.
 const fn command(byte_num: u32, ack_en: bool, ack_val: bool, op_code: u32) -> u32 {
@@ -792,4 +939,479 @@ impl_i2c!(
     I2C1_SDA_PAD_OUT,
     I2C1_SDA_PAD_IN,
     peri_clk_ctrl11
+);
+
+/// Generates one I2C slave type from the shared register layout.
+///
+/// The parameters match [`impl_i2c!`]: the master and the slave of one
+/// controller are the same peripheral, so they share the clock gate, the reset
+/// and the pad signals, and the two types are kept apart only so that the
+/// peripheral can be owned by one role at a time.
+macro_rules! impl_i2c_slave {
+    ($Name:ident, $PAC:ident, $mod:ident, $NUM:literal, $scl_out:ident, $scl_in:ident, $sda_out:ident, $sda_in:ident, $div_ctrl:ident, $irq:ident) => {
+        paste! {
+            /// I2C slave driver owning the PAC peripheral.
+            pub struct $Name {
+                i2c: $PAC,
+                timeout_us: u64,
+            }
+
+            impl $Name {
+                /// Controller number, 0 or 1.
+                pub const NUM: u8 = $NUM;
+
+                /// The interrupt matrix source of this controller.
+                ///
+                /// A slave is serviced from an interrupt in practice: while it
+                /// holds SCL the master is blocked inside its own transfer, so
+                /// a polling loop never gets to run.
+                pub const SOURCE: crate::interrupt::Interrupt = crate::interrupt::Interrupt::$irq;
+
+                /// Obtains a handle without ownership checks.
+                ///
+                /// The deadline and the address are left as the peripheral has
+                /// them; use [`set_timeout_us`](Self::set_timeout_us) and
+                /// [`set_address`](Self::set_address) on the owning instance.
+                ///
+                /// # Safety
+                ///
+                /// The caller must ensure the controller was initialised and
+                /// that the returned handle is not used to reconfigure it
+                /// concurrently.
+                #[inline]
+                pub unsafe fn steal() -> crate::Steal<Self> {
+                    crate::Steal(Self {
+                        i2c: unsafe { $PAC::steal() },
+                        timeout_us: SlaveConfig::default().timeout_us,
+                    })
+                }
+
+                /// The underlying register block.
+                #[inline]
+                pub fn regs(&self) -> &esp32p4_pac::$mod::RegisterBlock {
+                    &self.i2c
+                }
+
+                /// Returns the PAC peripheral.
+                pub fn release(self) -> $PAC {
+                    self.i2c
+                }
+
+                /// Overrides the deadline of the blocking calls.
+                #[inline]
+                pub fn set_timeout_us(&mut self, timeout_us: u64) {
+                    self.timeout_us = timeout_us;
+                }
+
+                // ============================================================
+                // Initialisation
+                // ============================================================
+
+                /// Initialises the controller as a slave and applies `config`.
+                ///
+                /// # Panics
+                ///
+                /// Panics if `config.address` is outside the 7-bit range.
+                pub fn init(i2c: $PAC, config: &SlaveConfig, clkrst: &HP_SYS_CLKRST) -> Self {
+                    assert!(
+                        config.address <= 0x7f,
+                        "I2C slave address must be 7 bits: {}",
+                        config.address
+                    );
+
+                    // Bus clock, reset pulse, controller clock and source.
+                    clkrst.soc_clk_ctrl2.[<set_reg_i2c $NUM _apb_clk_en>]();
+                    clkrst.hp_rst_en1.[<set_reg_rst_en_i2c $NUM>]();
+                    clkrst.hp_rst_en1.[<clr_reg_rst_en_i2c $NUM>]();
+                    clkrst.peri_clk_ctrl10.[<set_reg_i2c $NUM _clk_en>]();
+                    match config.clock {
+                        I2cClock::Xtal => {
+                            clkrst.peri_clk_ctrl10.[<clr_reg_i2c $NUM _clk_src_sel>]();
+                        }
+                        I2cClock::RcFast => {
+                            clkrst.peri_clk_ctrl10.[<set_reg_i2c $NUM _clk_src_sel>]();
+                        }
+                    }
+                    // The slave does not generate SCL, so the core clock only
+                    // sets the resolution of the hold and sample delays: run it
+                    // undivided.
+                    clkrst.$div_ctrl.[<write_reg_i2c $NUM _clk_div_num>](0);
+                    clkrst.$div_ctrl.[<write_reg_i2c $NUM _clk_div_numerator>](0);
+                    clkrst.$div_ctrl.[<write_reg_i2c $NUM _clk_div_denominator>](0);
+
+                    let i2c = Self {
+                        i2c,
+                        timeout_us: config.timeout_us,
+                    };
+
+                    let r = i2c.regs();
+                    // Slave, open-drain outputs: the peripheral pulls the pads
+                    // low and the pull-ups bring them back high.
+                    r.ctr.clr_ms_mode();
+                    r.ctr.clr_sda_force_out();
+                    r.ctr.clr_scl_force_out();
+                    r.ctr.clr_arbitration_en();
+                    r.ctr.clr_rx_lsb_first();
+                    r.ctr.clr_tx_lsb_first();
+                    // Transmit as soon as the master addresses a read, instead
+                    // of waiting for `TRANS_START` before every transfer.
+                    r.ctr.set_slv_tx_auto_start_en();
+                    if config.general_call {
+                        r.ctr.set_addr_broadcasting_en();
+                    } else {
+                        r.ctr.clr_addr_broadcasting_en();
+                    }
+
+                    r.fifo_conf.clr_nonfifo_en();
+                    // Pointer mode: the watermarks then count what the FIFOs
+                    // hold rather than where the pointers are, which is what
+                    // the receive side of a slave is serviced by.
+                    r.fifo_conf.set_fifo_prt_en();
+                    r.fifo_conf
+                        .write_txfifo_wm_thrhd((FIFO_DEPTH / 2) as u32);
+                    r.fifo_conf
+                        .write_rxfifo_wm_thrhd((FIFO_DEPTH / 2) as u32);
+                    // A full FIFO must stretch the clock, not refuse the byte:
+                    // with this set the slave answers with a NACK instead, and
+                    // the master never learns that it has to wait.
+                    r.ctr.clr_rx_full_ack_level();
+                    r.fifo_conf.set_tx_fifo_rst();
+                    r.fifo_conf.set_rx_fifo_rst();
+                    r.fifo_conf.clr_tx_fifo_rst();
+                    r.fifo_conf.clr_rx_fifo_rst();
+
+                    r.slave_addr.write_slave_addr(u32::from(config.address));
+                    r.slave_addr.clr_addr_10bit_en();
+
+                    // Ten core cycles: the sample point of an incoming bit and
+                    // the hold time of an outgoing one.
+                    r.sda_hold.write_time(10);
+                    r.sda_sample.write_time(10);
+                    // Only the value: the SCL timeout aborts master transfers,
+                    // and a slave has no command list to abort.
+                    r.to.write_time_out_value(0x1f);
+
+                    r.scl_stretch_conf.write_stretch_protect_num(0x3ff);
+                    if config.stretch {
+                        r.scl_stretch_conf.set_slave_scl_stretch_en();
+                    } else {
+                        r.scl_stretch_conf.clr_slave_scl_stretch_en();
+                    }
+                    r.scl_stretch_conf.trigger_slave_scl_stretch_clr();
+
+                    if config.glitch_filter {
+                        r.filter_cfg.set_scl_filter_en();
+                        r.filter_cfg.set_sda_filter_en();
+                    } else {
+                        r.filter_cfg.clr_scl_filter_en();
+                        r.filter_cfg.clr_sda_filter_en();
+                    }
+
+                    r.int_clr.write_bits(ALL_INTERRUPTS);
+                    r.ctr.trigger_conf_upgate();
+                    i2c
+                }
+
+                /// Routes `scl` and `sda` to this controller.
+                ///
+                /// Both pads become open-drain, with the output enable coming
+                /// from the peripheral, which is what lets the bus be shared.
+                pub fn set_pins<SCL: PinOps, SDA: PinOps>(&self, mut scl: SCL, mut sda: SDA) {
+                    scl.route_output_signal_open_drain(OutputSignal::$scl_out);
+                    scl.route_input_signal(InputSignal::$scl_in);
+                    scl.set_open_drain_enabled(true);
+                    sda.route_output_signal_open_drain(OutputSignal::$sda_out);
+                    sda.route_input_signal(InputSignal::$sda_in);
+                    sda.set_open_drain_enabled(true);
+                }
+
+                // ============================================================
+                // Address
+                // ============================================================
+
+                /// The address the slave answers to.
+                #[inline]
+                pub fn address(&self) -> u8 {
+                    self.regs().slave_addr.slave_addr() as u8
+                }
+
+                /// Changes the address.
+                ///
+                /// The write is guarded by reset mode on the master side; a
+                /// slave must simply not be addressed while this runs.
+                pub fn set_address(&self, address: u8) -> Result<(), Error> {
+                    if address > 0x7f {
+                        return Err(Error::InvalidAddress);
+                    }
+                    self.regs()
+                        .slave_addr
+                        .write_slave_addr(u32::from(address));
+                    Ok(())
+                }
+
+                /// Enables or disables clock stretching.
+                pub fn set_stretch(&self, enabled: bool) {
+                    let r = self.regs();
+                    if enabled {
+                        r.scl_stretch_conf.set_slave_scl_stretch_en();
+                    } else {
+                        r.scl_stretch_conf.clr_slave_scl_stretch_en();
+                        r.scl_stretch_conf.trigger_slave_scl_stretch_clr();
+                    }
+                }
+
+                /// Enables or disables answering addresses without a
+                /// `TRANS_START` first.
+                pub fn set_auto_start(&self, enabled: bool) {
+                    let r = self.regs();
+                    if enabled {
+                        r.ctr.set_slv_tx_auto_start_en();
+                    } else {
+                        r.ctr.clr_slv_tx_auto_start_en();
+                    }
+                }
+
+                // ============================================================
+                // Transfers
+                // ============================================================
+
+                /// Waits for the master to finish writing and copies what it sent.
+                ///
+                /// The end of a transfer is a latched stop condition, so a call
+                /// made after the master is done returns at once. The flag is
+                /// cleared on return; a call with no transfer in flight waits
+                /// for [`SlaveConfig::timeout_us`] and then reports
+                /// [`Error::Timeout`].
+                ///
+                /// Bytes beyond `buffer.len()` are dropped, so a short buffer
+                /// cannot leave a full FIFO stalling the bus. Any stretch found
+                /// on the way is released, because the FIFO has just been
+                /// drained.
+                pub fn read(&self, buffer: &mut [u8]) -> Result<usize, Error> {
+                    let r = self.regs();
+                    let deadline = crate::delay::micros() + self.timeout_us;
+                    let mut count = 0;
+
+                    loop {
+                        count += self.read_available(&mut buffer[count..]);
+                        if count == buffer.len() {
+                            while self.rx_fifo_count() != 0 {
+                                let _ = r.data.read_bits();
+                            }
+                        }
+                        self.release_stretch();
+
+                        if r.int_raw.read_bits() & Interrupt::TransferComplete.mask() != 0 {
+                            self.clear_interrupt(Interrupt::TransferComplete);
+                            return Ok(count);
+                        }
+                        if crate::delay::micros() > deadline {
+                            return Err(Error::Timeout);
+                        }
+                        core::hint::spin_loop();
+                    }
+                }
+
+                /// Queues `data` for the master's next read.
+                ///
+                /// Waits for room in the transmit FIFO, bounded by
+                /// [`SlaveConfig::timeout_us`], and releases a pending
+                /// address-match stretch so the transfer can start. Returns the
+                /// number of bytes queued.
+                pub fn write(&self, data: &[u8]) -> Result<usize, Error> {
+                    let deadline = crate::delay::micros() + self.timeout_us;
+                    let mut queued = 0;
+
+                    while queued < data.len() {
+                        queued += self.write_available(&data[queued..]);
+                        self.release_stretch();
+                        if queued == data.len() {
+                            break;
+                        }
+                        if crate::delay::micros() > deadline {
+                            return Err(Error::Timeout);
+                        }
+                        core::hint::spin_loop();
+                    }
+                    Ok(queued)
+                }
+
+                /// Copies what the receive FIFO holds, without waiting.
+                pub fn read_available(&self, buffer: &mut [u8]) -> usize {
+                    let r = self.regs();
+                    let count = (r.sr.rxfifo_cnt() as usize).min(buffer.len());
+                    for slot in buffer[..count].iter_mut() {
+                        *slot = r.data.read_bits() as u8;
+                    }
+                    count
+                }
+
+                /// Queues as much of `data` as the transmit FIFO takes, without
+                /// waiting.
+                pub fn write_available(&self, data: &[u8]) -> usize {
+                    let r = self.regs();
+                    let free = FIFO_DEPTH - r.sr.txfifo_cnt() as usize;
+                    let count = free.min(data.len());
+                    for &byte in &data[..count] {
+                        r.data.write_bits(u32::from(byte));
+                    }
+                    count
+                }
+
+                // ============================================================
+                // Status
+                // ============================================================
+
+                /// Whether the master has this slave's address on the bus right
+                /// now.
+                #[inline]
+                pub fn is_addressed(&self) -> bool {
+                    self.regs().sr.slave_addressed()
+                }
+
+                /// Whether the current transfer is a read of this slave.
+                ///
+                /// Only meaningful while [`is_addressed`](Self::is_addressed).
+                #[inline]
+                pub fn master_requests_read(&self) -> bool {
+                    let r = self.regs();
+                    r.sr.slave_addressed() && r.sr.slave_rw()
+                }
+
+                /// Why SCL is held low, if it is.
+                pub fn stretch_cause(&self) -> Option<StretchCause> {
+                    match self.regs().sr.stretch_cause() {
+                        0 => Some(StretchCause::AddressMatch),
+                        1 => Some(StretchCause::TransmitEmpty),
+                        2 => Some(StretchCause::ReceiveFull),
+                        3 => Some(StretchCause::SendingAck),
+                        _ => None,
+                    }
+                }
+
+                /// Releases SCL after a stretch.
+                #[inline]
+                pub fn release_stretch(&self) {
+                    self.regs().scl_stretch_conf.trigger_slave_scl_stretch_clr();
+                }
+
+                /// Whether a START condition was seen since the last clear.
+                #[inline]
+                pub fn start_detected(&self) -> bool {
+                    self.regs().int_raw.read_bits() & Interrupt::StartDetect.mask() != 0
+                }
+
+                /// Clears the START condition flag.
+                #[inline]
+                pub fn clear_start(&self) {
+                    self.clear_interrupt(Interrupt::StartDetect);
+                }
+
+                /// Whether a STOP condition was seen since the last clear.
+                #[inline]
+                pub fn stop_detected(&self) -> bool {
+                    self.regs().int_raw.read_bits() & Interrupt::TransferComplete.mask() != 0
+                }
+
+                /// Clears the STOP condition flag.
+                #[inline]
+                pub fn clear_stop(&self) {
+                    self.clear_interrupt(Interrupt::TransferComplete);
+                }
+
+                /// Bytes waiting in the receive FIFO.
+                #[inline]
+                pub fn rx_fifo_count(&self) -> u8 {
+                    self.regs().sr.rxfifo_cnt() as u8
+                }
+
+                /// Bytes waiting in the transmit FIFO.
+                #[inline]
+                pub fn tx_fifo_count(&self) -> u8 {
+                    self.regs().sr.txfifo_cnt() as u8
+                }
+
+                /// Empties both FIFOs.
+                pub fn reset_fifos(&self) {
+                    let r = self.regs();
+                    r.fifo_conf.set_tx_fifo_rst();
+                    r.fifo_conf.set_rx_fifo_rst();
+                    r.fifo_conf.clr_tx_fifo_rst();
+                    r.fifo_conf.clr_rx_fifo_rst();
+                }
+
+                /// Whether the bus is currently busy.
+                #[inline]
+                pub fn is_bus_busy(&self) -> bool {
+                    self.regs().sr.bus_busy()
+                }
+
+                // ============================================================
+                // Interrupts
+                // ============================================================
+
+                /// Enables `interrupt`.
+                #[inline]
+                pub fn enable_interrupt(&self, interrupt: Interrupt) {
+                    let r = self.regs();
+                    r.int_ena.modify_bits(|v| v | interrupt.mask());
+                }
+
+                /// Disables `interrupt`.
+                #[inline]
+                pub fn disable_interrupt(&self, interrupt: Interrupt) {
+                    let r = self.regs();
+                    r.int_ena.modify_bits(|v| v & !interrupt.mask());
+                }
+
+                /// Whether `interrupt` is enabled.
+                #[inline]
+                pub fn interrupt_enabled(&self, interrupt: Interrupt) -> bool {
+                    self.regs().int_ena.read_bits() & interrupt.mask() != 0
+                }
+
+                /// Whether `interrupt` is pending, enabled or not.
+                #[inline]
+                pub fn interrupt_pending(&self, interrupt: Interrupt) -> bool {
+                    self.regs().int_raw.read_bits() & interrupt.mask() != 0
+                }
+
+                /// Clears `interrupt`.
+                #[inline]
+                pub fn clear_interrupt(&self, interrupt: Interrupt) {
+                    self.regs().int_clr.write_bits(interrupt.mask());
+                }
+
+                /// Disables every interrupt source.
+                pub fn disable_all_interrupts(&self) {
+                    self.regs().int_ena.write_bits(0);
+                }
+            }
+        }
+    };
+}
+
+impl_i2c_slave!(
+    I2c0Slave,
+    I2C0,
+    i2c0,
+    0,
+    I2C0_SCL_PAD_OUT,
+    I2C0_SCL_PAD_IN,
+    I2C0_SDA_PAD_OUT,
+    I2C0_SDA_PAD_IN,
+    peri_clk_ctrl10,
+    I2C0
+);
+impl_i2c_slave!(
+    I2c1Slave,
+    I2C1,
+    i2c1,
+    1,
+    I2C1_SCL_PAD_OUT,
+    I2C1_SCL_PAD_IN,
+    I2C1_SDA_PAD_OUT,
+    I2C1_SDA_PAD_IN,
+    peri_clk_ctrl11,
+    I2C1
 );

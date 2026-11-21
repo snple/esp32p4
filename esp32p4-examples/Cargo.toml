@@ -152,6 +152,10 @@ required-features = ["defmt"]
 [[bin]]
 name = "i2c_scan"
 path = "src/i2c_scan.rs"
+
+[[bin]]
+name = "i2c_slave"
+path = "src/i2c_slave.rs"
 required-features = ["defmt"]
 
 [[bin]]

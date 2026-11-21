@@ -13,7 +13,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | [`esp32p4-pac`](esp32p4-pac/) | **PAC**：由 `esp32p4.svd` 生成，提供寄存器块、字段常量和访问器。勿手改 |
 | [`esp32p4-rt`](esp32p4-rt/) | **运行时**：`_start`、trap 入口、`link.x`、CSR/汇编封装 |
 | [`esp32p4-macro`](esp32p4-macro/) | **过程宏**：`#[main]` |
-| [`esp32p4-hal`](esp32p4-hal/) | **HAL**：时钟树、GPIO / IO MUX、UART、I2C 主机、SPI 主机/从机（GPSPI2/3）、SD 卡主机（SDHOST）、ADC、温度传感器、GDMA（GDMA-AHB）与描述符链、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
+| [`esp32p4-hal`](esp32p4-hal/) | **HAL**：时钟树、GPIO / IO MUX、UART、I2C 主机/从机、SPI 主机/从机（GPSPI2/3）、SD 卡主机（SDHOST）、ADC、温度传感器、GDMA（GDMA-AHB）与描述符链、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
 | [`esp32p4-usb`](esp32p4-usb/) | **USB 栈**：DWC OTG 全速/高速控制器的设备模式与主机模式驱动（slave 模式、轮询）；协议层全部在跨仓库共享的 [`usb-stack`](../../rp2350/usb-stack)（设备状态机、标准请求、class、主机枚举与控制/bulk/interrupt 传输、HID 键盘） |
 | [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、UART 回环、I2C 扫描、SPI 主机/从机自检、SD 卡读写、ADC 单次与扫描采样、GDMA 存储到存储拷贝、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC、USB HID 主机 |
 | [`xtask`](xtask/) | 构建辅助：`cargo xtask gen-pac` |
@@ -46,6 +46,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `net_tcp_echo` | DHCP + TCP echo 服务器（需 `--features net`，无堆、无 async） |
 | `uart` | `UART1` 内部回环自检：三组数据原样收发，并打印波特率与帧格式 |
 | `i2c_scan` | `I2C0` 扫描 7 位地址空间，逐个探测并打印应答的从机 |
+| `i2c_slave` | `I2C0` 主机 + `I2C1` 从机：地址应答、收发、满 FIFO、寄存器访问、非阻塞接口、START/STOP 标志与时钟拉伸 |
 | `adc` | 报告 eFuse 校准是否可用，并在四档衰减下采样 13 个 ADC 焊盘 |
 | `dma_mem2mem` | GDMA-AHB 的存储到存储拷贝：单描述符 64 B 与四描述符 16 KB 两种链路，逐字节校验并打印吞吐 |
 | `spi` | GP-SPI2 主机对 GP-SPI3 从机（四根飞线）：时钟模式 0–3 × 1/4/32/64 字节双向校验 |
@@ -757,6 +758,48 @@ i2c.write_read(0x48, &[0x0f], &mut value).unwrap();
 
 示例 [`i2c_scan`](esp32p4-examples/src/i2c_scan.rs) 扫描 7 位地址空间；空总线上每个探测
 立刻返回 `NoAcknowledge`（实测 112 个地址约 5 ms）。
+
+### 从机
+
+同一个控制器换个角色就是从机：`I2c0Slave` / `I2c1Slave` 与 `I2c0` / `I2c1` 是两个类型、
+共用一个外设，所以一个控制器不可能同时是主和从。寄存器布局同一份宏展开，仍然零 trait、
+零实例分派。
+
+- `SlaveConfig`：7 位地址、时钟源、截止时间、是否应答广播地址 `0x00`、是否拉伸、是否开滤波；
+- 收发走 32 字节 FIFO：`read`（等主机写完的停止位，把收到的字节取出来）与 `write`
+  （把字节排进发送 FIFO 供主机读走），另有 `read_available` / `write_available` 不等人的版本；
+- 状态：`is_addressed`、`master_requests_read`、`stretch_cause`（地址匹配 / 发送空 / 接收满 /
+  正在回 ACK）、`release_stretch`、`start_detected` / `stop_detected` 与各自的清除、
+  FIFO 计数与复位、按源中断（`SOURCE` 直接喂给 `interrupt::claim`）。
+
+**拉伸必须有人服务。** 从机拉住 SCL 时主机就阻塞在自己的调用里，所以单线程轮询会死锁——
+拉伸要用中断或另一个线程。`SlaveConfig::stretch` 关掉它之后传输按线速跑，一次传输必须装进
+32 字节 FIFO（超出会回绕覆盖未读的数据）。示例两种模式都演示了：其余检查用关闭拉伸的轮询，
+拉伸本身用 `SlaveInterrupt` 中断里清 FIFO 来验证。
+
+踩过的坑：
+
+- **`CTR.RX_FULL_ACK_LEVEL` 必须清零，`FIFO_CONF.FIFO_PRT_EN` 必须置位**，否则 FIFO 满时从机
+  直接 NACK 地址字节而不是拉住 SCL——主机看到的是 `NoAcknowledge`，而"拉伸"永远不会发生，
+  现象和"从机没接上"一模一样；
+- 从机模式下 `TRANS_START` 有个坑：手动模式要求每次地址匹配前都置位，否则从机会 ACK 地址但
+  状态机不前进。这里用 `SLV_TX_AUTO_START_EN`（被寻址即自动开始发送）；
+- 主机中途放弃（自己超时后复位状态机）会让从机停在传输中间，光发新的 START 并不能让它复位；
+  这是故障态，正常路径不会出现，但现场调试时要知道。
+
+示例 [`i2c_slave`](esp32p4-examples/src/i2c_slave.rs) 让 `I2C0` 当主机、`I2C1` 当从机，
+跳线 `GPIO16`–`GPIO20`（SDA）与 `GPIO17`–`GPIO21`（SCL），每轮跑 8 项检查：
+
+| 检查 | 结果 |
+|------|------|
+| 地址 | `0x55` 被应答、`0x56` 被 NACK、回读地址正确 |
+| 接收 | 主机写 4 字节，从机 `read` 拿到的内容一致 |
+| 发送 | 从机 `write` 排 4 字节，主机读到同样的 4 字节，发送 FIFO 清空 |
+| 满 FIFO | 主机一次写 31 字节（命令寄存器允许的上限），从机读回 31 字节且内容一致 |
+| 寄存器访问 | 主机写寄存器号 → 从机读；从机排值 → 主机读，拆成两条事务 |
+| 非阻塞 | `read_available` / `write_available` 直接收发 |
+| 标志 | START / STOP 都锁存，清除后保持清零，总线空闲 |
+| 时钟拉伸 | 31+31 字节穿过 32 字节 FIFO：中断里搬走 32 字节后传输才继续，总线随后仍可用 |
 
 ## ADC
 
@@ -1807,6 +1850,8 @@ espflash save-image --chip esp32p4 \
 - 同步 TCP/IP（smoltcp）：DHCP 客户端、TCP/UDP/ICMP、可选 IPv6，无 async、堆可选
 - UART0–UART4：轮询收发、5–8 数据位/奇偶/停止位、信号反相与回环、CTS/RTS 流控、
   可选中钟源、按源中断；引脚经 GPIO 矩阵任意路由
+- I2C0/I2C1 从机：7 位地址与广播地址、32 字节 FIFO 收发、时钟拉伸、START/STOP 与地址状态、
+  按源中断
 - I2C0/I2C1 主机：100/400 kHz 及任意 SCL、7 位地址、写/读/写读、总线恢复、
   NACK/仲裁/超时错误与按源中断
 - SPI2/SPI3 主机与从机（四种时钟模式、64 字节缓冲）、SD 卡主机（识别、容量、DMA 块读写）、

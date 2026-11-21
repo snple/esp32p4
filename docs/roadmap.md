@@ -21,7 +21,7 @@
 | `systimer` | [systimer.rs](../esp32p4-hal/src/systimer.rs) | COMP1/COMP2 闹钟，COMP0 归 `Delay` |
 | `gpio` | [gpio/](../esp32p4-hal/src/gpio) | 引脚电气配置、GPIO 读写、四路中断、完整的 HP GPIO 交换矩阵信号路由，以及每个焊盘的直接 IO MUX 功能表（`pins`） |
 | `uart` | [uart.rs](../esp32p4-hal/src/uart.rs) | UART0–4：轮询收发、帧格式、流控、按源中断、GPIO 矩阵引脚路由 |
-| `i2c` | [i2c.rs](../esp32p4-hal/src/i2c.rs) | I2C0/1 主机：任意 SCL、7 位地址、写/读/写读、总线恢复、按源中断 |
+| `i2c` | [i2c.rs](../esp32p4-hal/src/i2c.rs) | I2C0/1 主机与从机：任意 SCL、7 位地址、写/读/写读、总线恢复、按源中断；从机侧 32 字节 FIFO 收发、时钟拉伸、START/STOP 与地址状态 |
 | `adc` | [adc.rs](../esp32p4-hal/src/adc.rs) | ADC1/2 单次转换与 eFuse 校准、HP 数字控制器样式表扫描（定时器 + GDMA-AHB）、IIR 滤波器与阈值监控器 |
 | `ledc` | [ledc.rs](../esp32p4-hal/src/ledc.rs) | 4 定时器 + 8 通道 PWM、小数分频、相位偏移、16 段占空比渐变；`timer::<N>()` / `channel::<N>()` 句柄 |
 | `rmt` | [rmt.rs](../esp32p4-hal/src/rmt.rs) | 4 发 4 收、脉冲 RAM 波形收发、载波、空闲阈值与接收滤波；`tx_channel::<N>()` / `rx_channel::<N>()` 句柄 |
@@ -64,8 +64,9 @@
 1. ~~**UART0–4 + LP UART**：先轮询，再中断（回调放进 owner），高速路径可选 DMA。~~
    已完成 `UART0–4`；LP UART 依赖 LP GPIO 矩阵/焊盘模型，见第 2 层。
 2. ~~**I2C0/1 + LP I2C**：主机模式（7/10 bit 地址、时钟拉伸、超时），轮询与中断。~~
-   已完成 `I2C0/1` 主机（7 位地址、时钟拉伸由硬件处理 + 软件截止时间）；10 位地址、
-   从机模式与 LP I2C 待补。
+   已完成 `I2C0/1` 主机（7 位地址、时钟拉伸由硬件处理 + 软件截止时间）与**从机**
+   （7 位地址与广播、32 字节 FIFO 收发、时钟拉伸与其中断服务、START/STOP 与地址状态），
+   示例 `i2c_slave` 用 `I2C0` 主机 + `I2C1` 从机逐项验证；10 位地址、双地址模式与 LP I2C 待补。
 3. ~~**GDMA**：描述符环、外设握手、字节序/位宽配置。~~
    已完成 GDMA-AHB（PAC 的 `AHB_DMA`）：`dma` 模块的通道句柄、`Chain` 描述符链/环、
    `AhbDma::copy` 的存储到存储路径，以及中断、优先级、突发与 ETM 开关；上板 200 轮
