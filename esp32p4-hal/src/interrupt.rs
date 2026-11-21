@@ -96,14 +96,15 @@
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use esp32p4_pac::interrupt_core0::BASE as MATRIX_BASE;
+use esp32p4_pac::interrupt_core0::BASE as MATRIX_CORE0;
+use esp32p4_pac::interrupt_core1::BASE as MATRIX_CORE1;
 use esp32p4_rt::interrupt as rt;
 
 /// A peripheral interrupt source, i.e. one input of the interrupt matrix.
 pub use esp32p4_pac::Interrupt;
 
 pub use esp32p4_rt::interrupt::{
-    CPU_INTERRUPT_COUNT, MAX_LEVEL, clear_handler, current_level, disable, enable, epoch,
+    CPU_INTERRUPT_COUNT, MAX_LEVEL, clear_handler, current_level, disable, enable, epoch, hart,
     in_interrupt, is_enabled, is_pending, is_unmasked, level, mask, pend, restore, set_handler,
     set_level, sleep, unmask, unpend,
 };
@@ -152,8 +153,20 @@ impl From<Interrupt> for Source {
     }
 }
 
-/// Offset of `CORE0_INTR_STATUS_REG_0` in the matrix.
+/// Offset of `COREx_INTR_STATUS_REG_0` in the matrix.
 const INTR_STATUS: u32 = 0x0200;
+
+/// Base of the interrupt matrix of `core`.
+///
+/// Each HP core has its own matrix at the same layout: a source may be routed to
+/// different lines on the two cores, and the status registers are per core too.
+#[inline]
+fn matrix_base(core: u32) -> u32 {
+    match core {
+        0 => MATRIX_CORE0,
+        _ => MATRIX_CORE1,
+    }
+}
 
 /// A CPU interrupt line.
 ///
@@ -260,8 +273,8 @@ impl Default for Level {
 /// (`CORE0_INTR_STATUS_REG_0` covers sources 0..=31, and so on), so the source
 /// id doubles as the register index.
 #[inline]
-fn map_register(source: Source) -> *mut u32 {
-    (MATRIX_BASE + 4 * source.id() as u32) as *mut u32
+fn map_register(core: u32, source: Source) -> *mut u32 {
+    (matrix_base(core) + 4 * source.id() as u32) as *mut u32
 }
 
 /// Map `source` onto CPU interrupt line `line`.
@@ -277,7 +290,7 @@ pub fn route(source: impl Into<Source>, line: CpuInterrupt) {
     // MMIO.
     unsafe {
         core::ptr::write_volatile(
-            map_register(source.into()),
+            map_register(rt::hart(), source.into()),
             line.number() as u32 + rt::FIRST_EXT_INTR_ID,
         )
     };
@@ -289,7 +302,7 @@ pub fn route(source: impl Into<Source>, line: CpuInterrupt) {
 /// interrupt ids) report line 0.
 pub fn route_of(source: impl Into<Source>) -> CpuInterrupt {
     // SAFETY: see `route`.
-    let value = unsafe { core::ptr::read_volatile(map_register(source.into())) };
+    let value = unsafe { core::ptr::read_volatile(map_register(rt::hart(), source.into())) };
     let id = (value & 0x3f).saturating_sub(rt::FIRST_EXT_INTR_ID);
     CpuInterrupt::new(id.min(CPU_INTERRUPT_COUNT - 1) as u8)
 }
@@ -303,7 +316,9 @@ pub fn source_pending(source: impl Into<Source>) -> bool {
     let id = source.into().id() as u32;
     // SAFETY: `INTR_STATUS` holds four registers covering all 128 sources.
     let status = unsafe {
-        core::ptr::read_volatile((MATRIX_BASE + INTR_STATUS + 4 * (id / 32)) as *const u32)
+        core::ptr::read_volatile(
+            (matrix_base(rt::hart()) + INTR_STATUS + 4 * (id / 32)) as *const u32,
+        )
     };
     status & (1 << (id % 32)) != 0
 }
@@ -312,8 +327,11 @@ pub fn source_pending(source: impl Into<Source>) -> bool {
 // Line ownership
 // ============================================================================
 
-/// Lines currently handed out by [`claim`].
-static CLAIMED: AtomicU32 = AtomicU32::new(0);
+/// Lines currently handed out by [`claim`], per core.
+///
+/// The 32 lines exist on each hart, so core 0 claiming line 21 says nothing
+/// about core 1.
+static CLAIMED: [AtomicU32; rt::CORES] = [const { AtomicU32::new(0) }; rt::CORES];
 
 /// A CPU interrupt line taken by [`claim`].
 ///
@@ -359,7 +377,7 @@ impl Drop for InterruptHandler {
         let line = self.line.number() as u32;
         rt::mask(line);
         rt::clear_handler(line);
-        CLAIMED.fetch_and(!self.line.bit(), Ordering::AcqRel);
+        CLAIMED[rt::hart() as usize].fetch_and(!self.line.bit(), Ordering::AcqRel);
     }
 }
 
@@ -396,14 +414,15 @@ pub unsafe fn claim(
     handler: fn(),
 ) -> InterruptHandler {
     let bit = line.bit();
-    let mut claimed = CLAIMED.load(Ordering::Relaxed);
+    let claimed_by_core = &CLAIMED[rt::hart() as usize];
+    let mut claimed = claimed_by_core.load(Ordering::Relaxed);
     loop {
         assert!(
             claimed & bit == 0,
             "CPU interrupt line {} is already in use",
             line.number()
         );
-        match CLAIMED.compare_exchange_weak(
+        match claimed_by_core.compare_exchange_weak(
             claimed,
             claimed | bit,
             Ordering::AcqRel,

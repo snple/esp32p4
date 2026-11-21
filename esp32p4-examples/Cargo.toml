@@ -75,6 +75,10 @@ path = "src/twai_bus.rs"
 [[bin]]
 name = "mmu"
 path = "src/mmu.rs"
+
+[[bin]]
+name = "multicore"
+path = "src/multicore.rs"
 required-features = ["defmt"]
 
 [[bin]]

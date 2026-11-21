@@ -21,6 +21,7 @@
 | `systimer` | [systimer.rs](../esp32p4-hal/src/systimer.rs) | COMP1/COMP2 闹钟，COMP0 归 `Delay` |
 | `gpio` | [gpio/](../esp32p4-hal/src/gpio) | 引脚电气配置、GPIO 读写、四路中断、完整的 HP GPIO 交换矩阵信号路由，以及每个焊盘的直接 IO MUX 功能表（`pins`） |
 | `uart` | [uart.rs](../esp32p4-hal/src/uart.rs) | UART0–4：轮询收发、帧格式、流控、按源中断、GPIO 矩阵引脚路由 |
+| `multicore` | [multicore.rs](../esp32p4-hal/src/multicore.rs) | 双 HP 核：启动 core 1（静态栈、自己的 CLIC）、跨核软中断、软件 Mutex；per-hart 中断矩阵与 handler 表 |
 | `i2c` | [i2c.rs](../esp32p4-hal/src/i2c.rs) | I2C0/1 主机与从机：任意 SCL、7 位地址、写/读/写读、总线恢复、按源中断；从机侧 32 字节 FIFO 收发、时钟拉伸、START/STOP 与地址状态 |
 | `adc` | [adc.rs](../esp32p4-hal/src/adc.rs) | ADC1/2 单次转换与 eFuse 校准、HP 数字控制器样式表扫描（定时器 + GDMA-AHB）、IIR 滤波器与阈值监控器 |
 | `ledc` | [ledc.rs](../esp32p4-hal/src/ledc.rs) | 4 定时器 + 8 通道 PWM、小数分频、相位偏移、16 段占空比渐变；`timer::<N>()` / `channel::<N>()` 句柄 |
@@ -194,6 +195,19 @@
 - **TRNG + 硬件加密（AES/SHA/RSA/ECC/HMAC/DS）**：TLS、安全启动的前提，
   否则全部落在软件实现上。
 
+## 4.1 双核与 LP 核
+
+两个 HP 核已经能一起跑：[`multicore`](../esp32p4-hal/src/multicore.rs) 启动 core 1
+（静态栈、自己的 CLIC）、提供跨核软中断与软件 `Mutex`，中断矩阵与 handler 表按 hart
+分开。还没做的：
+
+- **抢占式调度/任务模型**：现在是裸核加静态分工，谁跑什么由调用者安排；
+- **LP 核**：第三个核（`LP_SYS`/`LP_PERI`）有自己的启动流程、中断控制器与 TCM，
+  和 HP 核不是同一套；`LP_AON_CLKRST` 里已有 `hpcore/LP core` 的复位与停摆位，但驱动未写；
+- **核间队列**：没有硬件 FIFO（不像 RP2350 的 SIO），要自己用环形缓冲加原子索引实现；
+- **跨核 cache 维护**：L1 是共享的，但要保证“写-读”顺序仍需 `fence`，目前只有原子操作的
+  acquire/release；DMA 与外设的跨核共享还要额外的 writeback/invalidate 约定。
+
 ## 5. 第 3 层：锦上添花
 
 I3C、UHCI、APM/访问权限、eFuse 编程、运行时 Flash 读写（现在烧录完全依赖 `espflash`）。
@@ -210,7 +224,8 @@ SOC_ETM 的通道机制（`etm` 模块）与 MCPWM 侧的信号 id 已就位，�
 | 4 | ~~I2C（I2C0/1）~~ | 已完成：`i2c_scan` 示例通过；LP I2C 待 LP 引脚模型 |
 | 5 | ~~GDMA-AHB~~ | 已完成：`dma_mem2mem` 示例逐字节校验通过；AXI/DW_GDMA 与外设握手驱动见第 3 节 |
 | 6 | SPI/SD、ADC/TSENS、PWM 家族 | 各自示例 |
-| 7 | 低功耗（PMU / LP 核 / WDT / brownout） | 睡眠-唤醒示例 |
+| 7 | ~~双 HP 核~~ | 已完成：`multicore` 示例验证 core 1 启动、跨核互踢中断与加锁计数（200000 精确）；LP 核另算 |
+| 8 | 低功耗（PMU / LP 核 / WDT / brownout） | 睡眠-唤醒示例 |
 
 第 0 层与阶段 1、2 完成后，HAL 具备“接串口就能调试、接按键就能交互”的最小闭环，
 之后再向外设广度与低功耗推进。

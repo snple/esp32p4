@@ -31,6 +31,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `mmu` | 把 PSRAM 物理页 0 映射到 MMU 表项 512，验证 cached/uncached 别名 |
 | `clock` | 打印时钟树的根/CPU/MEM/SYS/APB 频率与参考时钟状态 |
 | `tcm` | 用 `#[tcmfunc]`/`#[ramfunc]` 把代码放进 8 KB scratchpad / SRAM，并打印落点 |
+| `multicore` | 启动第二个 HP 核：两核各 10 万次加锁计数、双向互踢中断、各自读到自己的 core id |
 | `psram` | 初始化封装内 PSRAM，整体作为全局堆使用 |
 | `psram_split` | 把 PSRAM 分成「cached 全局堆 + uncached DMA 池」两部分 |
 | `defmt_log` | 用 `defmt-rtt` 输出日志（需 `--no-default-features --features defmt-rtt`，JTAG 读取） |
@@ -1778,6 +1779,68 @@ static SAMPLES: [u32; 64] = [0; 64];
 
 细节见 [`docs/boot.md`](docs/boot.md)。
 
+## 双核（HP CPU0 / HP CPU1）
+
+P4 有三个核：两个 HP RISC-V 核（同一套指令集、共享内存）和一个 LP 核。上电只有
+core 0 出复位，core 1 停在复位里；[`multicore`](esp32p4-hal/src/multicore.rs) 负责把
+它拉起来，并提供跨核通信与共享状态的锁。
+
+```rust
+static STACK: Stack<8192> = Stack::new();
+static COUNTER: Mutex<u32> = Mutex::new(0);
+
+fn core1() -> ! {
+    loop { *COUNTER.lock() += 1; }
+}
+
+let mut mc = Multicore::init(dp.LP_SYS, dp.HP_SYS, dp.PMU, dp.HP_SYS_CLKRST);
+unsafe { mc.launch_core1(core1, &STACK) };   // 返回到 core 1 已在跑
+```
+
+启动序列（顺序本身就是坑，见下）：
+
+1. 把 `_start_core1` 的地址写进 `LP_SYS.BOOT_ADDR_HP_CORE1`；
+2. 开 `HP_SYS_CLKRST.CORE1_CPU_CLK_EN` 与 `CORE1_CLIC_CLK_EN`；
+3. 清 `HP_SYS_CLKRST.RST_EN_CORE1_GLOBAL` 放复位；
+4. 把 `PMU.CPU_SW_STALL.hpcore1_sw_stall_code` 从 `0x86` 改成 `0xFF` 解除停摆，
+   等 `HP_SYS.COREx_CORESTALLED_ST` 落下来；
+5. 等 core 1 在 `_start_core1` 里跑起来并打上“已活”标记。
+
+`_start_core1`（在 `esp32p4-rt` 里）做的事和 core 0 的 `_start` 几乎一样，只是不重复
+清 `.bss`：装 `sp`（由 `launch_core1` 传入的静态栈顶）、`gp`、`mtvec`、清 `MIE`、
+配置**它自己的 CLIC**、开 FPU，然后跳到入口。入口与栈顶通过两个静态字传给汇编，
+因为硬件是“跳到裸地址、不带参数”。
+
+细节与踩过的坑：
+
+- **CLIC 和 32 条中断线是 per-hart 的**，但中断矩阵不是：`INTERRUPT_CORE0`
+  （`0x500D_6000`）和 `INTERRUPT_CORE1`（`0x500D_6800`）是同一套布局的两份。所以
+  `interrupt::route`/`route_of`/`source_pending` 都按 `mhartid` 选矩阵，`claim` 的
+  占用表和 RT 的 handler 表也都按核分开——否则一个核 claim 了 21 号线上另一个核会跑
+  错 handler；
+- **跨核软中断的编号不是 0..3**：`CPU_INTR_FROM_CPU_n` 在矩阵里是**索引 79..82**
+  （`COREx_CPU_INT_FROM_CPU_n_MAP`，偏移 `0x13C`）。用 0..3 会路由到别的外设源上，
+  现象是“触发寄存器写了、轮询看得见、中断永远不来”；
+- **触发寄存器是按“目标核”编址的**：写 `HP_SYS.CPU_INTR_FROM_CPU_0` 打的是 core 0，
+  写 `..._1` 打的是 core 1。所以每个核在自己矩阵里路由的源 = 自己的编号，接收方清自己
+  那一位；IDF 的 `crosscore_int` 也是这么分的（核 0 用 source 0，核 1 用 source 1）；
+- **没有硬件自旋锁**。P4 不像 ESP32 有 `SPINLOCK` 外设，[`Mutex`](esp32p4-hal/src/multicore.rs)
+  是 `AtomicBool` 的 test-and-set（acquire/release）：两核经共享 L1 是一致的、`A` 扩展
+  的原子指令直达内存，所以正确；但它是**自旋**，不能持锁等另一个核；
+- 缓存不用管：L1 是两核共享的，`CACHE.L1_ICACHE_SHUT_IBUS1`（core 1 的取指通路）
+  复位值就是 0，即开着——core 1 能直接跑 flash 里的代码；
+- `Peripherals` 只有一份，core 1 拿不到自己的外设集合：跨核共享的东西必须显式放进
+  静态变量并用 `Mutex` 保护，外设驱动只能归其中一个核。
+
+示例 [`multicore`](esp32p4-examples/src/multicore.rs) 每轮跑 4 项检查：
+
+| 检查 | 结果 |
+|------|------|
+| 身份 | core 0 跑 `main`、core 1 已出复位并开始执行、`mhartid` 两核分别为 0 和 1 |
+| 计数 | 两核各 10 万次加锁自增，合计正好 200000（锁错就会少） |
+| 互踢 | core 0 打 core 1，core 1 的中断响应并回踢，core 0 的中断收到；handler 里还能读到挂起位 |
+| core id | core 1 自报的 core 编号是 1 |
+
 ## 重新生成 PAC
 
 `esp32p4.svd` 更新后：
@@ -1828,6 +1891,8 @@ espflash save-image --chip esp32p4 \
 
 - 从 SVD 生成完整 PAC（89 个外设、约 5600 个展开寄存器）
 - RISC-V 启动、trap 入口、CSR/汇编封装、ESP-IDF 兼容镜像布局
+- 双核：启动第二个 HP 核（静态栈 + 各自的 CLIC）、跨核软中断（`signal` / `wait_for_signal`）、
+  软件 `Mutex`；中断矩阵、handler 表与线占用表都按 hart 分开
 - GPIO0–GPIO53 的推挽/开漏输出与输入、IO MUX 配置、四路中断（边沿/电平、按线使能与状态清除）、
   完整的 HP GPIO 交换矩阵信号路由（`gpio::signal`）
 - SYSTIMER 阻塞延时（`sleep_ms` / `sleep_until`）与单调时钟（`time::Instant` / `Duration`）

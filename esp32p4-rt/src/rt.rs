@@ -173,6 +173,87 @@ _start_trap:
     SAVE_FP = const FP_FRAME,
 );
 
+/// Entry point core 1 jumps to inside this runtime.
+///
+/// Core 1 starts at a bare reset vector with no arguments, so the entry and the
+/// stack are handed over through these two words instead.
+#[unsafe(no_mangle)]
+pub static CORE1_ENTRY: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+/// Stack top core 1 loads before it runs anything else.
+#[unsafe(no_mangle)]
+pub static CORE1_STACK: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+
+core::arch::global_asm!(
+    r#"
+.section .init, "ax"
+/* Entry point for HP core 1, which starts with nothing set up: the core comes
+   out of reset in machine mode with whatever `sp` and `gp` the ROM left, its
+   own CLIC unconfigured and the FPU off. Everything `_start` does for core 0
+   except the `.bss` zeroing (shared, already done) is done here. */
+.global _start_core1
+.type _start_core1, @function
+_start_core1:
+    /* Stack first: nothing may touch it before this. */
+    la t0, {stack}
+    lw sp, 0(t0)
+    /* Keep the entry in a callee-saved register: the calls below are ordinary
+       Rust functions and may clobber the argument registers. */
+    la t0, {entry}
+    lw s0, 0(t0)
+
+    .option push
+    .option norelax
+    la gp, __global_pointer$
+    .option pop
+
+    /* Its own trap vector: the CLIC is per hart. */
+    la t0, _start_trap
+    csrw mtvec, t0
+    csrw mie, zero
+    csrci mstatus, 8          /* clear MIE */
+
+    call {clic_init}
+
+    /* Enable the FPU (mstatus.FS = Dirty) so F-extension code can run. */
+    li t0, 0x6000
+    csrs mstatus, t0
+
+    jalr zero, 0(s0)
+
+    /* The entry point must never return. */
+5:
+    j 5b
+.size _start_core1, . - _start_core1
+"#,
+    clic_init = sym crate::interrupt::init,
+    entry = sym CORE1_ENTRY,
+    stack = sym CORE1_STACK,
+);
+
+/// Hands core 1 its entry point and stack.
+///
+/// # Safety
+///
+/// `stack_top` must be the top of a writable region nothing else uses, 16-byte
+/// aligned and large enough for the trap frame; `entry` must never return.
+pub unsafe fn set_core1_entry(entry: fn() -> !, stack_top: usize) {
+    use core::sync::atomic::Ordering;
+    CORE1_STACK.store(stack_top, Ordering::Release);
+    CORE1_ENTRY.store(entry as usize, Ordering::Release);
+}
+
+/// The address core 1 has to start at.
+///
+/// This is what goes into the chip's core-1 boot address register before the
+/// core is released from reset.
+#[inline]
+pub fn core1_boot_address() -> usize {
+    unsafe extern "C" {
+        fn _start_core1() -> !;
+    }
+    _start_core1 as *const () as usize
+}
+
 /// Integer register frame saved by `_start_trap`.
 #[repr(C)]
 pub struct TrapFrame {

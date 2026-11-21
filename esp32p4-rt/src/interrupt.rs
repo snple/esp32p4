@@ -92,14 +92,22 @@ pub const fn level_of_byte(byte: u8) -> u8 {
 const _: () = assert!(CLIC_INTS + (19 + FIRST_EXT_INTR_ID as usize) * 4 + 3 == 0x2080_108f);
 const _: () = assert!(CLIC_INTS + (20 + FIRST_EXT_INTR_ID as usize) * 4 + 3 == 0x2080_1093);
 
-static HANDLERS: [AtomicUsize; CPU_INTERRUPT_COUNT as usize] =
-    [const { AtomicUsize::new(0) }; CPU_INTERRUPT_COUNT as usize];
+/// Number of HP cores this runtime supports.
+pub const CORES: usize = 2;
 
-/// Set while a registered handler runs, i.e. what `mintstatus.MIL != 0` reports
-/// on a controller that implements it.
-static IN_HANDLER: AtomicBool = AtomicBool::new(false);
-/// Level of the handler that is running, or 0 outside a handler.
-static HANDLER_LEVEL: AtomicU8 = AtomicU8::new(0);
+/// Handler per core and CPU interrupt line.
+///
+/// The CLIC and its 32 lines are per hart, so the same line number means
+/// different things on core 0 and core 1: the table has to be indexed by hart
+/// as well, or a line claimed on one core would run the other core's handler.
+static HANDLERS: [[AtomicUsize; CPU_INTERRUPT_COUNT as usize]; CORES] =
+    [const { [const { AtomicUsize::new(0) }; CPU_INTERRUPT_COUNT as usize] }; CORES];
+
+/// Set while a registered handler runs, per core: what `mintstatus.MIL != 0`
+/// reports on a controller that implements it.
+static IN_HANDLER: [AtomicBool; CORES] = [const { AtomicBool::new(false) }; CORES];
+/// Level of the handler that is running, or 0 outside a handler, per core.
+static HANDLER_LEVEL: [AtomicU8; CORES] = [const { AtomicU8::new(0) }; CORES];
 
 /// Bumped for every interrupt the trap entry dispatches.
 ///
@@ -115,6 +123,17 @@ static IRQ_EPOCH: AtomicU32 = AtomicU32::new(0);
 #[inline]
 pub fn epoch() -> u32 {
     IRQ_EPOCH.load(Ordering::Acquire)
+}
+
+/// Which core this code is running on.
+///
+/// `mhartid` is the hart's own id: 0 for HP core 0, 1 for HP core 1.
+#[inline]
+pub fn hart() -> u32 {
+    let hart: u32;
+    // SAFETY: reading a read-only CSR has no side effects.
+    unsafe { core::arch::asm!("csrr {hart}, mhartid", hart = out(reg) hart) };
+    hart
 }
 
 /// Byte address of `clicintXX[i]` for `field` 0..=3.
@@ -204,8 +223,9 @@ where
 /// Call [`unmask`] afterwards, and [`enable`] once, to actually take the
 /// interrupt.
 pub fn set_handler(cpu_int: u32, handler: fn()) {
+    let core = hart() as usize;
     assert!(cpu_int < CPU_INTERRUPT_COUNT, "no such CPU interrupt line");
-    HANDLERS[cpu_int as usize].store(handler as usize, Ordering::Release);
+    HANDLERS[core][cpu_int as usize].store(handler as usize, Ordering::Release);
 }
 
 /// Remove the handler of CPU interrupt line `cpu_int`.
@@ -213,8 +233,9 @@ pub fn set_handler(cpu_int: u32, handler: fn()) {
 /// The line keeps its CLIC configuration; a spurious interrupt dispatches to
 /// nothing. Mask the line first with [`mask`].
 pub fn clear_handler(cpu_int: u32) {
+    let core = hart() as usize;
     assert!(cpu_int < CPU_INTERRUPT_COUNT, "no such CPU interrupt line");
-    HANDLERS[cpu_int as usize].store(0, Ordering::Release);
+    HANDLERS[core][cpu_int as usize].store(0, Ordering::Release);
 }
 
 /// Unmask CPU interrupt line `cpu_int`.
@@ -316,18 +337,19 @@ pub(crate) fn dispatch(cpu_int: u32) {
 
     IRQ_EPOCH.fetch_add(1, Ordering::Release);
 
-    let previous_in_handler = IN_HANDLER.swap(true, Ordering::Relaxed);
-    let previous_level = HANDLER_LEVEL.swap(level(cpu_int), Ordering::Relaxed);
+    let core = hart() as usize;
+    let previous_in_handler = IN_HANDLER[core].swap(true, Ordering::Relaxed);
+    let previous_level = HANDLER_LEVEL[core].swap(level(cpu_int), Ordering::Relaxed);
 
-    let handler = HANDLERS[cpu_int as usize].load(Ordering::Acquire);
+    let handler = HANDLERS[core][cpu_int as usize].load(Ordering::Acquire);
     if handler != 0 {
         // SAFETY: `set_handler` only ever stores a `fn()`.
         let handler: fn() = unsafe { core::mem::transmute(handler) };
         handler();
     }
 
-    HANDLER_LEVEL.store(previous_level, Ordering::Relaxed);
-    IN_HANDLER.store(previous_in_handler, Ordering::Relaxed);
+    HANDLER_LEVEL[core].store(previous_level, Ordering::Relaxed);
+    IN_HANDLER[core].store(previous_in_handler, Ordering::Relaxed);
 }
 
 /// Decode `mcause` into `(is_interrupt, code)`.
@@ -342,13 +364,13 @@ pub(crate) fn decode_cause(cause: usize) -> (bool, usize) {
 /// implemented on this chip (see the module documentation).
 #[inline]
 pub fn in_interrupt() -> bool {
-    IN_HANDLER.load(Ordering::Relaxed)
+    IN_HANDLER[hart() as usize].load(Ordering::Relaxed)
 }
 
 /// The CLIC level of the handler being executed, or 0 outside a handler.
 #[inline]
 pub fn current_level() -> u8 {
-    HANDLER_LEVEL.load(Ordering::Relaxed)
+    HANDLER_LEVEL[hart() as usize].load(Ordering::Relaxed)
 }
 
 /// Stop the core until an interrupt is pending.

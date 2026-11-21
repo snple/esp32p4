@@ -54,4 +54,4 @@ mod rt;
 #[cfg(feature = "rt")]
 pub use rt::TrapFrame;
 #[cfg(feature = "rt")]
-pub use rt::{TRAP_CAUSE, TRAP_EPC};
+pub use rt::{CORE1_ENTRY, CORE1_STACK, TRAP_CAUSE, TRAP_EPC, core1_boot_address, set_core1_entry};

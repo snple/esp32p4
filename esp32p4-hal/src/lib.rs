@@ -197,6 +197,7 @@ pub mod interrupt;
 pub mod ledc;
 pub mod mcpwm;
 pub mod mmu;
+pub mod multicore;
 #[cfg(feature = "net")]
 pub mod net;
 pub mod pcnt;
