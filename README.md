@@ -56,6 +56,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `rmt` | RMT：GPIO2 上自发自收一段 WS2812 波形，逐脉冲比对电平与时长 |
 | `pcnt` | PCNT：用 LEDC 的 10 kHz 方波计数，验证限值回绕、标志锁存与暂停/恢复 |
 | `mcpwm` / `mcpwm_extras` | MCPWM0：前者查计数器/强制电平/三档占空比/互补加死区，后者查同步、捕获、故障跳闸、载波、ETM、事件比较器与中断 |
+| `twai` | TWAI0（CAN 2.0B）：把 TX/RX 路由到同一个焊盘做回环，验证标准/扩展/远程帧往返、过滤器正负向、收发中断、位时序与非法输入 |
 
 ## 快速开始
 
@@ -1242,6 +1243,81 @@ channel.enable(true);
 
 示例 [`mcpwm_extras`](esp32p4-examples/src/mcpwm_extras.rs) 每秒重跑这七项检查（同步、捕获、
 故障、载波、ETM、事件比较器、中断）。
+
+## CAN（TWAI）
+
+[`twai`](esp32p4-hal/src/twai.rs) 覆盖三个 TWAI 控制器（`Twai0`/`Twai1`/`Twai2`）。先把硬件
+事实说清楚：**P4 的 TWAI 是经典 CAN 2.0B，没有 CAN-FD**（`soc_caps.h` 里没有
+`SOC_TWAI_SUPPORTS_FD`，TRM 第 54 章也没有 FD 的帧格式），所以这里只有标准帧/扩展帧、
+数据帧/远程帧、最多 8 字节载荷。路线图早先写的「CAN-FD ×3」是错的，已更正。
+
+```rust
+let twai = Twai0::init(dp.TWAI0, &dp.HP_SYS_CLKRST);
+twai.configure(&Config {
+    timing: Timing::for_bitrate(XTAL_HZ, 500_000, 875).unwrap(),
+    mode: Mode::SelfTest,
+    filter: Filter::Standard { id: 0x123, mask: 0x7FF },
+});
+twai.start();
+
+let mut frame = Frame::data(Id::Extended(0x1AB_CDEF), &[1, 2, 3]).unwrap();
+frame.self_reception = true;   // 发送的同时收进接收缓冲
+frame.single_shot = true;      // 失败不重试
+twai.transmit(&frame).unwrap();
+twai.wait_transmitted();
+let received = twai.receive().unwrap();
+```
+
+- **位时序**：`Timing::for_bitrate(clock, bitrate, 采样点千分比)` 只在
+  `clock / (bitrate × quanta)` 整除时接受（`quanta = 1 + tseg1 + tseg2`），再在合法的
+  tseg1/tseg2 里挑采样点最接近的组合。一个量子是 `prescaler` 个时钟周期，而寄存器里只放
+  `prescaler / 2 − 1`，所以预分频只能是偶数。40 MHz 晶振下 125k/250k/500k 都拿到 87.5 %，
+  1 Mbit/s 最接近的是 90 %。
+- **过滤器**：硬件只有一个过滤器（`acceptance_filter_mode` 恒为单过滤器），32 位 code/mask
+  与**帧缓冲共用 `0x40`–`0x70`**，只有在复位模式里才是 ACR/AMR。`Filter::{AcceptAll, Raw,
+  Standard, Extended}` 把这些编码收在里面。
+- **收发**：`transmit` 先把 13 字节写进发送缓冲，再用**一次**命令写入触发（`TX_REQUEST` 是
+  自清位，单次发送要 `TX_REQUEST | ABORT_TX` 同时写）；`receive` 读完缓冲再 `RELEASE_BUFFER`
+  让 FIFO 前进；`frames_pending()` 是 FIFO 深度。
+- **状态与中断**：`status()`、`bus_state()`（Active/Passive/Off）、`error_counters()`；
+  `Interrupts` 是一组位，配 `enable_interrupts` / `interrupts()`，`Twai0::SOURCE` 直接喂给
+  `interrupt::claim`。**读中断寄存器会清掉除 RI 以外的全部标志**，所以 `interrupts()` 一次
+  读完再解码，本身就是「读即应答」。
+
+没有收发器也能自测，但要两件事同时成立：`Mode::SelfTest`（不因缺少应答报错）+
+`self_reception`（帧同时进接收缓冲）。而且**发送电平必须回到 RX 输入**——自接收不是外设内部的
+数字回环，位流仍然是从 RX 引脚进来的。省掉收发器与杜邦线的办法是把 `TWAI0_TX` 与
+`TWAI0_RX` 路由到**同一个焊盘**：焊盘的输入缓冲读到的就是它自己被驱动的电平。示例就是这么
+接的。
+
+踩过的坑：
+
+- 只把 RX 上拉、TX 悬空时，控制器看到的是浮空/带噪声的总线：`STATUS` 里 RS/TS 常亮、
+  发送请求永远不完成、错误计数一直是 0。发不出去的后果是**卡住而不是报错**，很容易误判成
+  「时钟没开」；
+- 帧缓冲那段地址**读的是接收缓冲、写的是发送缓冲**，所以回读校验拿到的是上一次收到的帧，
+  不是刚写进去的那一帧；
+- 复位模式下同一段地址是 ACR/AMR（`data0`–`data7`），`data8`–`data12` 在复位模式里不存在，
+  读回 0；
+- 时钟：`soc_clk_ctrl2.reg_twaiN_apb_clk_en` + `peri_clk_ctrl115.reg_twaiN_clk_en`，源固定
+  40 MHz 晶振（`clk_src_sel` 只有一位，0 = XTAL；RC_FAST 精度不够，不做），`clock_divider`
+  只影响 CLKOUT、与位率无关。**复位位在时钟块里叫 `REG_RST_EN_CAN0/1/2`**（bit 26/27/28），
+  PAC 里就是 `reg_rst_en_can0`——名字不同，位置和 IDF 的 `reg_rst_en_twai0` 一致；
+- 中断使能寄存器的字段名带 `ext_` 前缀（`ext_receive_int_ena` 等），位置与中断寄存器相同。
+
+**当前状态**（40 MHz 晶振，500 kbit/s，87.5 %，自测模式 + 同焊盘回环）：
+
+| 检查 | 结果 |
+|------|------|
+| 标准帧往返 | ID `0x123`、3 字节载荷原样回来 |
+| 扩展帧往返 | ID `0x1ABCDEF`、8 字节载荷原样回来 |
+| 远程帧 | `remote` 置位、DLC 4、无载荷 |
+| 过滤器 | `0x123` 放行、`0x124` 丢弃（`Filter::Standard { id: 0x123, mask: 0x7FF }`） |
+| 中断 | 1 次发送中断 + 1 次接收中断（处理器把帧读走），事后无残留标志 |
+| 位时序 | 125k/250k/500k/1M 精确命中，采样点 87.5/87.5/87.5/90 % |
+| 非法输入 | 9 字节载荷、标准 ID `0x800`、扩展 ID `0x20000000`、1234567 bit/s 全部被拒 |
+
+示例 [`twai`](esp32p4-examples/src/twai.rs) 每秒重跑一遍这套检查，每项单独打印 `ok`/`FAIL`。
 
 ## eFuse 与芯片版本
 

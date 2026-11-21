@@ -61,6 +61,10 @@ name = "mcpwm_extras"
 path = "src/mcpwm_extras.rs"
 
 [[bin]]
+name = "twai"
+path = "src/twai.rs"
+
+[[bin]]
 name = "mmu"
 path = "src/mmu.rs"
 required-features = ["defmt"]

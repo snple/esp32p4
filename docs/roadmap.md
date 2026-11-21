@@ -28,6 +28,7 @@
 | `pcnt` | [pcnt.rs](../esp32p4-hal/src/pcnt.rs) | 4 单元 × 2 通道脉冲计数、边沿/控制动作、滤波、限值与五个观察点 |
 | `mcpwm` | [mcpwm.rs](../esp32p4-hal/src/mcpwm.rs) | 2 控制器 × 3 定时器/操作器、比较器、输出动作、死区、强制电平、同步、故障跳闸、捕获、载波、事件比较器、中断与 ETM 钩子 |
 | `etm` | [etm.rs](../esp32p4-hal/src/etm.rs) | SOC_ETM 的 50 个通道：事件/任务 id 连接与使能 |
+| `twai` | [twai.rs](../esp32p4-hal/src/twai.rs) | TWAI0/1/2 经典 CAN 2.0B（无 CAN-FD）：位时序、过滤器、标准/扩展/远程帧收发、自接收、状态与错误计数、按源中断 |
 | `tsens` | [tsens.rs](../esp32p4-hal/src/tsens.rs) | `LP_TSENS` 温度传感器：上电与时钟、5 档自动选择、毫摄氏度读数、硬件监测阈值与中断 |
 | `sdhost` | [sdhost.rs](../esp32p4-hal/src/sdhost.rs) | SD 卡主机（`SDHOST`）：识别（CMD0/8/2/3/9/7、ACMD41/6）、CSD 容量解码、1/4 位总线、内部 DMA 的块读写 |
 | `spi` | [spi.rs](../esp32p4-hal/src/spi.rs) | GP-SPI2/3 主机与从机：CPU 传输（64 B 缓冲）、时钟模式 0–3、位序、硬件 CS 时序、任意引脚路由 |
@@ -122,7 +123,15 @@
    调用方不再需要写「第几号」，并可用 `name()` / `ALL` / `into()` 取名字、遍历、接到 ETM。
    代价是句柄类型不同者不能放进同一个数组，`for timer in [t0, t1]` 这类循环要展开；比较器
    超周期不再有运行期校验，改由文档约定。
-8. **TWAI（CAN-FD ×3）、I2S0/1/2（音频）、SDIO slave**。
+8. **I2S0/1/2（音频）、SDIO slave**。
+   ~~TWAI~~ 已完成，但**不是** CAN-FD：P4 的 TWAI 是经典 CAN 2.0B 控制器（`soc_caps.h` 没有
+   `SOC_TWAI_SUPPORTS_FD`，TRM 第 54 章也没有 FD 帧格式），路线图原来写的「CAN-FD ×3」是
+   错的。三个控制器共用一份宏生成的实现：位时序（整除校验 + 采样点最近）、单过滤器（与帧
+   缓冲共用 `0x40`–`0x70`）、标准/扩展/远程帧收发、自接收与单次发送、状态/错误计数/总线
+   状态、按源中断。无收发器时靠「TX 与 RX 路由到同一个焊盘」得到回环，示例 `twai` 用它验证
+   标准帧/扩展帧/远程帧往返、过滤器正负向、发送与接收中断、位时序表与非法输入拒绝，结果见
+   README。
+
    ~~USB OTG host~~ 已完成：`esp32p4-usb` 的 `host` 模块（枚举、控制/bulk/interrupt
    传输、HID boot 键盘、HUB）加 `esp32p4-usb` 的 DWC 主机模式驱动；高速 HUB
    后面的 FS/LS 拆分事务（TT）与等时传输仍是缺口，可用 `UsbHostHs::new_fsls_only`

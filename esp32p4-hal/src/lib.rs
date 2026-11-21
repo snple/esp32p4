@@ -212,5 +212,6 @@ pub mod tcm;
 pub mod time;
 pub mod timer;
 pub mod tsens;
+pub mod twai;
 pub mod uart;
 pub mod usb_serial_jtag;
