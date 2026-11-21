@@ -105,7 +105,9 @@ use crate::{cache, delay};
 pub mod channel;
 pub mod descriptor;
 
-pub use channel::{Dummy, ReceiveChannel, RxChannel, RxInterrupt, TxChannel, TxInterrupt};
+pub use channel::{
+    Dummy, ReceiveChannel, RxChannel, RxInterrupt, TransmitChannel, TxChannel, TxInterrupt,
+};
 pub use descriptor::{Chain, Descriptor, Owner};
 
 /// A peripheral whose handshake a channel can use.

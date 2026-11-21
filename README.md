@@ -57,6 +57,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `pcnt` | PCNT：用 LEDC 的 10 kHz 方波计数，验证限值回绕、标志锁存与暂停/恢复 |
 | `mcpwm` / `mcpwm_extras` | MCPWM0：前者查计数器/强制电平/三档占空比/互补加死区，后者查同步、捕获、故障跳闸、载波、ETM、事件比较器与中断 |
 | `twai` | TWAI0（CAN 2.0B）：把 TX/RX 路由到同一个焊盘做回环，验证标准/扩展/远程帧往返、过滤器正负向、收发中断、位时序与非法输入 |
+| `i2s` | I2S0 标准模式：TX 主 / RX 从 + 内部 BCK/WS 共享、SD 单焊盘回环，验证时钟树、立体声与 mono 逐字节往返、BCK 计数、中断与非法配置 |
 
 ## 快速开始
 
@@ -1318,6 +1319,75 @@ let received = twai.receive().unwrap();
 | 非法输入 | 9 字节载荷、标准 ID `0x800`、扩展 ID `0x20000000`、1234567 bit/s 全部被拒 |
 
 示例 [`twai`](esp32p4-examples/src/twai.rs) 每秒重跑一遍这套检查，每项单独打印 `ok`/`FAIL`。
+
+## I2S（音频）
+
+[`i2s`](esp32p4-hal/src/i2s.rs) 覆盖三个 I2S 控制器（`I2s0`/`I2s1`/`I2s2`）的**标准双槽模式**
+（Philips 与 MSB 对齐）、主/从角色、8–32 bit 槽宽，数据通路全部走 GDMA-AHB。和 MCPWM 一样，
+每个控制器的寄存器实现由宏展开一次，所以没有 trait、没有实例分派；差别只在于 I2S1/2 的时钟
+分频字段散在不同的 `PERI_CLK_CTRL` 寄存器里，宏参数把寄存器名和字段名都带上。
+
+```rust
+let i2s = I2s0::init(dp.I2S0, &dp.HP_SYS_CLKRST, &dp.LP_AON_CLKRST);
+let clock = i2s.tx_configure(&StandardConfig {
+    sample_rate: 48_000,
+    data_bits: 16,
+    slot_bits: 16,
+    slot: Slot::Both,
+    standard: Standard::Philips,
+    ..StandardConfig::default()
+})?;                                  // 40 MHz / (3 + 131/512) = 12.288 MHz, BCK 1/8
+
+let dma = AhbDma::init(dp.AHB_DMA, &dp.HP_SYS_CLKRST);
+i2s.tx_write(&dma.tx_channel::<0>(), &samples, &descriptors)?;
+```
+
+- **时钟树不在外设里**：源选择、模块门控和分数分频器都在 `HP_SYS_CLKRST`
+  （`f = f_src / (N + b/a)`，`2 ≤ N ≤ 256`，`a ≤ 512`），外设里的 `TX/RX_BCK_DIV_NUM` 再把
+  它分到 BCK。`StandardConfig` 进，`Clock` 出：MCLK、BCK、分频比、以及实际能拿到的采样点都
+  能打出来。分频只在能整除时才接受，40 MHz 晶振下 48 kHz × 256 得到 12.2855 MHz
+  （误差 −0.02 %），BCK 1.536 MHz 精确。
+- **标准模式就是双槽 TDM**：`TDM_EN` 必须置一、`PDM_EN` 必须清零，`MSB_SHIFT` 选 Philips
+  （WS 比数据早一个 BCK）还是 MSB 对齐。`Slot::{Both, Left, Right}` 决定哪一槽带数据；
+  mono 只是少搬一半数据，帧宽（也就是 BCK）不变。
+- **收发**：`tx_begin`/`tx_wait`（或合并的 `tx_write`）与 `rx_begin`/`rx_wait`（或
+  `rx_read`）负责描述符链、cache 维护、`RX_EOF_NUM` 和起停顺序；`tx_bck_count()` 是硬件
+  BCK 计数器，用来量真实位时钟；`share_bck_ws(true)` 让同一控制器的两个半区共用 BCK/WS，
+  全双工不需要把时钟引出芯片。
+- **中断**：`Interrupts::{RX_DONE, TX_DONE, RX_HUNG, TX_HUNG}`，配
+  `enable_interrupts` / `interrupts()` / `clear_interrupts()`，`I2s0::SOURCE` 给
+  `interrupt::claim`。`set_hung_timeout` 调整从机等不到 BCK/WS 的判定时间。
+
+踩过的坑：
+
+- **没有 CPU 数据通路**：P4 的 I2S 没有 `TXFIFO`/`RXFIFO` 寄存器，FIFO 只由 GDMA 填/排，
+  所以每个传输都必须先接上 DMA 通道（`Peripheral::I2s0..2`）；
+- **起停顺序**：先复位半区与 FIFO，再启动 DMA，最后置 `TX_START`。反过来（先启动外设）会让
+  发送半区在没有数据时饿死，`TX_HUNG` 锁存，之后 FIFO 只进不出——HAL 现在自己按正确顺序
+  做这件事；
+- **`TX/RX_UPDATE` 是自清位**，要把格式寄存器压进数据通路，写完要等它归零再 `START`；
+- **从机的模块时钟**：从机靠自己的模块时钟采样，TRM 要求 `f(I2S_TX/RX_CLK) ≥ 8 × f(BCK)`。
+  只把 BCK 分频寄存器留给主机、从机不写分频器时，它的模块时钟停在复位值（40 MHz/256 ≈
+  156 kHz），现象是**收不到任何数据、也不报错**——这一条花了最多时间。现在从机也会写自己的
+  分频器，`mclk_multiple` 不够 8 倍时直接返回 `Error::SlaveClockTooSlow`；
+- **`RX_EOF_NUM` 必须等于描述符长度**，它是外设告诉 DMA「这一帧结束」的字节数，所以单次读
+  不超过一个描述符（4095 字节）；
+- `BCK_DIV_NUM` 不能为 1，也就是 BCK 分频至少 2；`mclk_multiple` 用 256 时 24 bit 槽要取 3
+  的倍数（384）才能整除。
+
+**当前状态**（40 MHz 晶振，48 kHz、16 bit、Philips、256× MCLK，TX 主 / RX 从 + 内部
+BCK/WS 共享，SD 单焊盘回环）：
+
+| 检查 | 结果 |
+|------|------|
+| 时钟 | 40 MHz /(3 + 131/512) = 12.2855 MHz MCLK，/8 = 1.536 MHz BCK，误差 −0.02 % |
+| 位时钟读数 | 1024 字节（立体声）= 8193 个 BCK（期望 8192），mono = 16385（期望 16384） |
+| 立体声回环 | 1024 字节逐字节相同 |
+| mono（仅左槽）回环 | 1024 字节逐字节相同，BCK 不变 |
+| 中断 | `TX_DONE` 触发、读取后清零 |
+| 非法配置 | 数据位宽 > 槽宽、0 bit、5 MHz、100 Hz、从机 128× 全部被拒 |
+
+示例 [`i2s`](esp32p4-examples/src/i2s.rs) 每秒重跑一遍这套检查，每项单独打印 `ok`/`FAIL`。
 
 ## eFuse 与芯片版本
 

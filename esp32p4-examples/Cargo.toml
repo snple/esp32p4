@@ -61,6 +61,10 @@ name = "mcpwm_extras"
 path = "src/mcpwm_extras.rs"
 
 [[bin]]
+name = "i2s"
+path = "src/i2s.rs"
+
+[[bin]]
 name = "twai"
 path = "src/twai.rs"
 

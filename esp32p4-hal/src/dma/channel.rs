@@ -422,9 +422,41 @@ macro_rules! impl_rx_channel {
                 fn clear_interrupt(&self, interrupt: RxInterrupt) {
                     RxChannel::<$n>::clear_interrupt(self, interrupt);
                 }
+
+                fn stop_chain(&self) {
+                    RxChannel::<$n>::stop(self);
+                }
             }
         }
     };
+}
+
+/// Operations a peripheral driver needs on a transmit channel.
+///
+/// The mirror image of [`ReceiveChannel`]: [`TxChannel`] is generated per
+/// channel number, so a driver that accepts any channel goes through this trait
+/// instead of naming one.
+pub trait TransmitChannel {
+    /// Connects the channel to a peripheral's transmit handshake.
+    fn connect_to(&self, peripheral: Peripheral);
+
+    /// Resets the channel's engine state.
+    fn reset_channel(&self);
+
+    /// Starts the descriptor chain at `first`.
+    fn start_chain(&self, first: &Descriptor);
+
+    /// Disconnects the channel from every peripheral.
+    fn detach(&self);
+
+    /// Whether the engine has no descriptor left to process.
+    fn idle(&self) -> bool;
+
+    /// Stops after the descriptor the engine is working on.
+    fn stop_chain(&self);
+
+    /// Acknowledges every interrupt source.
+    fn clear_all_interrupts(&self);
 }
 
 /// Operations a peripheral driver needs on a receive channel.
@@ -453,6 +485,9 @@ pub trait ReceiveChannel {
 
     /// Acknowledges `interrupt`.
     fn clear_interrupt(&self, interrupt: RxInterrupt);
+
+    /// Stops after the descriptor the engine is working on.
+    fn stop_chain(&self);
 }
 
 /// Generates the register-level body of one transmit channel.
@@ -668,6 +703,36 @@ macro_rules! impl_tx_channel {
                 #[inline]
                 pub fn clear_all_interrupts(&self) {
                     Self::regs().[<out_int_clr_ch $n>].write_bits(u32::MAX);
+                }
+            }
+
+            impl TransmitChannel for TxChannel<$n> {
+                fn connect_to(&self, peripheral: Peripheral) {
+                    self.connect(peripheral);
+                }
+
+                fn reset_channel(&self) {
+                    self.reset();
+                }
+
+                fn start_chain(&self, first: &Descriptor) {
+                    self.start(first);
+                }
+
+                fn detach(&self) {
+                    self.disconnect();
+                }
+
+                fn idle(&self) -> bool {
+                    self.is_idle()
+                }
+
+                fn stop_chain(&self) {
+                    self.stop();
+                }
+
+                fn clear_all_interrupts(&self) {
+                    TxChannel::<$n>::clear_all_interrupts(self);
                 }
             }
         }

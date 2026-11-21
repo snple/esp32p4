@@ -191,6 +191,7 @@ pub mod emac;
 pub mod etm;
 pub mod gpio;
 pub mod i2c;
+pub mod i2s;
 pub mod interrupt;
 pub mod ledc;
 pub mod mcpwm;
