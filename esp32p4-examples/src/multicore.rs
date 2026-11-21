@@ -29,6 +29,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use esp32p4_hal::delay::Delay;
 use esp32p4_hal::interrupt::{self, CpuInterrupt, Level as InterruptLevel};
+use esp32p4_hal::machine_timer::{MachineTimer, ticks_per_ms};
 use esp32p4_hal::main;
 use esp32p4_hal::multicore::{self, CoreId, Multicore, Mutex, Stack};
 use esp32p4_hal::pac::Peripherals;
@@ -52,6 +53,16 @@ static CORE1_PINGS_ASSERTED: AtomicU32 = AtomicU32::new(0);
 static CORE0_IRQS: AtomicU32 = AtomicU32::new(0);
 /// The core number core 1 read for itself.
 static CORE1_ID: AtomicU32 = AtomicU32::new(u32::MAX);
+
+/// Machine timer ticks each core has served, and the step each re-arms with.
+///
+/// The comparators are per core while the counter behind them is shared, so the
+/// two periods below have to stay independent.
+static TIMER_TICKS: [AtomicU32; 2] = [const { AtomicU32::new(0) }; 2];
+static TIMER_STEP: [AtomicU32; 2] = [const { AtomicU32::new(0) }; 2];
+
+/// `CPU_CLK` on this board, which is also the machine timer's rate.
+const CPU_HZ: u32 = 90_000_000;
 
 /// Round handshake: core 1 counts while this is [`PHASE_WORK`].
 const PHASE_IDLE: u32 = 0;
@@ -95,6 +106,21 @@ fn core1_isr() {
     multicore::signal(CoreId::Core0);
 }
 
+/// Each core's own machine timer handler: count and re-arm.
+fn core0_timer_isr() {
+    // SAFETY: `MachineTimer::init` has run on this core.
+    let timer = unsafe { MachineTimer::steal() };
+    timer.set_target(timer.now() + u64::from(TIMER_STEP[0].load(Ordering::Acquire)));
+    TIMER_TICKS[0].fetch_add(1, Ordering::Relaxed);
+}
+
+fn core1_timer_isr() {
+    // SAFETY: `MachineTimer::init` has run on this core.
+    let timer = unsafe { MachineTimer::steal() };
+    timer.set_target(timer.now() + u64::from(TIMER_STEP[1].load(Ordering::Acquire)));
+    TIMER_TICKS[1].fetch_add(1, Ordering::Relaxed);
+}
+
 /// Core 1's body.
 fn core1_main() -> ! {
     // Its own CLIC lines are claimed on its own core, which is what the per-core
@@ -117,6 +143,13 @@ fn core1_main() -> ! {
 
     // Which core this code thinks it is: the runtime reads `mhartid`.
     CORE1_ID.store(CoreId::current().as_index() as u32, Ordering::Release);
+
+    // This core's own comparator, on the counter core 0 started. Twice the
+    // period of core 0's, so the counts have to come out in a 2:1 ratio.
+    let timer = MachineTimer::init();
+    TIMER_STEP[1].store(ticks_per_ms(CPU_HZ) as u32 * 2, Ordering::Release);
+    timer.set_target(timer.now() + u64::from(TIMER_STEP[1].load(Ordering::Acquire)));
+    timer.enable_interrupt(InterruptLevel::LOW, core1_timer_isr);
 
     loop {
         CORE1_LOOPS.fetch_add(1, Ordering::Relaxed);
@@ -192,11 +225,18 @@ fn main() -> ! {
     // never returns.
     unsafe { mc.launch_core1(core1_main, &CORE1_STACK) };
 
+    // Core 0's own comparator, one tick per millisecond.
+    let timer = MachineTimer::init();
+    TIMER_STEP[0].store(ticks_per_ms(CPU_HZ) as u32, Ordering::Release);
+    timer.set_target(timer.now() + u64::from(TIMER_STEP[0].load(Ordering::Acquire)));
+    timer.enable_interrupt(InterruptLevel::LOW, core0_timer_isr);
+
     check_core_id(&mc, &delay);
     loop {
         check_counters(&mc);
         check_signal(&delay);
         check_shared_clock();
+        check_per_core_timers(&delay);
         check_identity_seen_by_core1(&delay);
         delay.delay_ms(1_000);
     }
@@ -353,4 +393,34 @@ fn check_shared_clock() {
         "shared clock",
         torn == 0 && reads >= 2 * CLOCK_READS_PER_CORE && phase == PHASE_DONE,
     );
+}
+
+/// Each core's machine timer ticks on its own comparator.
+///
+/// Both run off the one shared counter, but the comparators, the interrupts and
+/// the handler tables are per core: core 0 asks for a tick every millisecond and
+/// core 1 every two, so twenty milliseconds of running has to produce about
+/// twenty on one and ten on the other.
+fn check_per_core_timers(delay: &Delay) {
+    let before = [
+        TIMER_TICKS[0].load(Ordering::Relaxed),
+        TIMER_TICKS[1].load(Ordering::Relaxed),
+    ];
+    delay.delay_ms(20);
+    let after = [
+        TIMER_TICKS[0].load(Ordering::Relaxed),
+        TIMER_TICKS[1].load(Ordering::Relaxed),
+    ];
+
+    let core0 = after[0].wrapping_sub(before[0]);
+    let core1 = after[1].wrapping_sub(before[1]);
+    // Twenty milliseconds: about 20 ticks at 1 ms and 10 at 2 ms, with one either
+    // way for the edges of the window.
+    let ok = (19..=21).contains(&core0) && (9..=11).contains(&core1);
+    defmt::info!(
+        "per-core timers: core 0 {=u32} ticks at 1 ms, core 1 {=u32} ticks at 2 ms, over 20 ms",
+        core0,
+        core1
+    );
+    report("per-core timers", ok);
 }

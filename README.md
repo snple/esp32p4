@@ -31,7 +31,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `mmu` | 把 PSRAM 物理页 0 映射到 MMU 表项 512，验证 cached/uncached 别名 |
 | `clock` | 打印时钟树的根/CPU/MEM/SYS/APB 频率与参考时钟状态 |
 | `tcm` | 用 `#[tcmfunc]`/`#[ramfunc]` 把代码放进 8 KB scratchpad / SRAM，并打印落点 |
-| `multicore` | 启动第二个 HP 核：两核各 10 万次加锁计数、双向互踢中断、各自读到自己的 core id |
+| `multicore` | 启动第二个 HP 核：两核各 10 万次加锁计数、双向互踢中断、各自读到自己的 core id、每核独立的 machine timer |
 | `psram` | 初始化封装内 PSRAM，整体作为全局堆使用 |
 | `psram_split` | 把 PSRAM 分成「cached 全局堆 + uncached DMA 池」两部分 |
 | `defmt_log` | 用 `defmt-rtt` 输出日志（需 `--no-default-features --features defmt-rtt`，JTAG 读取） |
@@ -41,6 +41,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `usb_host_hid` | 全速 OTG 作主机：枚举 USB 键盘，打印按键的 HID usage code |
 | `usb_host_hub` | 全速 OTG 作主机：枚举 HUB，端口上电/复位后枚举下游键盘并读按键 |
 | `timer` | `TIMG0` 的两路通用定时器：100 ms 周期中断闪灯，外加 1 s 的倒计时闹钟 |
+| `machine_timer` | CLINT machine timer（每核一个的 SysTick 等价物）：对 `SYSTIMER` 实测频率、单调性、比较器中断与周期重装、溢出标志 |
 | `alarm` | `SYSTIMER` 比较器：250 ms 周期闹钟 + 5 s 一次性 deadline，主循环用 `sleep_until` 睡到下一个检查点 |
 | `watchdog` | `TIMG0` 的 MWDT：1 s 超时复位系统，主循环每 100 ms `feed()` 一次 |
 | `emac` | 初始化 RMII 以太网（P4 Function-EV 板的 IP101）、扫描 MDIO、自动协商、打印链路状态并收发 ARP 帧 |
@@ -1806,9 +1807,41 @@ core 0 出复位，core 1 停在复位里；[`multicore`](esp32p4-hal/src/multic
 | `TIMG0/1`、LEDC、RMT…… | 全芯片一份 | 普通外设，用哪个核访问由软件约定 |
 
 也就是说 `SYSTIMER` **不是** ARM 的 SysTick 那种“核内私有定时器”，它更像一个 SoC 级
-共享计数器；真正和 SysTick 对应的是 CLINT 的 machine timer。当前 HAL 统一用 `SYSTIMER`
-做时间基准（`time` / `delay` / `systimer` 三个模块），CLINT 定时器还没封装——它的中断号 7
-在 `interrupt` 里也还没占位。
+共享计数器；真正和 SysTick 对应的是 CLINT 的 machine timer，见下一节。
+
+### CLINT machine timer（`machine_timer`）
+
+[`machine_timer`](esp32p4-hal/src/machine_timer.rs) 是每核自己的 64 位比较器：
+
+- **窗口在 `0x2000_0000`**，不是 CLIC 的 `0x2080_0000`。TRM 只给了寄存器相对
+  “CPU sub-system base”的偏移（`mtimecmp` = +0x4000、`mtimectl` = +0x4010、
+  `mtime` = +0xBFF8），基址是实测出来的；和 CLIC 一样是核私有映射，两核看到各自的副本；
+- **计数器是共享的，使能位只在 core 0 的副本里有效**（TRM 明说写在 core 1 无效）；
+  bootloader 启动时已经开了它，`mtimectl` 读回就是 `MTIME_EN`；
+- **比较器和中断是每核的**：中断是 CLIC **id 7**，不属于外设矩阵的 32 条线，所以走
+  `interrupt::set_machine_timer_handler` 而不是 `claim`；电平触发，`counter >= mtimecmp`
+  期间一直挂着，**处理器里必须把比较器往后挪**才算应答（这也是做周期 tick 的方式）；
+- **计数频率 = `CPU_CLK`**，一次一个 CPU 周期。实测：启动默认 90 MHz CPU 时 `mtime` 是
+  90.00 MHz（对 `SYSTIMER` 实测 90.0024 MHz），把 CPU 分频从 4 改成 2（180 MHz）后
+  `mtime` 立刻变成 180.00 MHz。所以它是 `ticks_per_us(cpu_hz)` 而不是常量——调 CPU 频率
+  就会改 tick 率，这一点和晶振来的 `SYSTIMER` 相反；
+- `MTIME_SAM` 置成 3（读任一半时采样另一半），所以 `now()` 不需要重试就能拿到一致的 64 位。
+
+`mtime` 的 64 位在 90 MHz 下约 6.5 千年回绕，`MTIME_OVF` 位可读可清（写 0 清）。
+
+示例 [`machine_timer`](esp32p4-examples/src/machine_timer.rs) 每轮 6 项检查：
+
+| 检查 | 实测 |
+|------|------|
+| 频率 | 50 ms 内 4500480 tick / 50004 µs = **90.0024 MHz**，与 `CPU_CLK` 90 MHz 差 0.003 % |
+| 单调 | 连续 100000 次读零回退 |
+| 比较器中断 | 中断按设定触发，处理器滞后 3462 tick（约 38 µs）读到计数器，事后不再挂起 |
+| 周期重装 | 1 ms 一步、20 ms 窗口正好 20 次 |
+| 比较器回读 | 写 `0x123456789ab` 读回一致 |
+| 溢出标志 | 读为 0、清除后仍为 0（计数器还远没到 64 位上限） |
+
+`multicore` 示例另有一项“每核独立的 machine timer”：两核共用一个计数器，但 core 0 按 1 ms、
+core 1 按 2 ms 各自重装自己的比较器，20 ms 内分别得到 20 和 10 次中断。
 
 ```rust
 static STACK: Stack<8192> = Stack::new();
@@ -1926,7 +1959,8 @@ espflash save-image --chip esp32p4 \
   软件 `Mutex`；中断矩阵、handler 表与线占用表都按 hart 分开
 - GPIO0–GPIO53 的推挽/开漏输出与输入、IO MUX 配置、四路中断（边沿/电平、按线使能与状态清除）、
   完整的 HP GPIO 交换矩阵信号路由（`gpio::signal`）
-- SYSTIMER 阻塞延时（`sleep_ms` / `sleep_until`）与单调时钟（`time::Instant` / `Duration`）
+- SYSTIMER 阻塞延时（`sleep_ms` / `sleep_until`）与单调时钟（`time::Instant` / `Duration`）；
+  CLINT machine timer（每核 64 位比较器、CLIC id 7 中断、频率 = `CPU_CLK`）
 - SYSTIMER 比较器闹钟（`Systimer` → `Alarm1` / `Alarm2`：绝对 deadline 与周期模式，带中断）
 - 定时器组（`TimerGroup0/1` → `Timer00/01/10/11`：4 路 54 位计数器，时钟源与预分频、增/减计数、
   软件重载、一次性与周期性闹钟中断）与主系统看门狗（`Watchdog0/1`：分阶段超时、

@@ -195,6 +195,7 @@ pub mod i2c;
 pub mod i2s;
 pub mod interrupt;
 pub mod ledc;
+pub mod machine_timer;
 pub mod mcpwm;
 pub mod mmu;
 pub mod multicore;

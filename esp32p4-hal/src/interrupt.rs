@@ -108,6 +108,10 @@ pub use esp32p4_rt::interrupt::{
     in_interrupt, is_enabled, is_pending, is_unmasked, level, mask, pend, restore, set_handler,
     set_level, sleep, unmask, unpend,
 };
+pub use esp32p4_rt::interrupt::{
+    clear_machine_timer_handler, machine_timer_pending, machine_timer_unmasked, mask_machine_timer,
+    set_machine_timer_handler, set_machine_timer_level, unmask_machine_timer,
+};
 
 /// Number of interrupt sources the matrix accepts.
 pub const SOURCE_COUNT: u32 = 128;

@@ -60,6 +60,12 @@ const CLIC_INTS: usize = 0x2080_1000;
 /// Lower ids are the CLINT's software and timer interrupts.
 pub const FIRST_EXT_INTR_ID: u32 = 16;
 
+/// CLIC id of the machine software interrupt (`msip` in the CLINT).
+pub const MACHINE_SOFTWARE_ID: u32 = 3;
+
+/// CLIC id of the machine timer interrupt (`mtimecmp` in the CLINT).
+pub const MACHINE_TIMER_ID: u32 = 7;
+
 /// Number of CPU interrupt lines the interrupt matrix can drive.
 pub const CPU_INTERRUPT_COUNT: u32 = 32;
 
@@ -103,6 +109,12 @@ pub const CORES: usize = 2;
 static HANDLERS: [[AtomicUsize; CPU_INTERRUPT_COUNT as usize]; CORES] =
     [const { [const { AtomicUsize::new(0) }; CPU_INTERRUPT_COUNT as usize] }; CORES];
 
+/// Handler of the machine timer interrupt, per core.
+///
+/// The CLINT is core-local like the CLIC, so each core arms its own comparator
+/// and runs its own handler; only the counter behind it is shared.
+static MACHINE_TIMER: [AtomicUsize; CORES] = [const { AtomicUsize::new(0) }; CORES];
+
 /// Set while a registered handler runs, per core: what `mintstatus.MIL != 0`
 /// reports on a controller that implements it.
 static IN_HANDLER: [AtomicBool; CORES] = [const { AtomicBool::new(false) }; CORES];
@@ -136,10 +148,19 @@ pub fn hart() -> u32 {
     hart
 }
 
-/// Byte address of `clicintXX[i]` for `field` 0..=3.
+/// Byte address of `clicintXX[id]` for `field` 0..=3, by CLIC id.
+///
+/// Every id — the CLINT's own software and timer interrupts as well as the 32
+/// lines fed by the peripheral matrix — has its four bytes at the same place.
+#[inline]
+fn id_byte(id: u32, field: usize) -> *mut u8 {
+    (CLIC_INTS + id as usize * 4 + field) as *mut u8
+}
+
+/// Byte address of the CLIC word of CPU interrupt line `cpu_int`.
 #[inline]
 fn int_byte(cpu_int: u32, field: usize) -> *mut u8 {
-    (CLIC_INTS + (cpu_int + FIRST_EXT_INTR_ID) as usize * 4 + field) as *mut u8
+    id_byte(cpu_int + FIRST_EXT_INTR_ID, field)
 }
 
 /// Number of interrupt sources the CLIC reports.
@@ -313,6 +334,61 @@ pub fn mask(cpu_int: u32) {
     unsafe { core::ptr::write_volatile(int_byte(cpu_int, 1), 0) };
 }
 
+/// Install the handler for this core's machine timer interrupt.
+///
+/// The machine timer is the CLINT's own comparator, not a peripheral: it has no
+/// entry in the interrupt matrix, so it is claimed here rather than through the
+/// line machinery.
+pub fn set_machine_timer_handler(handler: fn()) {
+    MACHINE_TIMER[hart() as usize].store(handler as usize, Ordering::Release);
+}
+
+/// Remove this core's machine timer handler.
+pub fn clear_machine_timer_handler() {
+    MACHINE_TIMER[hart() as usize].store(0, Ordering::Release);
+}
+
+/// Program the CLIC level of this core's machine timer interrupt.
+pub fn set_machine_timer_level(level: u8) {
+    assert!(level <= MAX_LEVEL, "level out of range");
+    // SAFETY: fixed MMIO address.
+    unsafe { core::ptr::write_volatile(id_byte(MACHINE_TIMER_ID, 3), level_byte(level)) };
+}
+
+/// Unmask this core's machine timer interrupt.
+///
+/// The interrupt stays pending while the counter is at or past `mtimecmp`, so
+/// the handler acknowledges it by moving the comparator, not by clearing a flag.
+pub fn unmask_machine_timer() {
+    // SAFETY: fixed MMIO addresses. The attribute byte is set the same way the
+    // line machinery does it: machine mode, level-triggered, shared entry.
+    unsafe {
+        core::ptr::write_volatile(id_byte(MACHINE_TIMER_ID, 2), 0b11 << 6);
+        core::ptr::write_volatile(id_byte(MACHINE_TIMER_ID, 1), 1);
+    }
+}
+
+/// Mask this core's machine timer interrupt.
+pub fn mask_machine_timer() {
+    // SAFETY: fixed MMIO address.
+    unsafe { core::ptr::write_volatile(id_byte(MACHINE_TIMER_ID, 1), 0) };
+}
+
+/// Whether this core's machine timer interrupt is pending.
+///
+/// It stays pending while the counter is at or past the comparator, so a handler
+/// that does not move the comparator leaves the core in the interrupt.
+pub fn machine_timer_pending() -> bool {
+    // SAFETY: fixed MMIO address.
+    unsafe { core::ptr::read_volatile(id_byte(MACHINE_TIMER_ID, 0)) & 1 != 0 }
+}
+
+/// Whether this core's machine timer interrupt is unmasked.
+pub fn machine_timer_unmasked() -> bool {
+    // SAFETY: fixed MMIO address.
+    unsafe { core::ptr::read_volatile(id_byte(MACHINE_TIMER_ID, 1)) & 1 != 0 }
+}
+
 /// Returns whether `cpu_int` is currently unmasked.
 #[inline]
 pub fn is_unmasked(cpu_int: u32) -> bool {
@@ -327,15 +403,33 @@ pub fn is_pending(cpu_int: u32) -> bool {
     unsafe { core::ptr::read_volatile(int_byte(cpu_int, 0)) & 1 != 0 }
 }
 
-/// Run the handler registered for `cpu_int`.
+/// Run the handler registered for the CLIC id in `mcause`.
 ///
 /// Called from the trap entry, which runs with interrupts already disabled.
-pub(crate) fn dispatch(cpu_int: u32) {
+///
+/// The id is the CLIC's own: 3 is the machine software interrupt, 7 the machine
+/// timer, and 16..=47 are the CPU interrupt lines the peripheral matrix drives.
+pub(crate) fn dispatch(id: u32) {
+    IRQ_EPOCH.fetch_add(1, Ordering::Release);
+
+    match id {
+        MACHINE_TIMER_ID => {
+            let handler = MACHINE_TIMER[hart() as usize].load(Ordering::Acquire);
+            if handler != 0 {
+                // SAFETY: `set_machine_timer_handler` only stores a `fn()`.
+                let handler: fn() = unsafe { core::mem::transmute(handler) };
+                handler();
+            }
+            return;
+        }
+        id if id < FIRST_EXT_INTR_ID => return,
+        _ => {}
+    }
+
+    let cpu_int = id - FIRST_EXT_INTR_ID;
     if cpu_int >= CPU_INTERRUPT_COUNT {
         return;
     }
-
-    IRQ_EPOCH.fetch_add(1, Ordering::Release);
 
     let core = hart() as usize;
     let previous_in_handler = IN_HANDLER[core].swap(true, Ordering::Relaxed);

@@ -79,6 +79,10 @@ path = "src/mmu.rs"
 [[bin]]
 name = "multicore"
 path = "src/multicore.rs"
+
+[[bin]]
+name = "machine_timer"
+path = "src/machine_timer.rs"
 required-features = ["defmt"]
 
 [[bin]]

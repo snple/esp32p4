@@ -310,10 +310,9 @@ pub extern "C" fn _start_trap_rust(_frame: &mut TrapFrame) {
     let (is_interrupt, code) = crate::interrupt::decode_cause(cause);
 
     if is_interrupt {
-        // `mcause` holds the CLIC id; the CPU interrupt lines start after the
-        // CLINT's ids.
-        let cpu_int = code.saturating_sub(crate::interrupt::FIRST_EXT_INTR_ID as usize);
-        crate::interrupt::dispatch(cpu_int as u32);
+        // `mcause` holds the CLIC id itself, which covers the CLINT's own
+        // software and timer interrupts as well as the CPU interrupt lines.
+        crate::interrupt::dispatch(code as u32);
         return;
     }
 
