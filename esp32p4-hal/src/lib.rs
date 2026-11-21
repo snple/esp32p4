@@ -188,6 +188,7 @@ pub mod delay;
 pub mod dma;
 pub mod efuse;
 pub mod emac;
+pub mod etm;
 pub mod gpio;
 pub mod i2c;
 pub mod interrupt;
