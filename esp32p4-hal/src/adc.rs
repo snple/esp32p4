@@ -28,6 +28,10 @@
 //!
 //! The low-power ADC reached from the LP core is not implemented.
 //!
+//! A sample carries the channel in bits 13-15 as the *internal* channel number:
+//! ADC1's channels 0-7 arrive as 0-7, ADC2's 0-5 arrive as 2-7, so a consumer
+//! that does not know which unit produced the stream has to be told.
+//!
 //! # Features
 //!
 //! - One-shot conversions on all 14 ADC pads, blocking or polled
@@ -40,9 +44,10 @@
 //! - A documented nominal conversion when the eFuse calibration block is
 //!   empty
 //! - Pattern scans of up to 16 channels × 256 samples into a caller buffer
-//!   through GDMA
-//! - Continuous sampling into a descriptor ring, with a non-blocking drain
-//!   ([`Continuous::read`]) that decodes channel and attenuation per sample
+//!   through GDMA, on either unit
+//! - Continuous sampling of either unit into a descriptor ring, with a
+//!   non-blocking drain ([`Continuous::read`]) that decodes the channel per
+//!   sample
 //!
 //! # Pin Mapping
 //!
@@ -1199,6 +1204,10 @@ impl Adc {
     /// `rx` stays connected to the ADC until the returned [`Continuous`] is
     /// stopped; the driver starts and stops its chain.
     ///
+    /// Both units work here. ADC2 streams exactly like ADC1 (measured at the
+    /// same 20 kSa/s on this board), and its samples report the internal
+    /// channel numbers 2-7 rather than ADC2's own 0-5.
+    ///
     /// # Panics
     ///
     /// Panics if `patterns` is empty or longer than [`MAX_PATTERN`], if the ring
@@ -1213,10 +1222,6 @@ impl Adc {
         descriptors: &'a [Descriptor],
         timer_cycles: u32,
     ) -> Result<Continuous<'a, R>, crate::dma::Error> {
-        assert!(
-            matches!(unit, Unit::Adc1),
-            "continuous mode only exists on ADC1"
-        );
         assert!(
             !patterns.is_empty() && patterns.len() <= MAX_PATTERN,
             "a scan needs 1 to {MAX_PATTERN} pattern entries"

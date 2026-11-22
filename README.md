@@ -53,6 +53,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `i2c_scan` | `I2C0` 扫描 7 位地址空间，逐个探测并打印应答的从机 |
 | `i2c_slave` | `I2C0` 主机 + `I2C1` 从机：地址应答、收发、满 FIFO、寄存器访问、非阻塞接口、START/STOP 标志与时钟拉伸 |
 | `adc` | 报告 eFuse 校准是否可用，并在四档衰减下采样 13 个 ADC 焊盘 |
+| `adc2` | ADC2 的三条路径：五个焊盘的 one-shot、两通道 GDMA 扫描（内部通道 2/3 交替）、200 ms 连续采样并核对采样率 |
 | `dma_mem2mem` | GDMA-AHB 的存储到存储拷贝：单描述符 64 B 与四描述符 16 KB 两种链路，逐字节校验并打印吞吐，另用 `CRC-32/MPEG-2` 校验两个方向的 CRC 单元 |
 | `dma_axi` | GDMA-AXI 的存储到存储：三组通道对、四种突发宽度、16 位 CRC（引擎 vs 软件），打印吞吐 |
 | `dw_gdma` | DW_GDMA（`DMA`）：四种传输宽度 × 三种 burst 的 mem2mem 全部逐字节校验，实测 164 MB/s |
@@ -930,11 +931,19 @@ while running {
 stream.stop();
 ```
 
-- 只支持 **ADC1**（ADC2 的连续模式在 errata 里被禁）；
+- **ADC1 和 ADC2 都能连续采**：ESP-IDF 里"ADC2 连续模式不再支持"那条只对 ESP32-C3/S3
+  编译（`#if CONFIG_IDF_TARGET_ESP32C3 || ESP32S3`，Kconfig 也只在那两个目标出现），
+  而 P4 的 `ADC_LL_DIG_SUPPORTED_UNIT()` 恒为 1——这条 errata 本来不适用于 P4，之前
+  误套过来了。本板实测两个单元行为一致：同样 20 000 Sa/s、同样帧结构；ADC2 的样本
+  通道字段是**内部通道号** 2–7，不是 ADC2 自己的 0–5；
 - 一个描述符装一帧（一次样式表遍历），环长 ≥2；`read` 是非阻塞的，只交出整帧，
   读得比采得慢时旧帧直接被覆盖（引擎不会停下来等），`read_timeout` 是带超时的版本；
 - 每帧的 4 字节样本同扫描一样：低 12 位结果、bit 13–15 通道号；
 - 采样率 = `DIGI_CLK_HZ / timer_cycles`，`DIGI_CLK_HZ` 是可导出的常量（见下）。
+
+示例 [`adc2`](esp32p4-examples/src/adc2.rs) 把 ADC2 的三条路径都跑一遍：五个可用焊盘的
+one-shot、两通道样式表扫描（内部通道 2/3 各 16 个样本）、以及 200 ms 连续采样
+（4000 样本 → 19 996 Sa/s，配置 20 000）。
 
 示例 [`adc_continuous`](esp32p4-examples/src/adc_continuous.rs) 把 LEDC 的 1 kHz 方波
 （GPIO20）跳线接到 GPIO16，连续采 200 ms 后检查四件事：样本数换算出的采样率、

@@ -197,6 +197,11 @@ path = "src/adc_continuous.rs"
 required-features = ["defmt"]
 
 [[bin]]
+name = "adc2"
+path = "src/adc2.rs"
+required-features = ["defmt"]
+
+[[bin]]
 name = "i2c_scan"
 path = "src/i2c_scan.rs"
 
