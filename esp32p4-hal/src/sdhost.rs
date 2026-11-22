@@ -193,10 +193,15 @@ const DESC_OWNER: u32 = 1 << 31;
 const DESC_FIRST: u32 = 1 << 3;
 const DESC_LAST: u32 = 1 << 2;
 
-/// Iteration bound for the response to show up in `RESP0`: the controller sets
-/// `COMMAND_DONE` a few card clocks before the response registers are readable,
-/// but no more than that.
-const RESPONSE_SETTLE: u32 = 16_384;
+/// Iteration bound for the response to show up in `RESP0`.
+///
+/// The controller sets `COMMAND_DONE` when the command frame leaves, half a
+/// frame before the card's answer is complete, and a 48-bit frame takes 120 us
+/// at the 400 kHz identification clock. A quarter of [`spin::SPIN_TIMEOUT`] is
+/// about 0.65 ms, which covers the wait with room to spare; anything shorter
+/// turns a slow-but-correct answer into a timeout, and anything longer only
+/// slows down commands the card really does ignore.
+const RESPONSE_SETTLE: u32 = spin::SPIN_TIMEOUT / 4;
 
 /// Iteration bound for a data phase: a card may take hundreds of milliseconds
 /// to program a block before it releases DAT0.
@@ -481,12 +486,22 @@ impl SdHost {
         }
 
         // `COMMAND_DONE` shows up before the response lands in `RESP0`, so wait
-        // for the status register to report this command's index. Long frames
-        // do not always update that field, hence the tight bound instead of the
-        // default one.
-        spin::try_spin_wait_max(RESPONSE_SETTLE, || {
+        // for the status register to report this command's index; the comment
+        // on `RESPONSE_SETTLE` explains how long that can take at the
+        // identification clock.
+        let settled = spin::try_spin_wait_max(RESPONSE_SETTLE, || {
             r.status.response_index() == u32::from(index)
         });
+
+        // A card that ignores a command can still let `COMMAND_DONE` through
+        // without `RESPONSE_TIMEOUT`, and then `RESP0` holds the previous
+        // command's answer: reading it invents a response. The response index
+        // is the tell, but the controller only updates it for frames it can
+        // check — R3/R4 (sent as `ShortNoCrc`) and R2 leave the field alone,
+        // which is why it is checked for the CRC-carrying kinds only.
+        if matches!(kind, ResponseKind::Short | ResponseKind::ShortBusy) && !settled {
+            return Err(Error::ResponseTimeout);
+        }
 
         // The controller files a 136-bit frame as four words, lowest bits in
         // `RESP0`; report it most significant word first so the bit numbering
@@ -656,9 +671,12 @@ impl SdHost {
             r.rintsts.int_status_raw() & (event::COMMAND_DONE | COMMAND_FAILURES) != 0
         });
         command_status(r.rintsts.int_status_raw())?;
-        spin::try_spin_wait_max(RESPONSE_SETTLE, || {
+        let settled = spin::try_spin_wait_max(RESPONSE_SETTLE, || {
             r.status.response_index() == u32::from(index)
         });
+        if !settled {
+            return Err(Error::ResponseTimeout);
+        }
         if r.resp0.read_bits() & R1_ERRORS != 0 {
             return Err(Error::ResponseError);
         }
