@@ -3,8 +3,8 @@
 //! Minimal runtime support for the ESP32-P4 high-performance RISC-V cores.
 //!
 //! This crate provides:
-//! - `_start`: stack setup, `.bss` zeroing, `mtvec` setup and the call into
-//!   `main` (in [`rt`])
+//! - `_start`: stack setup, `.bss` / `.ram.high` zeroing, `mtvec` setup and the
+//!   call into `main` (in [`rt`])
 //! - a direct-mode trap entry that saves the integer register file and calls
 //!   `_start_trap_rust`
 //! - RISC-V assembly helpers and machine-mode CSR access
@@ -15,7 +15,7 @@
 //! segments and jumps to `_start` in machine mode. The runtime then:
 //!
 //! 1. sets `gp` and `sp`
-//! 2. zeroes `.bss`
+//! 2. zeroes `.bss` and the second RAM window, `.ram.high`
 //! 3. installs the direct-mode trap vector and disables interrupts
 //! 4. enables the FPU (`mstatus.FS = Dirty`)
 //! 5. calls `main`
@@ -33,6 +33,7 @@
 //! - flash segment 1: `.init`, `.text` and `.trap`, separated from segment 0
 //!   by a dummy gap section
 //! - RAM: `.data` (copied by the bootloader), `.bss` (zeroed here) and stack
+//! - RAM_HIGH: `.ram.high` (zeroed here), for buffers too big for `RAM`
 //!
 //! The dummy gap is required because the bootloader asserts that the image has
 //! exactly two flash segments on ESP32-P4.

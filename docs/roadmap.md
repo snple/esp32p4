@@ -19,7 +19,7 @@
 | `machine_timer` | [machine_timer.rs](../esp32p4-hal/src/machine_timer.rs) | 每核 CLINT 64 位比较器 + CLIC id 7 |
 | `interrupt` | [interrupt.rs](../esp32p4-hal/src/interrupt.rs) | CLIC 线与矩阵、`claim`/`InterruptHandler` |
 | `gpio` | [gpio/](../esp32p4-hal/src/gpio) | 电气配置、四路中断、完整 HP 交换矩阵路由、IO MUX 功能表 |
-| `cache` / `mmu` / `tcm` | [cache.rs](../esp32p4-hal/src/cache.rs) · [mmu.rs](../esp32p4-hal/src/mmu.rs) · [tcm.rs](../esp32p4-hal/src/tcm.rs) | cache 维护、外部内存映射、8 KB HP SPM 代码放置 |
+| `cache` / `mmu` / `tcm` | [cache.rs](../esp32p4-hal/src/cache.rs) · [mmu.rs](../esp32p4-hal/src/mmu.rs) · [tcm.rs](../esp32p4-hal/src/tcm.rs) | cache 维护、外部内存映射、8 KB HP SPM 代码放置；内部 SRAM 按 die 版本分成 `RAM` + `RAM_HIGH` 两个窗口（ROM 数据窗口与 L2 cache 已实测排除，见 [boot.md §3](boot.md)） |
 | `efuse` | [efuse.rs](../esp32p4-hal/src/efuse.rs) | 只读：芯片/块版本、MAC、Flash/PSRAM 参数 |
 | `psram` | [psram/](../esp32p4-hal/src/psram) | MPLL、MSPI、MMU 映射、分配器（DMA 一致性语义与双向拷贝限制见 2.1） |
 | `uart` | [uart.rs](../esp32p4-hal/src/uart.rs) | UART0–4 轮询 + 按源中断、流控、GPIO 矩阵路由、UHCI + GDMA 的 DMA 收发 |

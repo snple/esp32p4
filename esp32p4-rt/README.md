@@ -51,21 +51,32 @@ direct 模式（`MODE=0`），只用于异常；以后要开中断需要：
 - 段 0：`.flash.appdesc` + `.rodata`；
 - 一个 NOLOAD 间隙段（bootloader 要求 P4 镜像恰好两个 flash 段）；
 - 段 1：`.init` + `.text` + `.trap`；
-- RAM：`.data`（bootloader 拷贝）、`.bss`（`_start` 清零）、`.stack`。
+- RAM：`.data`（bootloader 拷贝）、`.bss`（`_start` 清零）、`.stack`；
+- RAM_HIGH：`.ram.high`（NOLOAD，`_start` 清零），给放不进 RAM 的大缓冲区。
 
-应用侧 `memory.x` 模板：
+应用侧 `memory.x` 模板（pre-v3.0 die，即 ESP32-P4 v1.3 / revision 103）：
 
 ```ld
 MEMORY
 {
     ROM : ORIGIN = 0x40000020, LENGTH = 0x4000000 - 0x20
-    RAM : ORIGIN = 0x4FF20000, LENGTH = 0x8DFC0
+    RAM : ORIGIN = 0x4FF00000, LENGTH = 0x2BBD0
+    RAM_HIGH : ORIGIN = 0x4FF40000, LENGTH = 0x60000
 }
 ```
 
-`0x4FF20000` 对应 bootloader 默认保留 128 KB L2 cache；`0x4FFADFC0` 是
-可用 RAM 顶端（避开 ROM BSS/stack）。换 bootloader 的 cache 配置时要同步改
-`ORIGIN`。
+内部 SRAM 里嵌着 L2 cache 和 mask ROM 自己的 `.data`/`.bss`，位置随芯片版本
+变化，所以不能当成一整块：这块 die 上 cache 在顶部 128 KB
+（`0x4FFA_0000`..`0x4FFC_0000`），ROM 数据在 `0x4FF3_FBA4`..`0x4FF4_0000`。
+`RAM` 停在 2nd-stage bootloader 之下，`RAM_HIGH` 夹在 ROM 窗口与 cache 之间。
+超大缓冲区：
+
+```rust
+#[unsafe(link_section = ".ram.high")]
+static mut FRAME: [u8; 256 * 1024] = [0; 256 * 1024];
+```
+
+v3.0+ 的 die 换成单区（cache 在底部），见 `docs/boot.md` §8。
 
 ## 应用描述符
 

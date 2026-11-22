@@ -21,7 +21,8 @@
 //!    MEMORY
 //!    {
 //!        ROM : ORIGIN = 0x40000020, LENGTH = 0x4000000 - 0x20
-//!        RAM : ORIGIN = 0x4FF20000, LENGTH = 0x8DFC0
+//!        RAM : ORIGIN = 0x4FF00000, LENGTH = 0x2BBD0
+//!        RAM_HIGH : ORIGIN = 0x4FF40000, LENGTH = 0x60000
 //!        SPM : ORIGIN = 0x30100000, LENGTH = 0x2000
 //!    }
 //!    ```

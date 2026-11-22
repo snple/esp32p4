@@ -64,19 +64,45 @@ assert(rom_index == 2);
 MEMORY
 {
     ROM : ORIGIN = 0x40000020, LENGTH = 0x4000000 - 0x20
-    RAM : ORIGIN = 0x4FF20000, LENGTH = 0x8DFC0
+    RAM : ORIGIN = 0x4FF00000, LENGTH = 0x2BBD0
+    RAM_HIGH : ORIGIN = 0x4FF40000, LENGTH = 0x60000
     SPM : ORIGIN = 0x30100000, LENGTH = 0x2000
 }
 ```
 
 `0x40000020` 跳过 24 字节 image header + 8 字节第一个 segment header。
-`0x4FF20000` 是 bootloader 默认保留 128 KB L2 cache 后的 L2 RAM 起点；
-`0x4FFADFC0` 是可用 RAM 顶端（上方约 72 KB 留给 ROM BSS/stack）。
 
 `0x30100000` 是 8 KB HP SPM（寄存器里叫 HP TCM），同时也被 CPU 复位向量
 占用；ESP-IDF 的 `spm_idram_seg` 把整块交给应用，bootloader 的
 `verify_load_addresses()` 有专门的 `esp_ptr_in_spm()` 分支接受它。
 `link.x` 用它放 `#[tcmfunc]` / `#[tcmdata]` 的代码和数据。
+
+内部 SRAM 不是一块连续可用的窗口：768 KB HP L2MEM 里既有 L2 cache，也有
+**mask ROM 自己的 `.data`/`.bss`**，而它们的位置随芯片版本变化。这块板子是
+v1.3（revision 103，pre-v3.0），实测（见 `ram_map` 例程）：
+
+| 地址 | 用途 | 能否给应用 |
+|------|------|-----------|
+| `0x4FF0_0000`..`0x4FF2_BBD0` | L2 RAM，2nd-stage bootloader 之下 | 可以 → `RAM` |
+| `0x4FF2_BBD0`..`0x4FF3_FBA4` | bootloader 镜像与 ROM 共享缓冲（运行期已废弃） | 可以，但 .data 的**装载**地址不能落进 bootloader 自己的段（`0x4FF28ED0`..`0x4FF35088`） |
+| `0x4FF3_FBA4`..`0x4FF4_0000` | **ROM 的 `.data`/`.bss`（活的）** | 不可以，清零它之后任何 ROM 调用都会挂死 |
+| `0x4FF4_0000`..`0x4FFA_0000` | L2 RAM，ROM 窗口与 cache 之间 | 可以 → `RAM_HIGH` |
+| `0x4FFA_0000`..`0x4FFC_0000` | **L2 cache（128 KB）** | 不可以，写进去的内容会被 cache 覆盖 |
+
+因此 `.data`/`.bss`/栈放在 `RAM`，放不下的大缓冲区放在 `RAM_HIGH`（`.ram.high`
+段，`NOLOAD`，由 `_start` 清零）：
+
+```rust
+#[unsafe(link_section = ".ram.high")]
+static mut FRAME: [u8; 256 * 1024] = [0; 256 * 1024];
+```
+
+`.bss` 溢出 `RAM` 不会静默踩到 ROM 窗口，而是链接期报错
+（`esp32p4-rt: stack overflows RAM` / `section '.bss' will not fit in region 'RAM'`）。
+
+espflash 按芯片版本选 bootloader（`esp32p4-v0` / `esp32p4-v3`），所以内存图
+必须和它一致；v3.0+ 的 die 把 cache 挪到底部、ROM 数据挪到顶部，参数见
+[§8](#8-换-bootloader--cache-配置)。
 
 输出段顺序：
 
@@ -91,6 +117,7 @@ MEMORY
 .data            RAM  bootloader 拷贝
 .bss             RAM  _start 清零
 .stack           RAM  NOLOAD
+.ram.high        RAM_HIGH  NOLOAD，_start 清零
 ```
 
 debug 构建的 `blink` 镜像（`espflash save-image` 解析结果）：
@@ -216,14 +243,32 @@ for i in range(segcount):
 
 ## 8. 换 bootloader / cache 配置
 
-如果使用自定义 ESP-IDF bootloader，L2 cache 划分可能不是 128 KB。此时要
-同步修改 `memory.x` 的 `RAM.ORIGIN`：
+内存图和 bootloader 是一套的，两条都要一起改。
 
-| L2 cache | L2 RAM ORIGIN |
-|----------|---------------|
-| 512 KB | `0x4FF80000` |
-| 256 KB | `0x4FF40000` |
-| 128 KB（IDF 默认） | `0x4FF20000` |
-| 0 KB | `0x4FF00000` |
+**bootloader 按版本选**。espflash 内置两套 P4 bootloader，按 eFuse 里的
+revision 挑选：`esp32p4-v0`（revision < 300）和 `esp32p4-v3`（≥ 300），
+它们的段地址完全不同（`esp32p4-v0` 从 `0x4FF28ED0` 起，`esp32p4-v3` 从
+`0x4FFAB2C0` 起）。想确认实际用的是哪套，看启动日志里
+`segment N: ... vaddr=0x4FF...` 的地址，或者 `espflash board-info` 的
+`Chip type / revision`。
 
-RAM 顶端仍建议不超过 `0x4FFADFC0`。
+**cache 位置按版本定**。768 KB L2MEM 由 L2 RAM 和 L2 cache 共享：
+
+| die | L2 cache 位置 | ROM `.data`/`.bss` | 可用窗口 |
+|-----|--------------|--------------------|---------|
+| pre-v3.0（v1.3 / revision 103） | 顶部 `0x4FFC_0000 - size` | `0x4FF3_FBA4`..`0x4FF4_0000` | `0x4FF0_0000`..`0x4FF2_BBD0` + `0x4FF4_0000`..`0x4FFC_0000 - size` |
+| v3.0+ | 底部 `0x4FF0_0000` | 顶部 `0x4FFB_FBB0`..`0x4FFC_0000` | `0x4FF0_0000 + size`..`0x4FFA_DFC0` |
+
+pre-v3.0 就是本仓库现在这套（`RAM` + `RAM_HIGH`）；v3.0+ 时内部 SRAM 又变回
+一整块，改回单区即可，例如 128 KB cache（IDF 默认）：
+
+```ld
+RAM : ORIGIN = 0x4FF20000, LENGTH = 0x8DFC0
+```
+
+那时 `RAM_HIGH` 可以指到同一范围（`.ram.high` 段留空即可），`RAM` 也不再
+需要停在 `0x4FF2BBD0`。cache 大小改过时（256/0 KB），`ORIGIN` 相应改成
+`0x4FF40000` / `0x4FF00000`，顶端不变。
+
+两个区的划分不是推出来的，是量出来的：`ram_map` 例程在每个边界附近写一个
+标记、用 1 MB PSRAM 流量刷一遍 L2、再读回来；落在 cache 里的页会丢掉内容。
