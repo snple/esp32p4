@@ -195,18 +195,14 @@ fn main() -> ! {
     );
 
     // Both directions at once is the one case that does not survive: the two
-    // AXI channels read and write the same die, and a handful of bytes per
-    // transfer come back wrong. Reported rather than asserted — the read and
-    // write directions on their own above are what a driver has to rely on.
-    dst.fill(0);
-    let copied = dma
-        .copy(AxiMemChannel::Ch0, src, dst, descriptors)
-        .expect("the psram copy failed");
-    let mismatches = src.iter().zip(dst.iter()).filter(|(a, b)| a != b).count();
-    defmt::info!(
-        "psram to psram copy: {} bytes, {} mismatches (known limitation)",
-        copied,
-        mismatches
+    // AXI channels read and write the same die and lose bytes, whatever the
+    // timing. The driver refuses it instead of returning wrong data.
+    let refused = dma.copy(AxiMemChannel::Ch0, src, dst, descriptors);
+    defmt::info!("psram to psram copy: {:?} (refused)", refused);
+    assert_eq!(
+        refused,
+        Err(esp32p4_hal::dma::Error::ExternalMemoryCopy),
+        "a PSRAM to PSRAM copy has to be refused"
     );
 
     // Finally, why the L2 half of the map is not merely unnecessary but wrong:

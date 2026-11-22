@@ -1790,11 +1790,17 @@ alias.unmap();
 - 引擎写进 `dst` 的数据要 `invalidate` 之后 core 才读得到；
 - **别用 `0x8800_0000` 别名给 DMA**：引擎不认这个别名（描述符挂上去通道永远不完成）。
 
-示例 [`psram_dma`](esp32p4-examples/src/psram_dma.rs) 把这四条逐一验过，并且报告了一个
-**尚未解决的限制**：单个方向的 4 KB 传输是干净的（PSRAM→SRAM、SRAM→PSRAM 各 0 错），
-但**同一次 AXI 拷贝同时读源、写目的（PSRAM→PSRAM）时，4080 字节里稳定地丢 32–128 字节**，
-优先级、burst 宽度都不影响。CPU 侧同样的 4 KB 拷贝是对的，所以这不是 cache 维护问题，而是
-AXI 两条通道同时访问同一片 PSRAM 时的读写切换时序，需要补 SPI timing tuning（见 roadmap）。
+示例 [`psram_dma`](esp32p4-examples/src/psram_dma.rs) 把这四条逐一验过。它同时钉住了一个
+**限制**：单个方向的 4 KB 传输是干净的（PSRAM→SRAM、SRAM→PSRAM 各 0 错），但**同一次 AXI
+拷贝同时读源、写目的（PSRAM→PSRAM）时，每 4 KB 稳定丢 32–128 字节**。这个已经排除了采样点
+相关的一切：`EXTRA_DUMMY_CYCLELEN` 0–7、DQS 相位 4 档 × 每引脚 delayline 0–15（64 个组合里
+偶发 0 错、复测又不稳定）、burst 宽度 B8–B64、通道优先级、长度 64 字节对齐 —— 都改变不了它，
+说明问题在 AXI 两条通道对同一片 die 的读写并发本身。
+
+因此 [`AxiDma::copy`](esp32p4-hal/src/dma/axi.rs) 在两端都落在 PSRAM 时返回
+`Error::ExternalMemoryCopy`，而不是悄悄返回错数据；一端在内部 RAM 的双向传输照常可用。
+剩下的路只有照 ESP-IDF 的完整 DQS + delay-line 校准流程重做一遍，或者确认这是硬件限制
+（roadmap 的 `psram` 行跟这条）。
 
 ## 定时器
 

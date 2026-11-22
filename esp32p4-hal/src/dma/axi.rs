@@ -244,6 +244,10 @@ impl AxiDma {
         if len == 0 {
             return Ok(0);
         }
+        // Two AXI channels hitting PSRAM at once lose bytes; see the roadmap.
+        if super::is_external_memory(src.as_ptr()) && super::is_external_memory(dst.as_ptr()) {
+            return Err(Error::ExternalMemoryCopy);
+        }
         let chunks = len.div_ceil(super::descriptor::MAX_LEN);
         if descriptors.len() < 2 * chunks {
             return Err(Error::NotEnoughDescriptors {

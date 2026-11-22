@@ -213,6 +213,26 @@ pub enum Error {
     Peripheral,
     /// The transfer did not finish before the driver's deadline.
     Timeout,
+    /// Both ends of a memory-to-memory transfer sit in PSRAM.
+    ///
+    /// One AXI channel reading the die while the other writes it loses bytes,
+    /// reproducibly, whatever the burst size, priority or sampling point — see
+    /// the roadmap. Transfers with one end in internal RAM are unaffected, so
+    /// this is refused instead of quietly returning wrong data.
+    ExternalMemoryCopy,
+}
+
+/// Whether `addr` points into PSRAM, through either alias.
+///
+/// `0x4800_0000` is the cached window and `0x8800_0000` its uncached alias; the
+/// two are backed by the same die, and the largest one P4 carries is 32 MB, so
+/// the check stops well short of L2MEM at `0x4FF0_0000`. Only the cached window
+/// is a legal DMA buffer address, but recognising the alias too keeps the check
+/// honest when a caller has chosen the wrong pointer.
+#[inline]
+pub fn is_external_memory(addr: *const u8) -> bool {
+    let address = addr as usize;
+    (0x4800_0000..0x4C00_0000).contains(&address) || (0x8800_0000..0x8C00_0000).contains(&address)
 }
 
 /// Window the engine checks descriptor addresses against.
