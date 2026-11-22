@@ -453,6 +453,46 @@ macro_rules! impl_pin {
                     self.gpio().[<pin $n>].write_int_type(kind as u32);
                 }
 
+                /// Binds this pin to one of the eight ETM event channels.
+                ///
+                /// The pin has to be an input, and the edge that should reach
+                /// the matrix comes from [`set_interrupt_type`](Self::set_interrupt_type):
+                /// `PositiveEdge` for [`EtmEvent::Rising`](super::EtmEvent::Rising),
+                /// and so on. Only GPIO0-GPIO7 have an id in the matrix.
+                ///
+                /// # Panics
+                ///
+                /// Panics when this pin is not one of GPIO0-GPIO7 or the channel
+                /// is out of range.
+                #[inline]
+                pub fn bind_etm_event(&mut self, channel: u8) {
+                    assert!(
+                        $n < super::ETM_PINS,
+                        "the ETM matrix only carries GPIO0-GPIO{}",
+                        super::ETM_PINS - 1
+                    );
+                    super::bind_etm_event($n, channel);
+                }
+
+                /// Binds this pin to an ETM task channel and enables the task.
+                ///
+                /// The channel is the one [`EtmTask::Set`](super::EtmTask::Set)
+                /// and friends name; one channel may drive several pins.
+                ///
+                /// # Panics
+                ///
+                /// Panics when the channel is out of range.
+                #[inline]
+                pub fn bind_etm_task(&mut self, channel: u8) {
+                    super::bind_etm_task($n, channel);
+                }
+
+                /// Enables or disables the ETM task on this pin.
+                #[inline]
+                pub fn enable_etm_task(&mut self, enable: bool) {
+                    super::enable_etm_task($n, enable);
+                }
+
                 /// Read the trigger condition.
                 #[inline]
                 pub fn interrupt_type(&self) -> InterruptType {

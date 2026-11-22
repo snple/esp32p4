@@ -155,6 +155,8 @@
 //! rx.set_input_signal(InputSignal::UART0_RXD_PAD_IN);
 //! ```
 
+use core::ptr::{read_volatile, write_volatile};
+
 use esp32p4_pac::{GPIO, HP_SYS_CLKRST, IO_MUX, Interrupt};
 
 pub mod pin;
@@ -164,6 +166,125 @@ pub mod signal;
 pub use pin::Pin;
 pub use pins::{AnalogFunction, MuxFunction, PadDesc};
 pub use signal::{InputSignal, OutputSignal};
+
+/// Pins whose edges and tasks the ETM matrix carries: `GPIO_EVT_CH0..CH7` and
+/// `GPIO_TASK_CH0..CH7`.
+pub const ETM_PINS: u32 = 8;
+
+/// `GPIO_EXT`, the block that sits past `GPIO` and holds the ETM bindings.
+const GPIO_EXT_BASE: u32 = 0x500e_0f00;
+
+/// `GPIO_EXT_ETM_EVENT_CH0_CFG` and its seven siblings: one word per event
+/// channel, bits 5:0 pick the pin and bit 7 enables the channel.
+const GPIO_EXT_ETM_EVENT: u32 = GPIO_EXT_BASE + 0x60;
+
+/// `GPIO_EXT_ETM_TASK_P0_CFG` and its thirteen siblings, four pins per word
+/// with one byte each: bit 0 enables the task and bits 3:1 pick its channel.
+const GPIO_EXT_ETM_TASK: u32 = GPIO_EXT_BASE + 0xa0;
+
+/// Pins `GPIO_EXT` has a task binding for: fourteen words of four.
+pub const ETM_TASK_PINS: u32 = 4 * 14;
+
+/// Binds `pin` to one of the eight ETM event channels.
+///
+/// The channel number is the one an [`EtmEvent`] names; the ETM side then
+/// connects `GPIO_EVT_CHn_*` to whatever task it should drive.
+fn bind_etm_event(pin: u32, channel: u8) {
+    assert!(
+        channel < ETM_PINS as u8,
+        "the GPIO has {ETM_PINS} ETM event channels"
+    );
+    assert!(
+        pin < ETM_TASK_PINS,
+        "the ETM event selector holds a pin number"
+    );
+    let address = GPIO_EXT_ETM_EVENT + u32::from(channel) * 4;
+    // Bits 5:0 select the pin, bit 7 enables the channel.
+    // SAFETY: `GPIO_EXT` is a register block, and the channel is in range.
+    unsafe { write_volatile(address as *mut u32, (pin & 0x3f) | (1 << 7)) };
+}
+
+/// Points `pin`'s task at one of the eight ETM task channels and enables it.
+fn bind_etm_task(pin: u32, channel: u8) {
+    assert!(pin < ETM_TASK_PINS, "GPIO_EXT holds a task binding per pin");
+    assert!(
+        channel < ETM_PINS as u8,
+        "the GPIO has {ETM_PINS} ETM task channels"
+    );
+    let address = GPIO_EXT_ETM_TASK + (pin / 4) * 4;
+    let shift = (pin % 4) * 8;
+    // SAFETY: see `bind_etm_event`; the word holds four pins, one byte each.
+    let mut value = unsafe { read_volatile(address as *const u32) };
+    value &= !(0x7 << (shift + 1));
+    value |= u32::from(channel) << (shift + 1);
+    value |= 1 << shift;
+    // SAFETY: as above.
+    unsafe { write_volatile(address as *mut u32, value) };
+}
+
+/// Enables or disables the ETM task on `pin`.
+fn enable_etm_task(pin: u32, enable: bool) {
+    assert!(pin < ETM_TASK_PINS, "GPIO_EXT holds a task binding per pin");
+    let address = GPIO_EXT_ETM_TASK + (pin / 4) * 4;
+    let shift = (pin % 4) * 8;
+    // SAFETY: see `bind_etm_event`.
+    let mut value = unsafe { read_volatile(address as *const u32) };
+    if enable {
+        value |= 1 << shift;
+    } else {
+        value &= !(1 << shift);
+    }
+    // SAFETY: as above.
+    unsafe { write_volatile(address as *mut u32, value) };
+}
+
+/// A GPIO task the ETM can run, after the pin has been bound to the channel.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum EtmTask {
+    /// Drive the pin high.
+    Set(u8),
+    /// Drive the pin low.
+    Clear(u8),
+    /// Flip the pin.
+    Toggle(u8),
+}
+
+impl From<EtmTask> for crate::etm::TaskId {
+    fn from(task: EtmTask) -> Self {
+        // `GPIO_TASK_CHn_SET` / `_CLEAR` / `_TOGGLE` in the ETM signal table.
+        let (channel, base) = match task {
+            EtmTask::Set(channel) => (channel, 1),
+            EtmTask::Clear(channel) => (channel, 9),
+            EtmTask::Toggle(channel) => (channel, 17),
+        };
+        Self::new(base + channel)
+    }
+}
+
+/// A GPIO edge the ETM can route, after the pin has been bound to the channel.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum EtmEvent {
+    /// The pin went high.
+    Rising(u8),
+    /// The pin went low.
+    Falling(u8),
+    /// The pin changed in either direction.
+    Either(u8),
+}
+
+impl From<EtmEvent> for crate::etm::EventId {
+    fn from(event: EtmEvent) -> Self {
+        // `GPIO_EVT_CHn_RISE_EDGE` / `_FALL_EDGE` / `_ANY_EDGE`.
+        let (channel, base) = match event {
+            EtmEvent::Rising(channel) => (channel, 1),
+            EtmEvent::Falling(channel) => (channel, 9),
+            EtmEvent::Either(channel) => (channel, 17),
+        };
+        Self::new(base + channel)
+    }
+}
 
 /// Output signal number that selects the GPIO matrix's own output register.
 ///
