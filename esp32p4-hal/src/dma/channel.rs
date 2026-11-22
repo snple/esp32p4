@@ -482,6 +482,10 @@ macro_rules! impl_rx_channel {
                 fn stop_chain(&self) {
                     RxChannel::<$n>::stop(self);
                 }
+
+                fn last_eof_descriptor(&self) -> *const Descriptor {
+                    RxChannel::<$n>::last_eof_descriptor(self)
+                }
             }
         }
     };
@@ -581,6 +585,10 @@ pub trait ReceiveChannel {
 
     /// Stops after the descriptor the engine is working on.
     fn stop_chain(&self);
+
+    /// The last descriptor that finished with an EOF, which is where a receive
+    /// transfer ended; null when none has finished yet.
+    fn last_eof_descriptor(&self) -> *const Descriptor;
 }
 
 /// Generates the register-level body of one transmit channel.

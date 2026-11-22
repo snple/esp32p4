@@ -62,6 +62,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `tsens` | 温度传感器：每秒打印一次芯片温度，自动选择测量档位 |
 | `ledc` | LEDC：GPIO2 上扫 0/25/50/75/100 % 占空比并回读波形，再用 100 步渐变拉到满占空比 |
 | `rmt` | RMT：GPIO2 上自发自收一段 WS2812 波形，逐脉冲比对电平与时长 |
+| `rmt_dma` | RMT + GDMA：4800 个编码的 WS2812 帧（48 倍于通道 RAM）经 GDMA 发、经 GDMA 收，逐编码比对 |
 | `pcnt` | PCNT：用 LEDC 的 10 kHz 方波计数，验证限值回绕、标志锁存与暂停/恢复 |
 | `mcpwm` / `mcpwm_extras` | MCPWM0：前者查计数器/强制电平/三档占空比/互补加死区，后者查同步、捕获、故障跳闸、载波、ETM、事件比较器与中断 |
 | `twai` | TWAI0（CAN 2.0B）：把 TX/RX 路由到同一个焊盘做回环，验证标准/扩展/远程帧往返、过滤器正负向、收发中断、位时序与非法输入 |
@@ -1280,6 +1281,37 @@ FIFO。上板踩到的坑（都已写进注释）：
 48 个编码的 WS2812 数据，回读的 47 个完整脉冲电平与时长全部一致。随后在**通道 2** 上再跑一遍
 （GPIO17 出、GPIO21 回，用跳线），覆盖非 0 通道：那块 RAM 在另一个地址、只拥有两块，回读 15 个
 脉冲同样零错配。
+
+### GDMA
+
+只有**发送通道 3** 和**接收通道 7**（即 `rx_channel::<3>()`）的 RAM 接在 GDMA 接口上，所以
+`send_dma`/`receive_dma` 只长在 `TxChannel<'_, 3>` 与 `RxChannel<'_, 3>` 上，别的通道加不上：
+
+```rust
+let tx = rmt.tx_channel::<3>();
+let dma_tx = dma.tx_channel::<1>();
+tx.configure(&TxConfig::new(1))?;
+tx.send_dma(&dma_tx, &codes, &descriptors, 10_000)?;   // codes 以 Code::END 结尾
+
+let rx = rmt.rx_channel::<3>();
+rx.receive_dma_with(&dma_rx, &mut codes, &descriptors, 50_000, || {
+    tx.send_dma(&dma_tx, &codes, &descriptors, 10_000)
+})?;
+```
+
+- **DMA 搬的是 RAM 里的 32 位字，不是 `Pulse`**：一个字装两个 16 位编码，所以 DMA 缓冲是
+  [`Code`](esp32p4-hal/src/rmt.rs) 的紧密数组（`Code::from` / `Pulse::from` 互转），用
+  `[Pulse]` 会把 4 字节的 `level`/`period` 结构原样搬过去，发出来的是乱码；
+- **发送要先让引擎填满 RAM**：`DMA_ACCESS_EN` 一置位，APB 就再也碰不到这块 RAM，所以顺序是
+  挂描述符 → 启动 GDMA → 等 RAM 非空 → `TX_START`，否则先发出去的是复位残留；
+- **乒乓阈值必须清零**：`CHn_TX_LIM`/`CHm_RX_LIM` 复位值是 128，比通道 RAM 的 96 个编码还大，
+  不清零时 RMT 按 128 个编码判满，DMA 侧只看到 `DMA_ACCESS_FAIL` 溢出中断而收不到数据；
+- **环形 RAM 靠 `MEM_TX_WRAP_EN`/`MEM_RX_WRAP_EN` 循环**：引擎持续覆盖、RMT 持续播放/接收，
+  才能一次搬远超 96 个编码的序列；传输结束把这两个位与 `DMA_ACCESS_EN` 一起还原。
+
+示例 [`rmt_dma`](esp32p4-examples/src/rmt_dma.rs) 发 100 颗 WS2812（4802 个编码、9604 字节、
+5 个描述符），同脚回环用 GDMA 收回来：4800 个编码全部回读，前 4799 个逐个与发送一致、尾部是
+接收器补的结束标记（最后一个低电平脉冲还在计数时 idle 就结束了接收），零错配。
 
 ## 脉冲计数（PCNT）
 

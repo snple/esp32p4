@@ -81,6 +81,17 @@ pub const RAM_WORDS_PER_CHANNEL: usize = 48;
 /// Pulse codes one RAM block holds (two per 32-bit word).
 pub const PULSES_PER_BLOCK: usize = RAM_WORDS_PER_CHANNEL * 2;
 
+/// Bit of a transmit channel's `CHnCONF0` that puts the channel's RAM behind
+/// the GDMA interface.
+///
+/// Only transmit channel 3 has it (TRM 58.3.2.6), and the PAC's SVD predates
+/// the field, so it is written by hand.
+const TX_DMA_ACCESS_EN: u32 = 1 << 25;
+
+/// The same switch for a receive channel, in `CHmCONF0`; only the fourth
+/// receive channel — hardware channel 7 — has it.
+const RX_DMA_ACCESS_EN: u32 = 1 << 23;
+
 /// Clock feeding the group divider.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -140,12 +151,12 @@ impl Pulse {
     }
 
     /// The 16-bit code stored in RAM.
-    const fn code(self) -> u32 {
-        (self.period as u32 & 0x7fff) | ((self.level as u32) << 15)
+    pub const fn code(self) -> u16 {
+        (self.period & 0x7fff) | ((self.level as u16) << 15)
     }
 
     /// Rebuild a code read back from RAM.
-    const fn from_code(code: u16) -> Self {
+    pub const fn from_code(code: u16) -> Self {
         Self {
             level: if code & 0x8000 != 0 {
                 Level::High
@@ -154,6 +165,59 @@ impl Pulse {
             },
             period: code & 0x7fff,
         }
+    }
+}
+
+/// One 16-bit pulse code, the unit that actually lives in the channel RAM.
+///
+/// The APB path packs two of these into a 32-bit word, and GDMA moves those
+/// words verbatim, so a DMA buffer is a plain array of [`Code`] — two per
+/// 32-bit word — and not an array of [`Pulse`], which is four bytes of
+/// `level`/`period` instead of one packed code.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct Code(u16);
+
+impl Code {
+    /// The end-of-sequence marker.
+    pub const END: Self = Self(0);
+
+    /// The code for `pulse`.
+    #[inline]
+    pub const fn from_pulse(pulse: Pulse) -> Self {
+        Self(pulse.code())
+    }
+
+    /// The pulse `code` decodes to.
+    #[inline]
+    pub const fn pulse(self) -> Pulse {
+        Pulse::from_code(self.0)
+    }
+
+    /// The raw 16-bit value.
+    #[inline]
+    pub const fn raw(self) -> u16 {
+        self.0
+    }
+
+    /// Whether this code ends the sequence.
+    #[inline]
+    pub const fn is_end(self) -> bool {
+        (self.0 & 0x7fff) == 0
+    }
+}
+
+impl From<Pulse> for Code {
+    #[inline]
+    fn from(pulse: Pulse) -> Self {
+        Self::from_pulse(pulse)
+    }
+}
+
+impl From<Code> for Pulse {
+    #[inline]
+    fn from(code: Code) -> Self {
+        code.pulse()
     }
 }
 
@@ -263,6 +327,10 @@ pub enum Error {
     Blocks,
     /// The transfer did not finish before the deadline.
     Timeout,
+    /// A DMA sequence has no end marker, so the transmitter would never stop.
+    NoEnd,
+    /// The descriptors do not cover the whole buffer.
+    Descriptors,
 }
 
 /// RMT controller owning the PAC peripheral.
@@ -379,8 +447,9 @@ impl Rmt {
 ///
 /// The handle carries the channel number in its type, so two channels cannot be
 /// mixed up; the register names behind it are literals generated once per
-/// channel. Transmit channel `N` and receive channel `N` share the same 48-word
-/// RAM blocks, so a channel is either transmitting or receiving.
+/// channel. Transmit channel `N` owns RAM block `N`, so a channel that asks for
+/// more than one block (`mem_size`) takes the following ones too and a
+/// transmitting channel never overlaps a receiving one on this chip.
 pub struct TxChannel<'a, const N: u8>(&'a Rmt);
 
 /// One receive channel, `N` of four, on hardware channels 4–7.
@@ -515,7 +584,7 @@ macro_rules! tx_body {
                     while index < count {
                         unsafe {
                             (&*ram.add(index / 2))
-                                .write_bits(code(index) | (code(index + 1) << 16));
+                                .write_bits(u32::from(code(index)) | (u32::from(code(index + 1)) << 16));
                         }
                         index += 2;
                     }
@@ -798,10 +867,193 @@ tx_body!(1);
 tx_body!(2);
 tx_body!(3);
 
+impl<'a> TxChannel<'a, 3> {
+    /// Sends `pulses` out of memory through GDMA instead of the APB FIFO.
+    ///
+    /// Transmit channel 3 is the only one wired to the GDMA interface, and its
+    /// RAM becomes unreachable from the bus once the switch is thrown: the
+    /// engine reads `pulses` and wraps around the 48-word RAM as it plays, so a
+    /// sequence far longer than the RAM goes out in one call.
+    ///
+    /// The sequence has to end with [`Pulse::END`] — nothing appends one for
+    /// us, and without it the transmitter wraps and never reports done.
+    /// `descriptors` carry the buffer; [`Chain`](crate::dma::Chain) mounts one
+    /// descriptor per 4095 bytes, i.e. per 1023 pulses.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NoEnd`] when `pulses` has no end marker, [`Error::Descriptors`]
+    /// when the descriptors do not cover it, [`Error::Timeout`] when the
+    /// transmitter has not finished after `timeout_us` microseconds.
+    pub fn send_dma<T: crate::dma::TransmitChannel>(
+        &self,
+        tx: &T,
+        codes: &[Code],
+        descriptors: &[crate::dma::Descriptor],
+        timeout_us: u64,
+    ) -> Result<(), Error> {
+        if codes.last().is_none_or(|code| !code.is_end()) {
+            return Err(Error::NoEnd);
+        }
+        let bytes = core::mem::size_of_val(codes);
+        // The engine reads memory, not the cache; a dirty line left behind
+        // would be sent instead of what the caller filled in.
+        crate::cache::writeback(codes.as_ptr().cast(), bytes);
+        let chain = crate::dma::Chain::new(descriptors);
+        chain
+            .mount_eof(codes.as_ptr().cast_mut().cast(), bytes)
+            .map_err(|_| Error::Descriptors)?;
+
+        let conf = &self.0.regs().tx_ch3conf0;
+        self.clear_done();
+        let bits = conf.read_bits();
+        conf.write_bits(bits | TX_DMA_ACCESS_EN);
+        conf.set_mem_tx_wrap_en_ch0();
+        conf.trigger_conf_update_ch0();
+        self.0.regs().ch3_tx_lim.write_tx_lim_ch(0);
+
+        tx.connect_to(crate::dma::Peripheral::Rmt);
+        tx.reset_channel();
+        tx.clear_all_interrupts();
+        tx.start_chain(chain.head());
+        // The transmitter has to find data in its RAM, or it plays whatever the
+        // reset left there: wait for the engine to hand over the first block.
+        let filled = wait_until(timeout_us, || !self.memory_empty()).is_some();
+        self.start();
+        let result = if filled {
+            self.wait_done(timeout_us)
+        } else {
+            Err(Error::Timeout)
+        };
+        tx.stop_chain();
+
+        let bits = conf.read_bits();
+        conf.write_bits(bits & !TX_DMA_ACCESS_EN);
+        conf.clr_mem_tx_wrap_en_ch0();
+        conf.trigger_conf_update_ch0();
+        self.0.regs().ch3_tx_lim.write_tx_lim_ch(128);
+        result
+    }
+}
+
 rx_body!(0, 4);
 rx_body!(1, 5);
 rx_body!(2, 6);
 rx_body!(3, 7);
+
+impl<'a> RxChannel<'a, 3> {
+    /// Receives into `buffer` through GDMA instead of the APB FIFO.
+    ///
+    /// Receive channel 3 — hardware channel 7 — is the only one wired to the
+    /// GDMA interface. The engine writes the received codes into `buffer` and
+    /// the RAM wraps underneath, so a burst longer than 48 words arrives in one
+    /// go; the transfer ends when the receiver sees an end marker, which is
+    /// what raises the channel's EOF on the DMA side.
+    ///
+    /// Returns how many pulses were stored. The end marker itself is a
+    /// half-word on the wire, so it lands in `buffer` truncated rather than
+    /// dropped; compare against a sequence that carries one.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Descriptors`] when the descriptors do not cover `buffer`,
+    /// [`Error::Timeout`] when nothing ended the reception within `timeout_us`
+    /// microseconds.
+    pub fn receive_dma<R: crate::dma::ReceiveChannel>(
+        &self,
+        rx: &R,
+        buffer: &mut [Code],
+        descriptors: &[crate::dma::Descriptor],
+        timeout_us: u64,
+    ) -> Result<usize, Error> {
+        self.receive_dma_with(rx, buffer, descriptors, timeout_us, || Ok(()))
+    }
+
+    /// Like [`receive_dma`](Self::receive_dma), but runs `trigger` once the
+    /// receiver is listening — a loopback needs the transmitter to start after
+    /// it, or the first edge is missed.
+    ///
+    /// # Errors
+    ///
+    /// The same as [`receive_dma`](Self::receive_dma), plus whatever `trigger`
+    /// returns.
+    pub fn receive_dma_with<R, F>(
+        &self,
+        rx: &R,
+        buffer: &mut [Code],
+        descriptors: &[crate::dma::Descriptor],
+        timeout_us: u64,
+        trigger: F,
+    ) -> Result<usize, Error>
+    where
+        R: crate::dma::ReceiveChannel,
+        F: FnOnce() -> Result<(), Error>,
+    {
+        let bytes = core::mem::size_of_val(buffer);
+        let chain = crate::dma::Chain::new(descriptors);
+        chain
+            .mount(buffer.as_mut_ptr().cast(), bytes)
+            .map_err(|_| Error::Descriptors)?;
+        // The engine writes memory behind the cache's back, in both
+        // directions: push out what we hold, then read the result fresh.
+        crate::cache::writeback_invalidate(buffer.as_mut_ptr().cast(), bytes);
+
+        let conf0 = &self.0.regs().rx_ch3conf0;
+        let bits = conf0.read_bits();
+        conf0.write_bits(bits | RX_DMA_ACCESS_EN);
+        let conf1 = &self.0.regs().rx_ch3conf1;
+        conf1.set_mem_rx_wrap_en_ch4();
+        conf1.trigger_conf_update_ch4();
+        // Ping-pong threshold: the whole point of the DMA path is that the
+        // engine keeps draining the RAM, so there is no limit to stop at. It
+        // goes back to its reset value once the transfer is over, because the
+        // APB path relies on it.
+        self.0.regs().ch3_rx_lim.write_rx_lim_ch4(0);
+
+        rx.connect_to(crate::dma::Peripheral::Rmt);
+        rx.reset_channel();
+        rx.clear_all_interrupts();
+        rx.start_chain(chain.head());
+        self.clear_done();
+        let exchange = (|| -> Result<(), Error> {
+            self.start();
+            trigger()?;
+            wait_until(timeout_us, || {
+                rx.interrupt_pending(crate::dma::RxInterrupt::SucEof)
+            })
+            .ok_or(Error::Timeout)?;
+            Ok(())
+        })();
+        self.stop();
+        rx.stop_chain();
+
+        let bits = conf0.read_bits();
+        conf0.write_bits(bits & !RX_DMA_ACCESS_EN);
+        conf1.clr_mem_rx_wrap_en_ch4();
+        conf1.trigger_conf_update_ch4();
+        self.0.regs().ch3_rx_lim.write_rx_lim_ch4(128);
+        exchange?;
+
+        // The engine rewrites each finished descriptor's length with what it
+        // actually received, so the total is the sum up to the EOF one.
+        let last = rx.last_eof_descriptor();
+        let mut received = 0;
+        let mut current: *const crate::dma::Descriptor = chain.head();
+        loop {
+            // SAFETY: every step follows a `next` pointer the chain mounted
+            // from the caller's own descriptors.
+            let descriptor = unsafe { &*current };
+            received += descriptor.length();
+            let done = core::ptr::eq(current, last);
+            match descriptor.next() {
+                Some(next) if !done => current = next,
+                _ => break,
+            }
+        }
+        crate::cache::invalidate(buffer.as_mut_ptr().cast(), received.min(bytes));
+        Ok(received / core::mem::size_of::<Code>())
+    }
+}
 
 fn wait_until(timeout_us: u64, mut done: impl FnMut() -> bool) -> Option<()> {
     let deadline = crate::delay::micros().wrapping_add(timeout_us);

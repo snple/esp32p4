@@ -736,6 +736,10 @@ macro_rules! impl_rx_channel {
                 fn stop_chain(&self) {
                     AxiRxChannel::<$n>::stop(self);
                 }
+
+                fn last_eof_descriptor(&self) -> *const Descriptor {
+                    AxiRxChannel::<$n>::last_eof_descriptor(self)
+                }
             }
         }
     };

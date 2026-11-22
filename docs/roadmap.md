@@ -34,7 +34,7 @@
 | `tsens` | [tsens.rs](../esp32p4-hal/src/tsens.rs) | LP_TSENS 温度传感器 |
 | `i2s` | [i2s.rs](../esp32p4-hal/src/i2s.rs) | 标准双槽/TDM + PDM 发送（PDM 接收未落地，见 2.1） |
 | `apll` | [apll.rs](../esp32p4-hal/src/apll.rs) | 音频 PLL：系数搜索、regi2c、三步标定 |
-| `ledc` / `rmt` / `pcnt` / `mcpwm` | [ledc.rs](../esp32p4-hal/src/ledc.rs) · [rmt.rs](../esp32p4-hal/src/rmt.rs) · [pcnt.rs](../esp32p4-hal/src/pcnt.rs) · [mcpwm.rs](../esp32p4-hal/src/mcpwm.rs) | PWM 家族全功能，MCPWM 无剩余 |
+| `ledc` / `rmt` / `pcnt` / `mcpwm` | [ledc.rs](../esp32p4-hal/src/ledc.rs) · [rmt.rs](../esp32p4-hal/src/rmt.rs) · [pcnt.rs](../esp32p4-hal/src/pcnt.rs) · [mcpwm.rs](../esp32p4-hal/src/mcpwm.rs) | PWM 家族全功能，RMT 通道 3/7 支持 GDMA，MCPWM 无剩余 |
 | `etm` | [etm.rs](../esp32p4-hal/src/etm.rs) | SOC_ETM 50 通道事件/任务连接 |
 | `dma` | [dma/](../esp32p4-hal/src/dma) | GDMA-AHB + GDMA-AXI：通道句柄、描述符链/环、mem2mem、突发宽度、硬件 CRC |
 | `multicore` | [multicore.rs](../esp32p4-hal/src/multicore.rs) | 双 HP 核启动、跨核软中断、软件 Mutex |
@@ -49,7 +49,7 @@
 | `uart` | LP UART | LP 引脚 |
 | `i2c` | 10 位地址、双地址模式；LP I2C | —；LP 引脚 |
 | `spi` | 2/4/8 线、SCT 分段、从机 HD（DMA 与主机半双工已完成） | 2/4/8 线需先补 QIO/OCT 引脚信号 |
-| `dma` | DW_GDMA（`DMA`）、RMT 的 DMA 握手、cached PSRAM 缓冲区失效、GDMA-AXI 的加权仲裁 | — |
+| `dma` | DW_GDMA（`DMA`）、cached PSRAM 缓冲区失效、GDMA-AXI 的加权仲裁 | — |
 | `sdhost` | SDIO（CMD52/53 + 卡中断）、UHS-I（1.8 V/SDR50/104）、MMC 8 位、卡检测/写保护引脚 | — |
 | `adc` | LP ADC、DAC 与 PWDET；ADC2 连续模式（errata 禁用） | LP 引脚 |
 | `tsens` | ETM 事件/任务、LP 核唤醒路径 | — |
