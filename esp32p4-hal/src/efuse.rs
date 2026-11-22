@@ -7,8 +7,10 @@
 //!
 //! # Features
 //!
-//! - [`ChipVersion`] with the wafer version, block version and the CPLL
-//!   frequency that goes with the die (360 MHz before v3.0, 400 MHz from v3.0)
+//! - [`ChipVersion`] with the wafer version, block version, the CPLL frequency
+//!   that goes with the die (360 MHz before v3.0, 400 MHz from v3.0) and the
+//!   analog PLL divider encoding; the free [`chip_version`] reads the same
+//!   without taking the controller
 //! - Factory MAC address
 //! - Flash type/page size/ECC/power-up delay (BLOCK0)
 //! - PSRAM capacity/vendor and package/temperature codes (BLOCK1)
@@ -77,6 +79,14 @@ impl ChipVersion {
         Self { major, minor }
     }
 
+    /// The version encoded in `EFUSE_RD_MAC_SYS2`.
+    const fn from_mac_sys2(raw: u32) -> Self {
+        let major_lo = (raw >> WAFER_VERSION_MAJOR_LO_SHIFT) & WAFER_VERSION_MAJOR_LO_MASK;
+        let major_hi = (raw >> WAFER_VERSION_MAJOR_HI_SHIFT) & WAFER_VERSION_MAJOR_HI_MASK;
+        let minor = (raw >> WAFER_VERSION_MINOR_SHIFT) & WAFER_VERSION_MINOR_MASK;
+        Self::new(((major_hi << 2) | major_lo) as u8, minor as u8)
+    }
+
     /// The major version (3 for a v3.x die).
     #[inline]
     pub const fn major(self) -> u8 {
@@ -107,6 +117,28 @@ impl ChipVersion {
             CPLL_360M_HZ
         }
     }
+
+    /// Whether the analog PLLs encode the multiplier directly.
+    ///
+    /// Dies up to v0.1 write `multiplier - 4` into `OC_DIV_7_0`, so four is the
+    /// lowest multiplier; ECO1 (v1.0) and later write the multiplier itself. On
+    /// a v1.3 die 9 selects 360 MHz and 10 selects 400 MHz. [`crate::clock`]
+    /// uses this to pick the right value.
+    #[inline]
+    pub const fn direct_pll_divider(self) -> bool {
+        self.revision() > 1
+    }
+}
+
+/// The wafer version of the die, read from the eFuse registers.
+///
+/// The registers are latched by reset, so this needs no [`Efuse`] handle; the
+/// clock tree uses it to choose the analog PLL divider encoding.
+pub fn chip_version() -> ChipVersion {
+    // SAFETY: the read has no side effects and the controller is not reset while
+    // the program runs.
+    let raw = unsafe { EFUSE::steal() }.rd_mac_sys2.read_bits();
+    ChipVersion::from_mac_sys2(raw)
 }
 
 /// Flash interface width, from `EFUSE_FLASH_TYPE`.
@@ -166,11 +198,7 @@ impl Efuse {
     /// The wafer version of the die.
     #[inline]
     pub fn chip_version(&self) -> ChipVersion {
-        let raw = self.efuse.rd_mac_sys2.read_bits();
-        let major_lo = (raw >> WAFER_VERSION_MAJOR_LO_SHIFT) & WAFER_VERSION_MAJOR_LO_MASK;
-        let major_hi = (raw >> WAFER_VERSION_MAJOR_HI_SHIFT) & WAFER_VERSION_MAJOR_HI_MASK;
-        let minor = (raw >> WAFER_VERSION_MINOR_SHIFT) & WAFER_VERSION_MINOR_MASK;
-        ChipVersion::new(((major_hi << 2) | major_lo) as u8, minor as u8)
+        ChipVersion::from_mac_sys2(self.efuse.rd_mac_sys2.read_bits())
     }
 
     /// Whether software may ignore the major version check.

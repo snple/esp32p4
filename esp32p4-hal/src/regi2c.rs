@@ -264,6 +264,72 @@ pub mod mpll {
     pub const DHREF: Field = Field::new(Register::new(Block::MSPI, 3), 5, 4);
 }
 
+/// Analog registers of the CPU PLL (CPLL), on block `0x67`.
+///
+/// The system PLL ([`spll`]) has the same layout on its own block, and the
+/// clock tree programs both; see [`crate::clock`] for the divider encoding and
+/// the calibration sequence.
+pub mod cpll {
+    use super::{Block, Field, Register};
+
+    /// Reference divider and charge-pump setting (`OC_REF_DIV`).
+    pub const OC_REF_DIV: Register = Register::new(Block::CPU_PLL, 2);
+
+    /// Feedback divider (`OC_DIV_7_0`).
+    ///
+    /// The value is the multiplier directly, or the multiplier minus four on
+    /// dies up to v0.1; see [`crate::clock`].
+    pub const OC_DIV_7_0: Register = Register::new(Block::CPU_PLL, 3);
+
+    /// Loop filter and charge-pump currents (`OC_DCUR`).
+    pub const OC_DCUR: Register = Register::new(Block::CPU_PLL, 6);
+
+    /// Calibration result (`OR_CAL`).
+    pub const OR_CAL: Register = Register::new(Block::CPU_PLL, 8);
+    /// Calibration capacitance chosen by the state machine, `[3:0]`.
+    pub const OR_CAL_CAP: Field = Field::new(OR_CAL, 3, 0);
+    /// Calibration underflow flag of [`OR_CAL`], bit `[4]`.
+    pub const OR_CAL_UDF: Field = Field::new(OR_CAL, 4, 4);
+    /// Calibration overflow flag of [`OR_CAL`], bit `[5]`.
+    pub const OR_CAL_OVF: Field = Field::new(OR_CAL, 5, 5);
+    /// Calibration finished flag of [`OR_CAL`], bit `[6]`.
+    pub const OR_CAL_END: Field = Field::new(OR_CAL, 6, 6);
+    /// PLL lock flag of [`OR_CAL`], bit `[7]`.
+    pub const OR_LOCK: Field = Field::new(OR_CAL, 7, 7);
+}
+
+/// Analog registers of the system PLL (SPLL), on block `0x66`.
+///
+/// Same layout as the CPU PLL; see [`cpll`].
+pub mod spll {
+    use super::{Block, Field, Register};
+
+    /// Reference divider and charge-pump setting (`OC_REF_DIV`).
+    pub const OC_REF_DIV: Register = Register::new(Block::SYS_PLL, 2);
+
+    /// Feedback divider (`OC_DIV_7_0`).
+    ///
+    /// The value is the multiplier directly, or the multiplier minus four on
+    /// dies up to v0.1; see [`crate::clock`].
+    pub const OC_DIV_7_0: Register = Register::new(Block::SYS_PLL, 3);
+
+    /// Loop filter and charge-pump currents (`OC_DCUR`).
+    pub const OC_DCUR: Register = Register::new(Block::SYS_PLL, 6);
+
+    /// Calibration result (`OR_CAL`).
+    pub const OR_CAL: Register = Register::new(Block::SYS_PLL, 8);
+    /// Calibration capacitance chosen by the state machine, `[3:0]`.
+    pub const OR_CAL_CAP: Field = Field::new(OR_CAL, 3, 0);
+    /// Calibration underflow flag of [`OR_CAL`], bit `[4]`.
+    pub const OR_CAL_UDF: Field = Field::new(OR_CAL, 4, 4);
+    /// Calibration overflow flag of [`OR_CAL`], bit `[5]`.
+    pub const OR_CAL_OVF: Field = Field::new(OR_CAL, 5, 5);
+    /// Calibration finished flag of [`OR_CAL`], bit `[6]`.
+    pub const OR_CAL_END: Field = Field::new(OR_CAL, 6, 6);
+    /// PLL lock flag of [`OR_CAL`], bit `[7]`.
+    pub const OR_LOCK: Field = Field::new(OR_CAL, 7, 7);
+}
+
 /// Audio PLL (`Apll`), on analog block `0x6f`.
 ///
 /// The coefficients and the calibration live here; [`crate::apll`] drives them.

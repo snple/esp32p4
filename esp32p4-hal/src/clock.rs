@@ -29,24 +29,42 @@
 //!
 //! # What is configured elsewhere
 //!
-//! The analog side of the PLLs (dividers, calibration) is not here: the CPLL is
-//! brought up by the bootloader, the MPLL by [`crate::psram`], and the audio and
-//! SDIO PLLs by whatever uses them. [`ClockTree`] takes their frequencies from a
-//! [`Sources`] table instead of guessing them; with an
-//! [`Efuse`](crate::efuse::Efuse) handle,
-//! [`ClockTree::init_from_efuse`] fills in the CPLL frequency that matches the
-//! die revision.
+//! The MPLL is brought up by [`crate::psram`], and the audio and SDIO PLLs by
+//! whatever uses them. The two PLLs that shape this tree — the CPLL behind
+//! `ROOT_CLK` and the SPLL behind the peripheral reference clocks — can be
+//! reprogrammed here, divider and calibration included:
+//! [`ClockTree::set_pll_frequency`] writes the divider on the analog bus
+//! ([`crate::regi2c`]) and runs the self-calibration. Their frequencies are
+//! taken from a [`Sources`] table and updated when the tree programs them; with
+//! an [`Efuse`](crate::efuse::Efuse) handle, [`ClockTree::init_from_efuse`]
+//! fills in the CPLL frequency that matches the die revision.
 //!
 //! # Changing the CPU frequency
 //!
 //! [`ClockTree::set_cpu_frequency`] rewrites the divider chain in the order the
 //! hardware requires and is `unsafe`: the flash and PSRAM interfaces are timed
 //! for the current frequency, and a cache or MSPI re-tune (which ESP-IDF does
-//! around such a switch) is the caller's responsibility.
+//! around such a switch) is the caller's responsibility. Moving to a frequency
+//! the CPLL does not produce yet takes one more step — switch `ROOT_CLK` off
+//! the CPLL and retune it first:
+//!
+//! ```ignore
+//! // SAFETY: the flash has its own clock and nothing is mapped in PSRAM.
+//! unsafe {
+//!     clocks.set_root_source(RootSource::Xtal);
+//!     clocks.set_pll_frequency(Pll::Cpll, 400);
+//!     clocks.set_cpu_frequency(400);
+//! }
+//! ```
 
+use core::cell::Cell;
 use core::ops::Deref;
 
-use esp32p4_pac::{HP_SYS_CLKRST, LP_AON_CLKRST, hp_sys_clkrst};
+use esp32p4_pac::pmu::ImmHpCkPower;
+use esp32p4_pac::{HP_SYS_CLKRST, LP_AON_CLKRST, PMU, hp_sys_clkrst};
+
+use crate::efuse::chip_version;
+use crate::regi2c::{self, cpll, spll};
 
 /// Crystal frequency: the board runs a 40 MHz XTAL.
 pub const XTAL_HZ: u32 = 40_000_000;
@@ -82,6 +100,29 @@ pub const APB_MAX_HZ: u32 = 100_000_000;
 /// once they are in effect.
 const SOC_CLK_DIV_UPDATE_BIT: u32 = 1 << 4;
 
+/// `PMU_IMM_HP_CK_POWER` carries the PLL ties in single-bit groups, with the
+/// CPLL first and the APLL last (TRM, `PMU_IMM_HP_CK_POWER`).
+const TIE_HIGH_XPD_CPLL: u32 = ImmHpCkPower::TIE_HIGH_XPD_PLL_OFFSET;
+const TIE_HIGH_XPD_SPLL: u32 = TIE_HIGH_XPD_CPLL + 1;
+const TIE_HIGH_XPD_CPLL_I2C: u32 = ImmHpCkPower::TIE_HIGH_XPD_PLL_I2C_OFFSET;
+const TIE_HIGH_XPD_SPLL_I2C: u32 = TIE_HIGH_XPD_CPLL_I2C + 1;
+const TIE_HIGH_GLOBAL_CPLL_ICG: u32 = ImmHpCkPower::TIE_HIGH_GLOBAL_PLL_ICG_OFFSET;
+const TIE_HIGH_GLOBAL_SPLL_ICG: u32 = TIE_HIGH_GLOBAL_CPLL_ICG + 1;
+const TIE_LOW_XPD_CPLL: u32 = ImmHpCkPower::TIE_LOW_XPD_PLL_OFFSET;
+const TIE_LOW_XPD_SPLL: u32 = TIE_LOW_XPD_CPLL + 1;
+const TIE_LOW_XPD_CPLL_I2C: u32 = ImmHpCkPower::TIE_LOW_XPD_PLL_I2C_OFFSET;
+const TIE_LOW_XPD_SPLL_I2C: u32 = TIE_LOW_XPD_CPLL_I2C + 1;
+const TIE_LOW_GLOBAL_CPLL_ICG: u32 = ImmHpCkPower::TIE_LOW_GLOBAL_PLL_ICG_OFFSET;
+const TIE_LOW_GLOBAL_SPLL_ICG: u32 = TIE_LOW_GLOBAL_CPLL_ICG + 1;
+
+/// `OC_REF_DIV`: charge-pump current 5, reference divider 0, feedback
+/// calibration off — the byte ESP-IDF writes before calibrating.
+const OC_REF_DIV_VALUE: u8 = 5 << 4;
+/// `OC_DCUR`: `DLREF_SEL` 1, `DHREF_SEL` 3, pull-down current 3.
+const OC_DCUR_VALUE: u8 = (1 << 6) | (3 << 4) | 3;
+/// Settling time ESP-IDF waits after calibration before stopping it, in µs.
+const PLL_CALIBRATION_SETTLE_US: u32 = 10;
+
 /// Bumped whenever the clock tree changes, so derived rates can be re-derived.
 static GENERATION: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(1);
 
@@ -103,11 +144,14 @@ fn bump_generation() {
 
 /// The frequencies of the clock sources, as the board runs them.
 ///
-/// The analog PLL configuration is not readable in a revision-independent way,
-/// so the tree takes the source frequencies as an input. [`Sources::DEFAULT`]
-/// matches a 40 MHz crystal, a 360 MHz CPLL, the 500 MHz MPLL that
-/// [`crate::psram`] starts and the fixed 480 MHz SPLL. [`Sources::from_efuse`]
-/// replaces the CPLL entry with the frequency the die actually runs.
+/// The tree takes them as an input rather than deriving everything from the
+/// registers: the MPLL and the APLL are started by other drivers, and the
+/// analog dividers of the two system PLLs only decode with the die revision at
+/// hand. [`Sources::DEFAULT`] matches a 40 MHz crystal, a 360 MHz CPLL, the
+/// 500 MHz MPLL that [`crate::psram`] starts and the 480 MHz SPLL.
+/// [`Sources::from_efuse`] replaces the CPLL entry with the frequency the die
+/// actually runs, and [`ClockTree::set_pll_frequency`] updates the table when
+/// the tree reprograms a PLL.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Sources {
@@ -270,6 +314,36 @@ pub enum HpSource {
     Mpll,
 }
 
+/// The two PLLs whose divider and calibration this module drives.
+///
+/// The CPU PLL feeds `ROOT_CLK`; the system PLL feeds the peripheral reference
+/// clocks. Both sit on the analog I2C bus ([`crate::regi2c`]) and answer only
+/// while they are powered — the bootloader leaves both running.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum Pll {
+    /// `CPLL_CLK`, 360 or 400 MHz depending on the die.
+    Cpll,
+    /// `SPLL_CLK`, 480 MHz.
+    Spll,
+}
+
+impl Pll {
+    /// The frequencies the SoC supports, in MHz.
+    ///
+    /// The divider chain, the reference-clock dividers and the peripheral
+    /// ratings are all built around these values; the analog divider cannot
+    /// reach every multiplier in between, so they are also the only frequencies
+    /// that can be selected (measured on a v1.3 die, where the SPLL's feedback
+    /// field forces bit 2 of the multiplier set).
+    pub const fn supported_mhz(self) -> &'static [u32] {
+        match self {
+            Self::Cpll => &[360, 400],
+            Self::Spll => &[480],
+        }
+    }
+}
+
 /// The source of `LP_SLOW_CLK`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -355,7 +429,8 @@ impl LpFastSource {
 pub struct ClockTree {
     hp: HP_SYS_CLKRST,
     lp: LP_AON_CLKRST,
-    sources: Sources,
+    /// What the tree runs at. Reprogramming a PLL moves an entry.
+    sources: Cell<Sources>,
 }
 
 impl ClockTree {
@@ -372,7 +447,11 @@ impl ClockTree {
     /// Use this when the board runs a different crystal or a CPLL at 400 MHz
     /// instead of 360 MHz, so the reported frequencies match the hardware.
     pub fn init_with(hp: HP_SYS_CLKRST, lp: LP_AON_CLKRST, sources: Sources) -> Self {
-        Self { hp, lp, sources }
+        Self {
+            hp,
+            lp,
+            sources: Cell::new(sources),
+        }
     }
 
     /// Take both controllers and derive the CPLL frequency from eFuse.
@@ -395,7 +474,7 @@ impl ClockTree {
 
     /// The source table this tree reports against.
     pub fn sources(&self) -> Sources {
-        self.sources
+        self.sources.get()
     }
 
     /// The LP/always-on clock/reset registers.
@@ -418,10 +497,11 @@ impl ClockTree {
 
     /// The frequency of `ROOT_CLK`, i.e. of the selected source.
     pub fn root_hz(&self) -> u32 {
+        let sources = self.sources();
         match self.root_source() {
-            RootSource::Xtal => self.sources.xtal_hz,
-            RootSource::Cpll => self.sources.cpll_hz,
-            RootSource::RcFast => self.sources.rc_fast_hz,
+            RootSource::Xtal => sources.xtal_hz,
+            RootSource::Cpll => sources.cpll_hz,
+            RootSource::RcFast => sources.rc_fast_hz,
         }
     }
 
@@ -490,15 +570,202 @@ impl ClockTree {
     }
 
     // ========================================================================
+    // PLLs
+    // ========================================================================
+
+    /// The frequency the tree reports for a PLL.
+    ///
+    /// This is what the tree was built with or last programmed, not a reading
+    /// of the analog block; [`Self::pll_multiplier`] reads that.
+    pub fn pll_hz(&self, pll: Pll) -> u32 {
+        let sources = self.sources();
+        match pll {
+            Pll::Cpll => sources.cpll_hz,
+            Pll::Spll => sources.spll_hz,
+        }
+    }
+
+    /// The multiplier the analog block holds, i.e. `PLL / XTAL`.
+    ///
+    /// Read from the analog divider, so it is what the hardware was last told
+    /// rather than what the tree reports; compare it with [`Self::pll_hz`] to
+    /// see whether the two agree. For the frequencies the SoC runs at, the
+    /// stored value is the multiplier (see [`Pll::supported_mhz`] for the
+    /// narrower set the analog block can actually select).
+    pub fn pll_multiplier(&self, pll: Pll) -> u32 {
+        let encoded = u32::from(pll_divider(pll).read());
+        if chip_version().direct_pll_divider() {
+            encoded
+        } else {
+            encoded + 4
+        }
+    }
+
+    /// Powers a PLL's analog block and gates its output towards the HP domain.
+    ///
+    /// Both PLLs are running when the program starts, so this only matters for
+    /// a PLL a previous [`disable_pll`](Self::disable_pll) closed. The analog
+    /// register file loses its contents with the power, so the PLL comes back at
+    /// the block's reset divider — call
+    /// [`set_pll_frequency`](Self::set_pll_frequency) before using it.
+    pub fn enable_pll(&self, pll: Pll) {
+        match pll {
+            Pll::Cpll => {
+                set_pmu_tie(TIE_HIGH_XPD_CPLL, true);
+                set_pmu_tie(TIE_HIGH_XPD_CPLL_I2C, true);
+                set_pmu_tie(TIE_HIGH_GLOBAL_CPLL_ICG, true);
+                self.set_source_enabled(HpSource::Cpll, true);
+            }
+            Pll::Spll => {
+                set_pmu_tie(TIE_HIGH_XPD_SPLL, true);
+                set_pmu_tie(TIE_HIGH_XPD_SPLL_I2C, true);
+                set_pmu_tie(TIE_HIGH_GLOBAL_SPLL_ICG, true);
+                self.set_source_enabled(HpSource::Spll, true);
+            }
+        }
+    }
+
+    /// Powers a PLL down: the output gate closes first, then the analog block.
+    ///
+    /// The divider does not survive: the analog registers reset with the power,
+    /// so bring the PLL back with [`enable_pll`](Self::enable_pll) and a
+    /// [`set_pll_frequency`](Self::set_pll_frequency) call.
+    ///
+    /// # Panics
+    ///
+    /// If `ROOT_CLK` runs on the PLL; switch the root away first.
+    pub fn disable_pll(&self, pll: Pll) {
+        assert!(
+            !(pll == Pll::Cpll && self.root_source() == RootSource::Cpll),
+            "switch ROOT_CLK off the CPLL before powering it down"
+        );
+        match pll {
+            Pll::Cpll => {
+                self.set_source_enabled(HpSource::Cpll, false);
+                set_pmu_tie(TIE_LOW_GLOBAL_CPLL_ICG, true);
+                set_pmu_tie(TIE_LOW_XPD_CPLL, true);
+                set_pmu_tie(TIE_LOW_XPD_CPLL_I2C, true);
+            }
+            Pll::Spll => {
+                self.set_source_enabled(HpSource::Spll, false);
+                set_pmu_tie(TIE_LOW_GLOBAL_SPLL_ICG, true);
+                set_pmu_tie(TIE_LOW_XPD_SPLL, true);
+                set_pmu_tie(TIE_LOW_XPD_SPLL_I2C, true);
+            }
+        }
+    }
+
+    /// Powers a PLL up, programs its analog divider for `mhz` and calibrates it.
+    ///
+    /// The output is `XTAL × multiplier` (see [`Pll::supported_mhz`] for the
+    /// frequencies the SoC runs at), written on the analog bus while the
+    /// calibration state machine runs; the call returns once the block reports
+    /// the calibration finished. [`Sources`] follows, so [`Self::pll_hz`],
+    /// [`Self::ref_hz`] and [`Self::root_hz`] report the new frequency.
+    ///
+    /// # Panics
+    ///
+    /// If `mhz` is not one of [`Pll::supported_mhz`], if it is not a whole
+    /// multiple of the crystal, or if `ROOT_CLK` still runs on the CPLL.
+    ///
+    /// # Safety
+    ///
+    /// The PLL stops producing a usable clock while the divider changes, so
+    /// everything derived from it misbehaves: switch `ROOT_CLK` to another
+    /// source before retuning the CPLL, and stop the peripherals that use the
+    /// reference clocks before retuning the SPLL. The USB Serial/JTAG PHY takes
+    /// its 48 MHz from the SPLL, so retuning it drops a host connection for a
+    /// moment.
+    pub unsafe fn set_pll_frequency(&self, pll: Pll, mhz: u32) -> u32 {
+        assert!(
+            Pll::supported_mhz(pll).contains(&mhz),
+            "the SoC does not run this PLL at {mhz} MHz"
+        );
+        assert!(
+            !(pll == Pll::Cpll && self.root_source() == RootSource::Cpll),
+            "switch ROOT_CLK off the CPLL before retuning it"
+        );
+
+        let xtal_hz = self.sources().xtal_hz;
+        let target_hz = mhz * 1_000_000;
+        assert!(
+            target_hz.is_multiple_of(xtal_hz),
+            "a PLL frequency has to be a whole multiple of the crystal"
+        );
+        let multiplier = target_hz / xtal_hz;
+        assert!(
+            (4..=255).contains(&multiplier),
+            "the analog divider cannot reach a multiplier of {multiplier}"
+        );
+        let divider = if chip_version().direct_pll_divider() {
+            multiplier
+        } else {
+            multiplier - 4
+        };
+
+        self.enable_pll(pll);
+
+        // The calibration runs while the divider is written and ends once the
+        // block has found the capacitance for the new frequency.
+        self.start_pll_calibration(pll);
+        let (ref_div, feedback, dcur) = pll_registers(pll);
+        ref_div.write(OC_REF_DIV_VALUE);
+        feedback.write(divider as u8);
+        dcur.write(OC_DCUR_VALUE);
+        self.wait_pll_calibration(pll);
+        crate::delay::delay_us(PLL_CALIBRATION_SETTLE_US);
+        self.stop_pll_calibration(pll);
+
+        self.set_pll_hz(pll, target_hz);
+        target_hz
+    }
+
+    /// Records a PLL frequency in the source table.
+    fn set_pll_hz(&self, pll: Pll, hz: u32) {
+        let mut sources = self.sources();
+        match pll {
+            Pll::Cpll => sources.cpll_hz = hz,
+            Pll::Spll => sources.spll_hz = hz,
+        }
+        self.sources.set(sources);
+        bump_generation();
+    }
+
+    fn start_pll_calibration(&self, pll: Pll) {
+        let ctrl = &self.hp.ana_pll_ctrl0;
+        match pll {
+            Pll::Cpll => ctrl.clr_reg_cpu_pll_cal_stop(),
+            Pll::Spll => ctrl.clr_reg_sys_pll_cal_stop(),
+        }
+    }
+
+    fn wait_pll_calibration(&self, pll: Pll) {
+        let ctrl = &self.hp.ana_pll_ctrl0;
+        crate::spin::spin_wait("PLL calibration", || match pll {
+            Pll::Cpll => ctrl.reg_cpu_pll_cal_end(),
+            Pll::Spll => ctrl.reg_sys_pll_cal_end(),
+        });
+    }
+
+    fn stop_pll_calibration(&self, pll: Pll) {
+        let ctrl = &self.hp.ana_pll_ctrl0;
+        match pll {
+            Pll::Cpll => ctrl.set_reg_cpu_pll_cal_stop(),
+            Pll::Spll => ctrl.set_reg_sys_pll_cal_stop(),
+        }
+    }
+
+    // ========================================================================
     // Reference clocks
     // ========================================================================
 
     /// The PLL a reference clock divides, in Hz.
     fn ref_pll_hz(&self, clk: RefClock) -> u32 {
+        let sources = self.sources();
         if clk.is_from_mpll() {
-            self.sources.mpll_hz
+            sources.mpll_hz
         } else {
-            self.sources.spll_hz
+            sources.spll_hz
         }
     }
 
@@ -773,15 +1040,16 @@ impl ClockTree {
             90 | 100 => (1, 1),
             _ => panic!("unsupported CPU frequency"),
         };
+        let cpll_hz = self.sources().cpll_hz;
         assert!(
-            self.sources.cpll_hz.is_multiple_of(target),
+            cpll_hz.is_multiple_of(target),
             "the CPU frequency must divide the CPLL"
         );
         assert!(self.source_enabled(HpSource::Cpll), "the CPLL is gated off");
 
         // The limits are checked against the CPLL, the source the tree ends up
         // on, not against whatever ROOT_CLK is running from now.
-        let root = self.sources.cpll_hz;
+        let root = cpll_hz;
         let cpu_div = root / target;
         let cpu = root / cpu_div;
         let mem_hz = cpu / mem;
@@ -858,5 +1126,39 @@ impl Deref for ClockTree {
     #[inline]
     fn deref(&self) -> &Self::Target {
         &self.hp
+    }
+}
+
+/// Sets or clears one of the PLL power ties in `PMU_IMM_HP_CK_POWER`.
+///
+/// The register is shared with the drivers that power the other PLLs, so this
+/// is a read-modify-write. Only the named bit carries a 1, which is what makes
+/// the write act on it.
+fn set_pmu_tie(bit: u32, high: bool) {
+    let mask = 1 << bit;
+    // SAFETY: `PMU_IMM_HP_CK_POWER` only holds these ties; no driver owns the
+    // whole block, and the write is a single read-modify-write.
+    let pmu = unsafe { PMU::steal() };
+    let bits = if high {
+        pmu.imm_hp_ck_power.read_bits() | mask
+    } else {
+        pmu.imm_hp_ck_power.read_bits() & !mask
+    };
+    pmu.imm_hp_ck_power.write_bits(bits);
+}
+
+/// The divider, feedback and current registers of a PLL.
+fn pll_registers(pll: Pll) -> (regi2c::Register, regi2c::Register, regi2c::Register) {
+    match pll {
+        Pll::Cpll => (cpll::OC_REF_DIV, cpll::OC_DIV_7_0, cpll::OC_DCUR),
+        Pll::Spll => (spll::OC_REF_DIV, spll::OC_DIV_7_0, spll::OC_DCUR),
+    }
+}
+
+/// The feedback divider register of a PLL.
+fn pll_divider(pll: Pll) -> regi2c::Register {
+    match pll {
+        Pll::Cpll => cpll::OC_DIV_7_0,
+        Pll::Spll => spll::OC_DIV_7_0,
     }
 }
