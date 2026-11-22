@@ -30,7 +30,7 @@
 | `emac` / `net` | [emac/](../esp32p4-hal/src/emac) · [net.rs](../esp32p4-hal/src/net.rs) | RMII + MDIO + DMA，smoltcp 同步栈 |
 | `usb` | [esp32p4-usb](../esp32p4-usb/) | OTG 设备/主机 DWC 驱动（slave、轮询） |
 | `usb_serial_jtag` | [usb_serial_jtag.rs](../esp32p4-hal/src/usb_serial_jtag.rs) | USB Serial/JTAG 控制台 |
-| `adc` | [adc.rs](../esp32p4-hal/src/adc.rs) | ADC1/2 one-shot + 样式表扫描 + IIR + 阈值监控 |
+| `adc` | [adc.rs](../esp32p4-hal/src/adc.rs) | ADC1/2 one-shot + 样式表扫描 + ADC1 连续采样（GDMA 环）+ IIR + 阈值监控 |
 | `tsens` | [tsens.rs](../esp32p4-hal/src/tsens.rs) | LP_TSENS 温度传感器 |
 | `i2s` | [i2s.rs](../esp32p4-hal/src/i2s.rs) | 标准双槽/TDM + PDM 发送（PDM 接收未落地，见 2.1） |
 | `apll` | [apll.rs](../esp32p4-hal/src/apll.rs) | 音频 PLL：系数搜索、regi2c、三步标定 |
@@ -49,9 +49,9 @@
 | `uart` | LP UART | LP 引脚 |
 | `i2c` | 10 位地址、双地址模式；LP I2C | —；LP 引脚 |
 | `spi` | 2/4/8 线、SCT 分段、从机 HD（DMA 与主机半双工已完成） | 2/4/8 线需先补 QIO/OCT 引脚信号 |
-| `dma` | DW_GDMA（`DMA`）、外设握手驱动（ADC 连续/RMT）、cached PSRAM 缓冲区失效、GDMA-AXI 的加权仲裁 | — |
+| `dma` | DW_GDMA（`DMA`）、RMT 的 DMA 握手、cached PSRAM 缓冲区失效、GDMA-AXI 的加权仲裁 | — |
 | `sdhost` | SDIO（CMD52/53 + 卡中断）、UHS-I（1.8 V/SDR50/104）、MMC 8 位、卡检测/写保护引脚 | — |
-| `adc` | LP ADC、DAC 与 PWDET | LP 引脚 |
+| `adc` | LP ADC、DAC 与 PWDET；ADC2 连续模式（errata 禁用） | LP 引脚 |
 | `tsens` | ETM 事件/任务、LP 核唤醒路径 | — |
 | `i2s` | PDM2PCM 接收（自发自收帧边界问题，需真麦克风/同步时钟验证） | — |
 | `emac` | MII 接口（现只 RMII）、TX/RX 校验和卸载、PTP 时间戳 | — |

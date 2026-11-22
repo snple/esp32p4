@@ -16,11 +16,17 @@
 //!
 //! The hardware is split over two register blocks: the analogue half lives in
 //! `LP_ADC` (channel mux, per-channel attenuation, power, result) and the
-//! digital half in `ADC` (pattern table, DMA, interrupts). This driver uses the
-//! *RTC* (one-shot) controller: software selects one channel, starts one
-//! conversion and polls for the result. The digital controller — which scans a
-//! pattern table and streams into memory through DMA — is not implemented yet,
-//! nor is the low-power ADC reached from the LP core.
+//! digital half in `ADC` (pattern table, DMA, interrupts). Two controllers use
+//! that front end:
+//!
+//! - the *RTC* (one-shot) controller, where software selects one channel, starts
+//!   one conversion and polls for the result;
+//! - the *digital* controller, which walks a pattern table on a timer and
+//!   streams every conversion into memory through GDMA. It runs either one
+//!   bounded frame ([`Adc::scan`]) or free-running with a descriptor ring that
+//!   the caller drains ([`Adc::start_continuous`]).
+//!
+//! The low-power ADC reached from the LP core is not implemented.
 //!
 //! # Features
 //!
@@ -33,6 +39,10 @@
 //!   compensation)
 //! - A documented nominal conversion when the eFuse calibration block is
 //!   empty
+//! - Pattern scans of up to 16 channels × 256 samples into a caller buffer
+//!   through GDMA
+//! - Continuous sampling into a descriptor ring, with a non-blocking drain
+//!   ([`Continuous::read`]) that decodes channel and attenuation per sample
 //!
 //! # Pin Mapping
 //!
@@ -69,7 +79,11 @@
 //! typically several tens of millivolts off, and the useful range of each
 //! attenuation only covers part of the full scale.
 
+use core::cell::Cell;
+
 use esp32p4_pac::{ADC, HP_SYS_CLKRST, LP_ADC, LP_PERI};
+
+use crate::dma::{Descriptor, Owner, ReceiveChannel};
 
 use crate::efuse::Efuse;
 use crate::gpio::PinOps;
@@ -526,6 +540,17 @@ impl Adc {
     pub fn init(adc: ADC, lp_adc: LP_ADC, clkrst: &HP_SYS_CLKRST, lp_peri: &LP_PERI) -> Self {
         clkrst.soc_clk_ctrl2.set_reg_adc_apb_clk_en();
         clkrst.peri_clk_ctrl23.set_reg_adc_clk_en();
+        // The digital controller's own clock, which is what its trigger timer
+        // counts: XTAL through the fractional divider, set to a known rate
+        // instead of whatever the reset value happens to be.
+        clkrst
+            .peri_clk_ctrl22
+            .write_reg_adc_clk_src_sel(ADC_CLK_SRC_XTAL);
+        clkrst
+            .peri_clk_ctrl23
+            .write_reg_adc_clk_div_num(ADC_CLK_DIV_NUM);
+        clkrst.peri_clk_ctrl23.write_reg_adc_clk_div_numerator(0);
+        clkrst.peri_clk_ctrl23.write_reg_adc_clk_div_denominator(1);
         lp_peri.clk_en.set_ck_en_lp_adc();
 
         clkrst.hp_rst_en2.set_reg_rst_en_adc();
@@ -728,12 +753,36 @@ impl Adc {
 /// Longest pattern table the HP digital controller holds.
 pub const MAX_PATTERN: usize = 16;
 
+/// Clock the digital controller's trigger timer counts, in hertz.
+///
+/// [`Adc::init`] divides the 40 MHz crystal down to this, so the interval
+/// between two conversions is [`DIGI_CLK_HZ`] / rate: from 488 Sa/s (the
+/// interval field is twelve bits wide) up to the clock itself. A conversion
+/// takes about a microsecond on top, so the useful ceiling is a few hundred
+/// kSa/s. Measured against the streamed sample count, this is exact to the
+/// crystal.
+pub const DIGI_CLK_HZ: u32 = 40_000_000 / ((ADC_CLK_DIV_NUM + 1) * 2);
+
+/// Largest value the trigger interval field holds.
+pub const MAX_TIMER_CYCLES: u32 = 0xfff;
+
 /// Most samples one scan can take: the controller's conversion counter is
 /// eight bits wide.
 pub const MAX_SAMPLES: usize = 256;
 
 /// Digital-controller clock divider used for scans: `ADC_CLK / (divider + 1)`.
 const SCAN_CLK_DIV: u32 = 1;
+
+/// Clock source register value for the digital controller: the 40 MHz crystal.
+const ADC_CLK_SRC_XTAL: u32 = 0;
+
+/// Divider of the digital controller's clock.
+///
+/// The trigger timer ends up at `40 MHz / (divider + 1) / 2`: the fractional
+/// divider divides the crystal down for the controller, and the timer counts
+/// half of that. Measured over the streamed sample count, the division is exact
+/// to the crystal.
+const ADC_CLK_DIV_NUM: u32 = 4;
 
 /// SAR clock divider used for scans, matching the one-shot path.
 const SCAN_SAR_CLK_DIV: u32 = 1;
@@ -798,8 +847,8 @@ impl Adc {
     ///
     /// The scan stops on its own once `buffer` is full, which is also the
     /// controller's end-of-frame count: each entry of `patterns` is sampled in
-    /// turn, `timer_cycles` controller clocks apart, and the table repeats
-    /// until the buffer is filled.
+    /// turn, `timer_cycles` clocks of [`DIGI_CLK_HZ`] apart, and the table
+    /// repeats until the buffer is filled.
     ///
     /// `rx` is a GDMA-AHB receive channel; the driver connects, starts and
     /// disconnects it around the scan, so the channel is free again when this
@@ -826,9 +875,13 @@ impl Adc {
             !buffer.is_empty() && buffer.len() <= MAX_SAMPLES,
             "a scan takes 1 to {MAX_SAMPLES} samples"
         );
+        assert!(
+            (1..=MAX_TIMER_CYCLES).contains(&timer_cycles),
+            "the trigger interval is 1 to {MAX_TIMER_CYCLES} clocks of {DIGI_CLK_HZ} Hz"
+        );
 
         let bytes = core::mem::size_of_val(buffer);
-        self.setup_scan(unit, patterns, buffer.len(), timer_cycles);
+        self.setup_digi(unit, patterns, buffer.len(), timer_cycles, true);
 
         // The engine owns the buffer for the duration of the scan, so drop any
         // cached copy first; the CPU reads the fresh contents back afterwards.
@@ -846,9 +899,8 @@ impl Adc {
 
         // Samples arrive `timer_cycles` controller clocks apart; allow twice
         // that plus a fixed grace period before giving up on the controller.
-        let controller_hz = 40_000_000 / (SCAN_CLK_DIV + 1);
         let expected_us =
-            (buffer.len() as u64 * u64::from(timer_cycles) * 1_000_000) / u64::from(controller_hz);
+            (buffer.len() as u64 * u64::from(timer_cycles) * 1_000_000) / u64::from(DIGI_CLK_HZ);
         let budget_us = expected_us * 2 + 20_000;
 
         self.start_scan_timer();
@@ -861,8 +913,19 @@ impl Adc {
         scanned
     }
 
-    /// Programs the pattern table, the DMA frame size and the scan clock.
-    fn setup_scan(&self, unit: Unit, patterns: &[Pattern], samples: usize, timer_cycles: u32) {
+    /// Programs the pattern table, the DMA frame size and the controller clock.
+    ///
+    /// `one_frame` stops the controller after `samples` conversions; without it
+    /// the timer keeps triggering and the frame boundary only marks where GDMA
+    /// hands the buffer back.
+    fn setup_digi(
+        &self,
+        unit: Unit,
+        patterns: &[Pattern],
+        samples: usize,
+        timer_cycles: u32,
+        one_frame: bool,
+    ) {
         let r = self.regs();
         // A stale FSM would keep its table pointer and its end-of-frame count.
         r.dma_conf.set_apb_adc_reset_fsm();
@@ -919,6 +982,12 @@ impl Adc {
             }
         }
 
+        // The SAR's offset code comes from the factory calibration and is
+        // programmed per attenuation; the digital controller does not apply it
+        // on its own. A table that mixes attenuations can only use the first
+        // entry's code.
+        self.apply_offset_code(unit, patterns[0].attenuation);
+
         // One unit at a time, and the data path goes to GDMA rather than I2S.
         r.ctrl.write_work_mode(0);
         r.ctrl.set_data_sar_sel();
@@ -928,10 +997,14 @@ impl Adc {
 
         r.dma_conf.write_apb_adc_eof_num(samples as u32);
         r.dma_conf.set_apb_adc_trans();
-        // Stop after exactly one frame: without the counter the FSM converts
-        // until software stops the timer.
-        r.ctrl2.write_max_meas_num(samples as u32 - 1);
-        r.ctrl2.set_meas_num_limit();
+        if one_frame {
+            // Stop after exactly one frame: without the counter the FSM keeps
+            // converting until software stops the timer.
+            r.ctrl2.write_max_meas_num(samples as u32 - 1);
+            r.ctrl2.set_meas_num_limit();
+        } else {
+            r.ctrl2.clr_meas_num_limit();
+        }
         r.ctrl2.write_timer_target(timer_cycles);
     }
 
@@ -981,6 +1054,239 @@ impl Adc {
                 self.lp_adc.meas2_mux.set_sar2_rtc_force();
             }
         }
+    }
+}
+
+// ============================================================================
+// HP ADC digital controller: continuous mode into a GDMA ring
+// ============================================================================
+
+/// A running continuous conversion.
+///
+/// Samples stream into a ring of descriptors on their own; [`read`](Self::read)
+/// hands the finished frames back and re-arms them. The stream keeps running
+/// while the caller does something else, and a caller that falls more than one
+/// ring behind simply loses the frames it did not read — the engine overwrites
+/// them rather than stopping.
+pub struct Continuous<'a, R: ReceiveChannel> {
+    adc: &'a Adc,
+    unit: Unit,
+    rx: &'a R,
+    frames: &'a [Descriptor],
+    /// Samples the pattern table produces per frame.
+    frame_len: usize,
+    /// Index of the next frame to hand to the caller.
+    next: Cell<usize>,
+    /// Only here to keep the ring's buffer borrowed for as long as the stream
+    /// writes into it.
+    _buffer: &'a mut [Sample],
+}
+
+impl<R: ReceiveChannel> Continuous<'_, R> {
+    /// Samples each frame holds, i.e. one pass over the pattern table.
+    #[inline]
+    pub const fn frame_samples(&self) -> usize {
+        self.frame_len
+    }
+
+    /// Frames the ring holds.
+    #[inline]
+    pub fn frame_count(&self) -> usize {
+        self.frames.len()
+    }
+
+    /// Samples sitting in finished frames, ready for [`read`](Self::read).
+    pub fn available(&self) -> usize {
+        let mut samples = 0;
+        let mut index = self.next.get();
+        while samples + self.frame_len <= self.frames.len() * self.frame_len
+            && self.frames[index].owner() == Owner::Cpu
+        {
+            samples += self.frame_len;
+            index = (index + 1) % self.frames.len();
+        }
+        samples
+    }
+
+    /// Copies finished frames into `out` and hands them back to the engine.
+    ///
+    /// Returns the number of samples copied: a whole number of frames, or `0`
+    /// when the engine has not finished the next one yet. Samples carry the
+    /// channel in bits 13-15, so a frame's order follows the pattern table.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `out` is shorter than one frame.
+    pub fn read(&self, out: &mut [Sample]) -> usize {
+        assert!(
+            out.len() >= self.frame_len,
+            "a continuous read needs room for one frame"
+        );
+        let mut copied = 0;
+        while copied + self.frame_len <= out.len() {
+            let index = self.next.get();
+            let frame = &self.frames[index];
+            if frame.owner() == Owner::Dma {
+                break;
+            }
+
+            // The engine wrote memory, not the cache: drop whatever the core
+            // may still hold for this frame before reading it.
+            let start = frame.buffer();
+            let bytes = self.frame_len * core::mem::size_of::<Sample>();
+            crate::cache::invalidate(start.cast(), bytes);
+            // SAFETY: the descriptor points into the ring's buffer, which the
+            // stream owns and this type keeps borrowed; the frame is fully
+            // written because its owner bit came back.
+            let samples =
+                unsafe { core::slice::from_raw_parts(start as *const Sample, self.frame_len) };
+            out[copied..copied + self.frame_len].copy_from_slice(samples);
+            copied += self.frame_len;
+
+            // Hand the frame back: the engine may fill it again right away.
+            frame.set_owner(Owner::Dma);
+            self.next.set((index + 1) % self.frames.len());
+        }
+        copied
+    }
+
+    /// [`read`](Self::read) that waits for at least one frame.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Timeout`](crate::dma::Error::Timeout) when no frame finished
+    /// within `timeout_us`.
+    pub fn read_timeout(
+        &self,
+        out: &mut [Sample],
+        timeout_us: u64,
+    ) -> Result<usize, crate::dma::Error> {
+        let deadline = crate::delay::micros() + timeout_us;
+        loop {
+            let copied = self.read(out);
+            if copied > 0 {
+                return Ok(copied);
+            }
+            if crate::delay::micros() >= deadline {
+                return Err(crate::dma::Error::Timeout);
+            }
+            core::hint::spin_loop();
+        }
+    }
+
+    /// Stops the stream and gives the SAR back to the one-shot controller.
+    pub fn stop(self) {
+        self.adc.stop_scan(self.unit);
+        self.rx.stop_chain();
+        self.rx.detach();
+    }
+}
+
+impl Adc {
+    /// Starts continuous sampling of `patterns` into a descriptor ring.
+    ///
+    /// Each descriptor holds exactly one frame — one pass over the pattern
+    /// table, so `patterns.len()` samples — and the ring wraps, so the engine
+    /// never runs out of descriptors and never stops on its own. `buffer` has
+    /// to hold `descriptors.len() * patterns.len()` samples.
+    ///
+    /// The controller converts one pattern entry every `timer_cycles` clocks of
+    /// [`DIGI_CLK_HZ`], so the sample rate is `DIGI_CLK_HZ / timer_cycles` and
+    /// the frame rate a `patterns.len()`th of that. A pattern entry costs about
+    /// a microsecond of conversion time on top, which caps the rate well below
+    /// the clock.
+    ///
+    /// `rx` stays connected to the ADC until the returned [`Continuous`] is
+    /// stopped; the driver starts and stops its chain.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `patterns` is empty or longer than [`MAX_PATTERN`], if the ring
+    /// has fewer than two frames, if `buffer` does not hold exactly one frame
+    /// per descriptor, or if a frame does not fit one descriptor.
+    pub fn start_continuous<'a, R: ReceiveChannel>(
+        &'a self,
+        unit: Unit,
+        patterns: &[Pattern],
+        rx: &'a R,
+        buffer: &'a mut [Sample],
+        descriptors: &'a [Descriptor],
+        timer_cycles: u32,
+    ) -> Result<Continuous<'a, R>, crate::dma::Error> {
+        assert!(
+            matches!(unit, Unit::Adc1),
+            "continuous mode only exists on ADC1"
+        );
+        assert!(
+            !patterns.is_empty() && patterns.len() <= MAX_PATTERN,
+            "a scan needs 1 to {MAX_PATTERN} pattern entries"
+        );
+        assert!(
+            descriptors.len() >= 2,
+            "a continuous ring needs at least two frames"
+        );
+        let frame_len = patterns.len();
+        assert_eq!(
+            buffer.len(),
+            descriptors.len() * frame_len,
+            "the buffer has to hold one frame per descriptor"
+        );
+        let frame_bytes = frame_len * core::mem::size_of::<Sample>();
+        assert!(
+            frame_bytes <= crate::dma::descriptor::MAX_LEN,
+            "a frame has to fit one descriptor"
+        );
+        assert!(
+            (1..=MAX_TIMER_CYCLES).contains(&timer_cycles),
+            "the trigger interval is 1 to {MAX_TIMER_CYCLES} clocks of {DIGI_CLK_HZ} Hz"
+        );
+
+        self.setup_digi(unit, patterns, frame_len, timer_cycles, false);
+        mount_frame_ring(descriptors, buffer.as_mut_ptr(), frame_len);
+
+        rx.connect_to(crate::dma::Peripheral::Adc);
+        rx.reset_channel();
+        rx.clear_all_interrupts();
+        rx.start_chain(&descriptors[0]);
+        self.start_scan_timer();
+
+        Ok(Continuous {
+            adc: self,
+            unit,
+            rx,
+            frames: descriptors,
+            frame_len,
+            next: Cell::new(0),
+            _buffer: buffer,
+        })
+    }
+}
+
+/// Points one descriptor at each frame of the ring and hands them to the engine.
+///
+/// [`Chain::mount_ring`](crate::dma::Chain::mount_ring) chunks the buffer by
+/// descriptor size, which is not what a stream of frames wants: here every
+/// descriptor covers exactly one pass over the pattern table.
+fn mount_frame_ring(descriptors: &[Descriptor], buffer: *mut Sample, frame_len: usize) {
+    let frame_bytes = frame_len * core::mem::size_of::<Sample>();
+    let bytes = core::mem::size_of_val(descriptors) + frame_bytes * descriptors.len();
+
+    // Both the descriptors and the buffers are about to be written by the
+    // engine: drop any dirty cache line the core still holds, or the engine
+    // reads a stale descriptor and the caller reads a stale frame.
+    crate::cache::writeback_invalidate(
+        descriptors.as_ptr().cast(),
+        core::mem::size_of_val(descriptors),
+    );
+    crate::cache::writeback_invalidate(buffer.cast(), bytes - core::mem::size_of_val(descriptors));
+
+    for (index, descriptor) in descriptors.iter().enumerate() {
+        // SAFETY: the buffer holds `descriptors.len()` frames by construction.
+        let start = unsafe { buffer.cast::<u8>().add(index * frame_bytes) };
+        descriptor.mount(start, frame_bytes);
+        descriptor.set_eof(false);
+        descriptor.set_next(Some(&descriptors[(index + 1) % descriptors.len()]));
+        descriptor.set_owner(Owner::Dma);
     }
 }
 

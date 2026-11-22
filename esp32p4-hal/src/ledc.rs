@@ -67,12 +67,15 @@ use esp32p4_pac::{HP_SYS_CLKRST, LEDC, ledc};
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum ClockSource {
-    /// `XTAL_40M_CLK`, 40 MHz. The reset default.
-    #[default]
+    /// `XTAL_40M_CLK`, 40 MHz.
     Xtal40m,
     /// `FOSC_20M_CLK`, 20 MHz.
     Fosc20m,
-    /// `REF_80M_CLK`, 80 MHz.
+    /// `REF_80M_CLK`, 80 MHz. What the timer counts after reset, provided the
+    /// reference clock is running: switch it on with
+    /// [`ClockTree::enable_ref`](crate::clock::ClockTree::enable_ref), or the
+    /// timer never counts.
+    #[default]
     Ref80m,
 }
 
@@ -110,10 +113,16 @@ pub struct TimerConfig {
 }
 
 impl TimerConfig {
-    /// 5 kHz at 13 bits from the 40 MHz crystal, a typical LED setting.
+    /// A configuration on the reference clock the timer selects after reset.
+    ///
+    /// `frequency * 2^resolution` has to fit 80 MHz, and the 80 MHz reference
+    /// has to be enabled with
+    /// [`ClockTree::enable_ref`](crate::clock::ClockTree::enable_ref). Use
+    /// [`ClockSource::Xtal40m`] to run from the crystal instead, which is
+    /// always on.
     pub const fn new(frequency: u32, resolution: u32) -> Self {
         Self {
-            clock: ClockSource::Xtal40m,
+            clock: ClockSource::Ref80m,
             frequency,
             resolution,
         }
@@ -232,8 +241,10 @@ pub struct Ledc {
 impl Ledc {
     /// Initialises the controller: bus clock, core clock, reset release.
     ///
-    /// The timer clock source keeps its reset value (`XTAL_40M`); use
-    /// [`set_clock_source`](Self::set_clock_source) to change it.
+    /// The timer clock source keeps its reset value (`REF_80M_CLK`, 80 MHz),
+    /// which is only a *selection*: the 80 MHz reference has to be enabled
+    /// ([`ClockTree::enable_ref`](crate::clock::ClockTree::enable_ref)) or the
+    /// timer stays stopped. [`ClockSource::Xtal40m`] needs no such step.
     pub fn init(ledc: LEDC, clkrst: &HP_SYS_CLKRST) -> Self {
         clkrst.soc_clk_ctrl3.set_reg_ledc_apb_clk_en();
         clkrst.hp_rst_en1.set_reg_rst_en_ledc();

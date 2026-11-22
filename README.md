@@ -58,6 +58,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `spi_dma` | GDMA-AXI 驱动的 SPI 主机 DMA：MOSI→MISO 回环跑 64 B–8192 B（含多描述符、奇长度、越界检查）、对从机的半双工收发、描述符不足的拒绝 |
 | `sd` | SDHOST 上的 SD 卡：识别、读 CID/CSD 与容量、读第 0 块、双块写入后回读比对 |
 | `adc_scan` | ADC1 样式表扫描：两个通道经 GDMA-AHB 交替采样 32 个样本，打印样本数与读数 |
+| `adc_continuous` | ADC1 连续采样：20 kSa/s 灌进八帧描述符环，PWM 方波（GPIO20→GPIO16 跳线）验采样率、占空比与频率 |
 | `tsens` | 温度传感器：每秒打印一次芯片温度，自动选择测量档位 |
 | `ledc` | LEDC：GPIO2 上扫 0/25/50/75/100 % 占空比并回读波形，再用 100 步渐变拉到满占空比 |
 | `rmt` | RMT：GPIO2 上自发自收一段 WS2812 波形，逐脉冲比对电平与时长 |
@@ -907,6 +908,50 @@ adc.scan(Unit::Adc1, &patterns, &dma.rx_channel::<1>(), &mut buffer, &mut descri
 - **让 FSM 自己管电源**：`XPD_SARn_FORCE=0`，否则 one-shot 留下的「软件强制上电」会让
   FSM 的上下电时序失效。
 
+### 连续采样
+
+`Adc::start_continuous` 让数字控制器一直转下去：定时器不断触发，GDMA-AHB 把一个描述符
+环逐帧填满，`Continuous::read` 把已经填好的帧拷出来并把描述符还给引擎。
+
+```rust
+let patterns = [Pattern::new(input.channel(), Attenuation::_12dB); 8];
+let mut ring = [Sample::ZERO; 64];                 // 8 帧 × 8 样本
+let descriptors = [const { Descriptor::new() }; 8]; // 环长 8，装得下整个 buffer
+let stream = adc.start_continuous(Unit::Adc1, &patterns, &rx, &mut ring, &descriptors, 200)?;
+
+let mut scratch = [Sample::ZERO; 8];
+while running {
+    let copied = stream.read_timeout(&mut scratch, 50_000)?;   // 一帧 8 个样本
+    use_samples(&scratch[..copied]);
+}
+stream.stop();
+```
+
+- 只支持 **ADC1**（ADC2 的连续模式在 errata 里被禁）；
+- 一个描述符装一帧（一次样式表遍历），环长 ≥2；`read` 是非阻塞的，只交出整帧，
+  读得比采得慢时旧帧直接被覆盖（引擎不会停下来等），`read_timeout` 是带超时的版本；
+- 每帧的 4 字节样本同扫描一样：低 12 位结果、bit 13–15 通道号；
+- 采样率 = `DIGI_CLK_HZ / timer_cycles`，`DIGI_CLK_HZ` 是可导出的常量（见下）。
+
+示例 [`adc_continuous`](esp32p4-examples/src/adc_continuous.rs) 把 LEDC 的 1 kHz 方波
+（GPIO20）跳线接到 GPIO16，连续采 200 ms 后检查四件事：样本数换算出的采样率、
+高低电平各自的占比（占空比）、由跳变重建出的方波频率、以及每个样本报告的通道号。实测
+20 018–20 024 Sa/s（配置 20 000）、50 % 高、1001 Hz PWM，全部 ok。
+
+三个只在硬件上才暴露的点：
+
+- **数字控制器的时钟要自己配**：它来自 `HP_SYS_CLKRST.peri_clk_ctrl22/23` 的源选择与
+  小数分频，而**触发定时器只数其中一半**（4 分频后 4 MHz 的源 → 定时器 2 MHz，实测）。
+  驱动在 `Adc::init` 里固定成 XTAL/(4+1)/2 = 4 MHz，并把 `DIGI_CLK_HZ` 全部导出来，
+  间隔字段是 12 位，所以速率范围约 977 Sa/s – 4 MSa/s（实际受转换时间限制在几百 kSa/s）。
+  之前 `scan` 文档里写的「20 MHz」是错的，只是超时预算宽松、没暴露；
+- **eFuse 的 offset 码数字通路也得写**：数字控制器不会自己应用标定，不写的话整条流会
+  带着约 1.5 V 的偏移（实测方波被读成 4095 / 1957 而不是 3281 / 0），而且高电平饱和。
+  `setup_digi` 现在按第一个样式表条目的衰减写一次 offset 码；
+- **描述符环靠 owner 位交接**：引擎填满一帧就把 owner 还给 CPU 并写入长度，`read` 拷完
+  后重新置 owner 交回引擎。环不需要 `suc_eof` 标志，也没有 `MAX_MEAS_NUM` 上限——那正是
+  连续模式与 `scan` 的区别（`clr_meas_num_limit`）。
+
 ### 滤波器与阈值监控器
 
 HP 数字控制器自带两级测量滤波器（`FILTER_CTRL0/1`）与两个阈值监控器
@@ -1187,12 +1232,17 @@ timer.start();
 `const { assert!(N < 8) }` 的编译错误。`duty_fraction` 放在定时器上，因为满量程只有定时器知道
 它的分辨率。
 
-两个只有上板才暴露的位：
+三个只有上板才暴露的位：
 
 - **`TIMER_RST` 复位后是「复位中」**：只清 `TIMER_PAUSE` 不会让计数器跑，`start` 必须同时
   清 `TIMER_RST`；
 - **`DUTY_START_CHn` 是占空比生效的闸门**：只写 `DUTY_CHn` 不会到达比较器，静态占空比
-  也必须置位它（配渐变时它同时是渐变开关）。
+  也必须置位它（配渐变时它同时是渐变开关）；
+- **时钟源字段复位值是 `REF_80M`，但 80 MHz 参考未必在跑**：漏了
+  `ClockTree::enable_ref(RefClock::F80M, true)` 时定时器根本不计数，输出一直停在低电平
+  （实测：`TimerConfig::new(1_000, 8)` 得到恒定低电平，而不是 2 kHz 或 1 kHz）。
+  驱动因此把 `ClockSource::Ref80m` 定成默认，并在文档里要求先开参考时钟；要完全不依赖它
+  就显式 `set_clock_source(ClockSource::Xtal40m)` 配 `TimerConfig { clock: Xtal40m, .. }`。
 
 示例 [`ledc`](esp32p4-examples/src/ledc.rs) 在 GPIO2 上把 PWM 打回自己的输入缓冲：1 kHz、
 12 位，实测 25/50/75/100 % 的高电平占比是 24.93/49.97/74.47/99.98 %；100 步、每步一个周期
@@ -2140,7 +2190,8 @@ espflash save-image --chip esp32p4 \
   NACK/仲裁/超时错误与按源中断
 - SPI2/SPI3 主机与从机（四种时钟模式、64 字节 CPU 缓冲、GDMA-AXI 驱动的主机 DMA 与半双工
   单向传输）、SD 卡主机（识别、容量、DMA 块读写）、
-  ADC1/2 单次转换与 HP 数字控制器扫描（含 IIR 滤波与阈值监控器）、温度传感器
+  ADC1/2 单次转换、HP 数字控制器扫描与 ADC1 连续采样（GDMA 描述符环、IIR 滤波、阈值监控）、
+  温度传感器
 - GDMA-AHB 与 GDMA-AXI 双控制器（描述符链/环、按源中断、优先级与突发宽度、owner 检查、
   存储到存储拷贝、双方向硬件 CRC）
 - PWM 家族：LEDC（4 定时器 × 8 通道、渐变）、RMT（4 发 4 收脉冲波形）、PCNT（4 单元计数）、
