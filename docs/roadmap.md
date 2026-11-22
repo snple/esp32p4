@@ -21,7 +21,7 @@
 | `gpio` | [gpio/](../esp32p4-hal/src/gpio) | 电气配置、四路中断、完整 HP 交换矩阵路由、IO MUX 功能表 |
 | `cache` / `mmu` / `tcm` | [cache.rs](../esp32p4-hal/src/cache.rs) · [mmu.rs](../esp32p4-hal/src/mmu.rs) · [tcm.rs](../esp32p4-hal/src/tcm.rs) | cache 维护、外部内存映射、8 KB HP SPM 代码放置 |
 | `efuse` | [efuse.rs](../esp32p4-hal/src/efuse.rs) | 只读：芯片/块版本、MAC、Flash/PSRAM 参数 |
-| `psram` | [psram/](../esp32p4-hal/src/psram) | MPLL、MSPI、MMU 映射、分配器 |
+| `psram` | [psram/](../esp32p4-hal/src/psram) | MPLL、MSPI、MMU 映射、分配器（DMA 一致性语义与双向拷贝限制见 2.1） |
 | `uart` | [uart.rs](../esp32p4-hal/src/uart.rs) | UART0–4 轮询 + 按源中断、流控、GPIO 矩阵路由、UHCI + GDMA 的 DMA 收发 |
 | `i2c` | [i2c.rs](../esp32p4-hal/src/i2c.rs) | I2C0/1 主机与从机 |
 | `spi` | [spi.rs](../esp32p4-hal/src/spi.rs) | SPI2/3 主机与从机（CPU 传输 64 B + GDMA-AXI 的 DMA 与半双工） |
@@ -49,9 +49,10 @@
 | `uart` | LP UART | LP 引脚 |
 | `i2c` | 10 位地址、双地址模式；LP I2C | —；LP 引脚 |
 | `spi` | 2/4/8 线、SCT 分段、从机 HD（DMA 与主机半双工已完成） | 2/4/8 线需先补 QIO/OCT 引脚信号 |
-| `dma` | DW_GDMA（`DMA`）、cached PSRAM 缓冲区失效、GDMA-AXI 的加权仲裁 | — |
+| `dma` | DW_GDMA（`DMA`）、GDMA-AXI 的加权仲裁 | — |
 | `sdhost` | SDIO（CMD52/53 + 卡中断）、UHS-I（1.8 V/SDR50/104）、MMC 8 位、卡检测/写保护引脚 | — |
 | `adc` | LP ADC、DAC 与 PWDET；ADC2 连续模式（errata 禁用） | LP 引脚 |
+| `psram` | AXI 同时读源与写目的（PSRAM→PSRAM 拷贝）时每 4 KB 稳定丢 32–128 字节，单向传输正常；疑为 AXI↔MSPI 读写切换时序，需补 SPI timing tuning | — |
 | `tsens` | ETM 事件/任务、LP 核唤醒路径 | — |
 | `i2s` | PDM2PCM 接收（自发自收帧边界问题，需真麦克风/同步时钟验证） | — |
 | `emac` | MII 接口（现只 RMII）、TX/RX 校验和卸载、PTP 时间戳 | — |

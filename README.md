@@ -34,6 +34,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `multicore` | 启动第二个 HP 核：两核各 10 万次加锁计数、双向互踢中断、各自读到自己的 core id、每核独立的 machine timer |
 | `psram` | 初始化封装内 PSRAM，整体作为全局堆使用 |
 | `psram_split` | 把 PSRAM 分成「cached 全局堆 + uncached DMA 池」两部分 |
+| `psram_dma` | PSRAM 上的 DMA 缓存语义：writeback/invalidate 的两个方向、单向传输、双向拷贝的已知限制 |
 | `defmt_log` | 用 `defmt-rtt` 输出日志（需 `--no-default-features --features defmt-rtt`，JTAG 读取） |
 | `usb_serial` | 通过 USB Serial/JTAG 打印并回显，同时翻转 GPIO2（两个驱动共享 `HP_SYS_CLKRST`） |
 | `usb_cdc` | 全速 OTG（GPIO26/27）上的 CDC-ACM 虚拟串口，回显主机发来的字节 |
@@ -1776,6 +1777,24 @@ alias.unmap();
   后还要读回）；
 - `suspend()` / `resume()` 暂停 L1 I/D 与 L2，用于改 Flash/PSRAM 时序或重映射 MMU；
   这两个包装函数放在 `.ramfunc`，调用方的临界区也必须从 RAM 执行。
+
+### PSRAM 上的 DMA 缓冲区
+
+`0x4800_0000` 窗口是带 cache 的，`0x8800_0000` 是同一批物理页的非 cache 别名。给引擎用
+的缓冲区要放在**带 cache 的窗口**里，然后按方向维护——两条规则和内部 SRAM 一样，但都是
+上板才确认的：
+
+- 引擎看不到还留在 core 里的脏行：写完 `src` 立刻交给 GDMA，引擎读到的是**上一次**的内容，
+  必须 `writeback`（实测：写 `0xaa` 后不 writeback，引擎读到 `0xaa`；再写 `0x55` 不 writeback，
+  引擎仍读到 `0xaa`）；
+- 引擎写进 `dst` 的数据要 `invalidate` 之后 core 才读得到；
+- **别用 `0x8800_0000` 别名给 DMA**：引擎不认这个别名（描述符挂上去通道永远不完成）。
+
+示例 [`psram_dma`](esp32p4-examples/src/psram_dma.rs) 把这四条逐一验过，并且报告了一个
+**尚未解决的限制**：单个方向的 4 KB 传输是干净的（PSRAM→SRAM、SRAM→PSRAM 各 0 错），
+但**同一次 AXI 拷贝同时读源、写目的（PSRAM→PSRAM）时，4080 字节里稳定地丢 32–128 字节**，
+优先级、burst 宽度都不影响。CPU 侧同样的 4 KB 拷贝是对的，所以这不是 cache 维护问题，而是
+AXI 两条通道同时访问同一片 PSRAM 时的读写切换时序，需要补 SPI timing tuning（见 roadmap）。
 
 ## 定时器
 

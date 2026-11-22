@@ -51,6 +51,11 @@ const CACHE_LINE_SIZE: usize = LINE_SIZE;
 
 /// `CACHE_MAP_L1_DCACHE | CACHE_MAP_L2_CACHE`: both levels that can hold a copy
 /// of a DMA buffer.
+///
+/// PSRAM buffers need the same two calls as internal ones. Measured on hardware
+/// (`psram_dma`): a buffered write the core has not written back yet is invisible
+/// to the engine, which reads the previous content instead; and a receive buffer
+/// the engine filled is not visible to the core until its line is dropped.
 const CACHE_MAP_L1D_AND_L2: u32 = 0x30;
 
 unsafe extern "C" {
