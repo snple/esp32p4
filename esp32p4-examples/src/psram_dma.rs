@@ -41,12 +41,21 @@ use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
 const BULK: usize = 4080;
 /// One cache line, which is what the small checks move.
 const LINE: usize = 64;
+/// Rounds the one-direction checks run. A single pass reads clean often
+/// enough to look correct, which is how "only the both-ways copy is lossy"
+/// was concluded once.
+const ROUNDS: usize = 16;
+/// Where the one-direction rounds start, past the two buffers above.
+const ROUND_BASE: usize = 2 * BULK;
+/// Bytes between rounds, so no round reuses a cached line.
+const ROUND_STRIDE: usize = 8192;
 /// Descriptors the bulk copy needs, two directions.
 const DESCRIPTOR_COUNT: usize = 2 * BULK.div_ceil(4095);
 
 static mut DESCRIPTORS: [Descriptor; DESCRIPTOR_COUNT] =
     [const { Descriptor::new() }; DESCRIPTOR_COUNT];
 static mut SCRATCH: [u8; LINE] = [0; LINE];
+static mut BULK_SCRATCH: [u8; BULK] = [0; BULK];
 
 #[main]
 fn main() -> ! {
@@ -165,33 +174,79 @@ fn main() -> ! {
         alias_wrong
     );
 
-    // Read direction alone: 4080 bytes out of PSRAM into internal SRAM.
-    let sram = unsafe { &mut *core::ptr::addr_of_mut!(SCRATCH) };
+    // One direction at a time, `ROUNDS` rounds each into a bulk buffer. This
+    // is where a single pass lies: the engine drops a 16 or 32 byte chunk now
+    // and then, so one clean copy means nothing.
+    let sram = unsafe { &mut *core::ptr::addr_of_mut!(BULK_SCRATCH) };
+    let mut read_bad_rounds = 0;
     let mut read_wrong = 0;
-    sram.fill(0);
-    let read_ok = dma
-        .copy(AxiMemChannel::Ch0, src, sram, descriptors)
-        .expect("the read copy failed");
-    for (index, byte) in sram.iter().enumerate() {
-        if *byte != src[index] {
-            read_wrong += 1;
+    for round in 0..ROUNDS {
+        let source = unsafe {
+            core::slice::from_raw_parts_mut(
+                psram.base().add(ROUND_BASE + round * ROUND_STRIDE),
+                BULK,
+            )
+        };
+        for (index, byte) in source.iter_mut().enumerate() {
+            *byte = (index % 251) as u8;
+        }
+        cache::writeback(source.as_ptr().cast(), BULK);
+        sram.fill(0);
+        dma.copy(AxiMemChannel::Ch0, source, sram, descriptors)
+            .expect("the read copy failed");
+        cache::invalidate(sram.as_ptr().cast(), BULK);
+        let wrong = source
+            .iter()
+            .zip(sram.iter())
+            .filter(|(a, b)| a != b)
+            .count();
+        if wrong != 0 {
+            read_bad_rounds += 1;
+            read_wrong += wrong;
         }
     }
-    // Write direction alone: 4080 bytes from internal SRAM into PSRAM.
-    dst.fill(0);
-    let write_ok = dma
-        .copy(AxiMemChannel::Ch0, sram, dst, descriptors)
-        .expect("the write copy failed");
-    let write_wrong = sram.iter().zip(dst.iter()).filter(|(a, b)| a != b).count();
-    // Reported, not asserted: the engine occasionally drops a few bytes when it
-    // talks to PSRAM. See the roadmap entry for the missing SPI timing tuning.
+    let mut write_bad_rounds = 0;
+    let mut write_wrong = 0;
+    for round in 0..ROUNDS {
+        let destination = unsafe {
+            core::slice::from_raw_parts_mut(
+                psram.base().add(ROUND_BASE + round * ROUND_STRIDE),
+                BULK,
+            )
+        };
+        for (index, byte) in sram.iter_mut().enumerate() {
+            *byte = (index % 251) as u8;
+        }
+        cache::writeback(sram.as_ptr().cast(), BULK);
+        destination.fill(0);
+        cache::writeback(destination.as_ptr().cast(), BULK);
+        dma.copy(AxiMemChannel::Ch0, sram, destination, descriptors)
+            .expect("the write copy failed");
+        // Compare through the uncached alias: what PSRAM really holds.
+        let held = unsafe {
+            core::slice::from_raw_parts(
+                psram
+                    .base()
+                    .add(0x4000_0000 + ROUND_BASE + round * ROUND_STRIDE),
+                BULK,
+            )
+        };
+        let wrong = sram.iter().zip(held.iter()).filter(|(a, b)| a != b).count();
+        if wrong != 0 {
+            write_bad_rounds += 1;
+            write_wrong += wrong;
+        }
+    }
+    // Reported, not asserted: the engine drops bytes when it *reads* PSRAM. See
+    // the roadmap entry for the missing SPI timing tuning.
     defmt::info!(
-        "psram read {} bytes: {} wrong; write: {} wrong ({} / {})",
+        "psram read {} x {} bytes: {} bad rounds, {} wrong; write: {} bad rounds, {} wrong",
+        ROUNDS,
         BULK,
+        read_bad_rounds,
         read_wrong,
-        write_wrong,
-        read_ok,
-        write_ok
+        write_bad_rounds,
+        write_wrong
     );
 
     // Both directions at once is the one case that does not survive: the two

@@ -1920,11 +1920,17 @@ alias.unmap();
 - **别用 `0x8800_0000` 别名给 DMA**：引擎不认这个别名（描述符挂上去通道永远不完成）。
 
 示例 [`psram_dma`](esp32p4-examples/src/psram_dma.rs) 把这四条逐一验过。它同时钉住了一个
-**限制**：单个方向的 4 KB 传输是干净的（PSRAM→SRAM、SRAM→PSRAM 各 0 错），但**同一次 AXI
-拷贝同时读源、写目的（PSRAM→PSRAM）时，每 4 KB 稳定丢 32–128 字节**。这个已经排除了采样点
-相关的一切：`EXTRA_DUMMY_CYCLELEN` 0–7、DQS 相位 4 档 × 每引脚 delayline 0–15（64 个组合里
-偶发 0 错、复测又不稳定）、burst 宽度 B8–B64、通道优先级、长度 64 字节对齐 —— 都改变不了它，
-说明问题在 AXI 两条通道对同一片 die 的读写并发本身。
+**限制**：**引擎从 PSRAM 读的时候会偶发丢字节**。16 轮 4080 字节的 PSRAM→SRAM 通常有 2 轮
+出错（32 字节），同一个循环拉长到 40 轮是 10 轮、176 字节；PSRAM→PSRAM 则 12–15 轮（用
+uncached 别名复核后仍有 192 字节是真的丢了）。**写方向是干净的**：SRAM→PSRAM 40 轮 0 错，
+同样的缓冲区交给 CPU 自己 memcpy 也 0 错，所以不是缓冲区或校验的问题。丢掉的块起点总是落在
+`64k + 2`、长度是 16 字节的倍数，指向 MSPI 的读数据通路。已排除采样点相关的一切：
+`EXTRA_DUMMY_CYCLELEN` 0–7、DQS 相位 4 档 × 每引脚 delayline 0–15（64 个组合里偶发 0 错、
+复测又不稳定）、burst 宽度 B8–B64、通道优先级、长度 64 字节对齐。
+
+早先「单向干净、只有双向丢 32–128 字节」的结论不成立：那次单向测量里 `copy` 只取了两端的
+较短者，而 SRAM 端当时只有一个 cache line，实际只移动了 64 字节，日志里的「4080 bytes」是
+BULK 常量而不是传输长度。
 
 因此 [`AxiDma::copy`](esp32p4-hal/src/dma/axi.rs) 在两端都落在 PSRAM 时返回
 `Error::ExternalMemoryCopy`，而不是悄悄返回错数据；一端在内部 RAM 的双向传输照常可用。
