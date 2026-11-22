@@ -17,6 +17,7 @@ use core::marker::PhantomData;
 use esp32p4_pac::{AHB_DMA, ahb_dma};
 use pastey::paste;
 
+use super::crc::Crc;
 use super::descriptor::Descriptor;
 use super::{Peripheral, PeripheralId};
 use crate::Steal;
@@ -26,7 +27,8 @@ use crate::Steal;
 /// Memory-to-memory mode loops a transmit channel into its receive partner
 /// through a reserved trigger value instead of a real peripheral. Both channels
 /// of the pair have to select the *same* dummy id (TRM 6.4.3); which one does
-/// not matter as long as no other channel uses it.
+/// not matter as long as no other channel uses it. GDMA-AHB accepts any of
+/// these, GDMA-AXI only the ids from [`D6`](Self::D6) up: its `1` is GP-SPI2.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u32)]
@@ -274,6 +276,46 @@ macro_rules! impl_rx_channel {
                     } else {
                         reg.clr_indscr_burst_en_ch();
                     }
+                }
+
+                /// Programs the CRC unit that runs over this channel's data.
+                ///
+                /// The engine then runs the LFSR over every byte it writes to
+                /// memory, one descriptor chain at a time; the result is read
+                /// back with [`crc_result`](Self::crc_result).
+                ///
+                /// # Panics
+                ///
+                /// Panics if `crc` is wider than [`Crc::AHB_MAX_WIDTH`] bits.
+                #[inline]
+                pub fn set_crc(&self, crc: &Crc) {
+                    assert!(
+                        crc.width() <= Crc::AHB_MAX_WIDTH,
+                        "GDMA-AHB computes at most 32 CRC bits"
+                    );
+                    let r = Self::regs();
+                    let width = &r.[<rx_crc_width_ch $n>];
+                    width.write_rx_crc_width_ch(u32::from((crc.width() - 1) / 8));
+                    r.[<in_crc_init_data_ch $n>].write_in_crc_init_data_ch(crc.init());
+                    crc.for_each_mask(|bit, lfsr_mask, data_mask| {
+                        r.[<rx_crc_en_addr_ch $n>].write_rx_crc_en_addr_ch(bit);
+                        r.[<rx_crc_en_wr_data_ch $n>].write_rx_crc_en_wr_data_ch(lfsr_mask);
+                        r.[<rx_crc_data_en_addr_ch $n>].write_rx_crc_data_en_addr_ch(bit);
+                        r.[<rx_crc_data_en_wr_data_ch $n>]
+                            .write_rx_crc_data_en_wr_data_ch(data_mask);
+                        // Each mask pair only takes effect once it is latched.
+                        width.set_rx_crc_lautch_flga_ch();
+                        width.clr_rx_crc_lautch_flga_ch();
+                    });
+                    let clear = &r.[<in_crc_clear_ch $n>];
+                    clear.set_in_crc_clear_ch();
+                    clear.clr_in_crc_clear_ch();
+                }
+
+                /// CRC the engine computed over the last completed chain.
+                #[inline]
+                pub fn crc_result(&self) -> u32 {
+                    Self::regs().[<in_crc_final_result_ch $n>].in_crc_final_result_ch()
                 }
 
                 /// Enables ETM control: the channel then starts on a task from
@@ -664,6 +706,45 @@ macro_rules! impl_tx_channel {
                     } else {
                         reg.[<clr_ $etm>]();
                     }
+                }
+
+                /// Programs the CRC unit that runs over this channel's data.
+                ///
+                /// The engine runs the LFSR over every byte it reads from
+                /// memory, one descriptor chain at a time; the result is read
+                /// back with [`crc_result`](Self::crc_result).
+                ///
+                /// # Panics
+                ///
+                /// Panics if `crc` is wider than [`Crc::AHB_MAX_WIDTH`] bits.
+                #[inline]
+                pub fn set_crc(&self, crc: &Crc) {
+                    assert!(
+                        crc.width() <= Crc::AHB_MAX_WIDTH,
+                        "GDMA-AHB computes at most 32 CRC bits"
+                    );
+                    let r = Self::regs();
+                    let width = &r.[<tx_crc_width_ch $n>];
+                    width.write_tx_crc_width_ch(u32::from((crc.width() - 1) / 8));
+                    r.[<out_crc_init_data_ch $n>].write_out_crc_init_data_ch(crc.init());
+                    crc.for_each_mask(|bit, lfsr_mask, data_mask| {
+                        r.[<tx_crc_en_addr_ch $n>].write_tx_crc_en_addr_ch(bit);
+                        r.[<tx_crc_en_wr_data_ch $n>].write_tx_crc_en_wr_data_ch(lfsr_mask);
+                        r.[<tx_crc_data_en_addr_ch $n>].write_tx_crc_data_en_addr_ch(bit);
+                        r.[<tx_crc_data_en_wr_data_ch $n>]
+                            .write_tx_crc_data_en_wr_data_ch(data_mask);
+                        width.set_tx_crc_lautch_flga_ch();
+                        width.clr_tx_crc_lautch_flga_ch();
+                    });
+                    let clear = &r.[<out_crc_clear_ch $n>];
+                    clear.set_out_crc_clear_ch();
+                    clear.clr_out_crc_clear_ch();
+                }
+
+                /// CRC the engine computed over the last completed chain.
+                #[inline]
+                pub fn crc_result(&self) -> u32 {
+                    Self::regs().[<out_crc_final_result_ch $n>].out_crc_final_result_ch()
                 }
 
                 /// Arbitration priority, 0–5; higher wins.

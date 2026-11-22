@@ -52,7 +52,8 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `i2c_scan` | `I2C0` 扫描 7 位地址空间，逐个探测并打印应答的从机 |
 | `i2c_slave` | `I2C0` 主机 + `I2C1` 从机：地址应答、收发、满 FIFO、寄存器访问、非阻塞接口、START/STOP 标志与时钟拉伸 |
 | `adc` | 报告 eFuse 校准是否可用，并在四档衰减下采样 13 个 ADC 焊盘 |
-| `dma_mem2mem` | GDMA-AHB 的存储到存储拷贝：单描述符 64 B 与四描述符 16 KB 两种链路，逐字节校验并打印吞吐 |
+| `dma_mem2mem` | GDMA-AHB 的存储到存储拷贝：单描述符 64 B 与四描述符 16 KB 两种链路，逐字节校验并打印吞吐，另用 `CRC-32/MPEG-2` 校验两个方向的 CRC 单元 |
+| `dma_axi` | GDMA-AXI 的存储到存储：三组通道对、四种突发宽度、16 位 CRC（引擎 vs 软件），打印吞吐 |
 | `spi` | GP-SPI2 主机对 GP-SPI3 从机（四根飞线）：时钟模式 0–3 × 1/4/32/64 字节双向校验 |
 | `spi_dma` | GDMA-AXI 驱动的 SPI 主机 DMA：MOSI→MISO 回环跑 64 B–8192 B（含多描述符、奇长度、越界检查）、对从机的半双工收发、描述符不足的拒绝 |
 | `sd` | SDHOST 上的 SD 卡：识别、读 CID/CSD 与容量、读第 0 块、双块写入后回读比对 |
@@ -958,9 +959,16 @@ if let Some(bound) = adc.monitor_state(MonitorIndex::Zero) {
 - 描述符 3 个字（`size`/`length`/EOF/owner + buffer + next）；[`Chain`] 把一个缓冲区按
   4095 字节切成描述符链或环（`mount` / `mount_eof` / `mount_ring`），
   `Descriptor::length()` 读回引擎写入的有效字节数；
-- `AhbDma::copy` 在通道对 1 或 2 上做阻塞式存储到存储拷贝，自带 cache 维护与截止时间；
+- `AhbDma::copy` 在 AHB 通道对 1 或 2、`AxiDma::copy` 在 AXI 任意通道对上做阻塞式存储到
+  存储拷贝，自带 cache 维护与截止时间（AXI 侧三对都能用 `Dummy-n` 回环，实测约 33 MB/s，
+  与 AHB 同量级）；
 - 中断按源单独 `enable_interrupt`/`interrupt_pending`/`clear_interrupt`，另有优先级、
-  数据/描述符突发、ETM 启动与 owner 检查。
+  数据/描述符突发、ETM 启动与 owner 检查；AXI 侧另有可编程的数据突发宽度
+  （[`BurstSize`]，8/16/32/64/128 字节）；
+- 两个方向的硬件 CRC（[`Crc`]）：任意多项式与位宽（AHB ≤32 位、AXI ≤16 位）、可配位序，
+  每条描述符链算一次，结果从 `crc_result()` 读回；[`Crc::compute`] 是同一 LFSR 的软件实现，
+  用来核对引擎的输出。`Crc::new(32, 0x04c1_1db7, 0xffff_ffff)` 就是 `CRC-32/MPEG-2`，
+  上板实测 `"123456789"` 得 `0x0376_e6e7`，与标准检查值一致。
 
 ```rust
 let dma = AhbDma::init(dp.AHB_DMA, &dp.HP_SYS_CLKRST);
@@ -971,11 +979,12 @@ let mut dst = [0u8; 4096];
 dma.copy(MemChannel::Ch1, &src, &mut dst, &descriptors).unwrap();
 ```
 
-示例 [`dma_mem2mem`](esp32p4-examples/src/dma_mem2mem.rs) 每秒跑两遍：单描述符 64 B 与
-四描述符 16380 B，逐字节校验。硬件实测 200 轮无描述符错误、无数据不符，未开突发时约
-23 MB/s。
+示例 [`dma_mem2mem`](esp32p4-examples/src/dma_mem2mem.rs) 每秒跑三遍 GDMA-AHB：单描述符
+64 B、四描述符 16380 B（都逐字节校验，实测约 32 MB/s），再用 `CRC-32/MPEG-2` 跑一次带 CRC
+的 64 B 拷贝；[`dma_axi`](esp32p4-examples/src/dma_axi.rs) 把同一套搬到 GDMA-AXI：三组通道
+对、四种突发宽度、16 位 CRC，实测约 33 MB/s（`Dummy-n` 回环下 AXI 不比 AHB 快，差在内存侧）。
 
-四个只在硬件上才暴露的点：
+六个只在硬件上才暴露的点：
 
 - **描述符必须 8 字节对齐**：GDMA-AXI 把一个描述符当两个 64 位字抓取，只有 4 字节对齐的
   12 字节描述符在奇数下标（`+12`）上会被引擎判成 `DSCR_ERR`——SPI 收发的第一个测试就是这样
@@ -999,6 +1008,13 @@ dma.copy(MemChannel::Ch1, &src, &mut dst, &descriptors).unwrap();
 - **中断编码与 AHB 不同**：AXI 的 FIFO 分三级，每个方向有 3 个溢出位和 3 个下溢位，
   `RxInterrupt::FifoOverflow` 这类“一位”语义在 AXI 侧对应一组位（见 `dma/axi.rs` 的
   `rx_mask`/`tx_mask`），低位的 `DONE`/`SUC_EOF`/`DSCR_ERR` 与 AHB 完全一致。
+- **CRC 的位序是“字节最高位先进”**：LFSR 向高位移动、多项式按写法使用，所以
+  `Crc::new(32, 0x04c11db7, 0xffffffff)` 直接就是 `CRC-32/MPEG-2`；`reverse_data(true)`
+  改成低位先进，供反射多项式使用。引擎结果在链表最后一个描述符完成时才锁存，读之前要先等
+  传输结束；软件按 8 位一组算的实现见 `Crc::compute`。
+- **手写链要自己做 cache 维护**：`copy` 内部做了，自己 `mount` 的链必须
+  `cache::writeback(src)` + `cache::writeback_invalidate(dst)`，否则引擎读到的是缓存里
+  还没落盘的旧数据 —— 上板表现是数据与 CRC 都“慢一拍”，看着像引擎少算了一次。
 
 ## SPI
 
@@ -2125,7 +2141,8 @@ espflash save-image --chip esp32p4 \
 - SPI2/SPI3 主机与从机（四种时钟模式、64 字节 CPU 缓冲、GDMA-AXI 驱动的主机 DMA 与半双工
   单向传输）、SD 卡主机（识别、容量、DMA 块读写）、
   ADC1/2 单次转换与 HP 数字控制器扫描（含 IIR 滤波与阈值监控器）、温度传感器
-- GDMA-AHB 与 GDMA-AXI 双控制器（描述符链/环、按源中断、优先级与突发、owner 检查）
+- GDMA-AHB 与 GDMA-AXI 双控制器（描述符链/环、按源中断、优先级与突发宽度、owner 检查、
+  存储到存储拷贝、双方向硬件 CRC）
 - PWM 家族：LEDC（4 定时器 × 8 通道、渐变）、RMT（4 发 4 收脉冲波形）、PCNT（4 单元计数）、
   MCPWM（定时器/比较器/发生器/死区/强制电平/同步/故障/捕获/载波/事件比较器/中断/ETM，上板验证）
 - CLIC 中断框架（direct 模式、按 CPU 线分发、trap 保存 FPU 上下文）与 EMAC/SYSTIMER

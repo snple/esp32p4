@@ -122,12 +122,14 @@ use crate::{cache, delay};
 
 pub mod axi;
 pub mod channel;
+pub mod crc;
 pub mod descriptor;
 
-pub use axi::{AxiDma, AxiPeripheral, AxiRxChannel, AxiTxChannel};
+pub use axi::{AxiDma, AxiMemChannel, AxiPeripheral, AxiRxChannel, AxiTxChannel, BurstSize};
 pub use channel::{
     Dummy, ReceiveChannel, RxChannel, RxInterrupt, TransmitChannel, TxChannel, TxInterrupt,
 };
+pub use crc::Crc;
 pub use descriptor::{Chain, Descriptor, Owner};
 
 /// A peripheral a channel can be connected to.

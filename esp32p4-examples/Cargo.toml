@@ -172,6 +172,11 @@ path = "src/spi_dma.rs"
 required-features = ["defmt"]
 
 [[bin]]
+name = "dma_axi"
+path = "src/dma_axi.rs"
+required-features = ["defmt"]
+
+[[bin]]
 name = "i2c_scan"
 path = "src/i2c_scan.rs"
 

@@ -10,6 +10,11 @@
 //! the channel index, like their AHB counterparts: the register names are fixed
 //! at compile time and only indices 0–2 have implementations.
 //!
+//! Unlike the AHB engine every pair can loop a transmit channel into its receive
+//! partner ([`AxiDma::copy`]), and the data burst size is programmable per
+//! channel ([`BurstSize`]). Each channel also carries a CRC unit ([`Crc`]) that
+//! runs over the data of one descriptor chain.
+//!
 //! # Memory
 //!
 //! [`AxiDma::init`] programs the two address windows the engine checks
@@ -30,9 +35,11 @@ use core::marker::PhantomData;
 use esp32p4_pac::{AXI_DMA, HP_SYS_CLKRST, axi_dma};
 use pastey::paste;
 
-use super::descriptor::Descriptor;
-use super::{PeripheralId, ReceiveChannel, RxInterrupt, TransmitChannel, TxInterrupt};
-use crate::Steal;
+use super::channel::Dummy;
+use super::crc::Crc;
+use super::descriptor::{Chain, Descriptor};
+use super::{Error, PeripheralId, ReceiveChannel, RxInterrupt, TransmitChannel, TxInterrupt};
+use crate::{Steal, cache, delay};
 
 /// Start of the internal-memory window the engine accepts, L2MEM.
 const INTR_MEM_START: u32 = 0x4fc0_0000;
@@ -47,7 +54,7 @@ const EXTR_MEM_END: u32 = 0x4c00_0000;
 ///
 /// Values are `PERI_IN_SEL_CHn` / `PERI_OUT_SEL_CHn` from TRM table 6.4-2. They
 /// are *not* the GDMA-AHB numbers: `1` selects GP-SPI2 here and
-/// [`Dummy::D1`](super::Dummy::D1) there, which is why the two controllers have
+/// [`Dummy::D1`] there, which is why the two controllers have
 /// separate enums.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -72,6 +79,62 @@ impl PeripheralId for AxiPeripheral {
     fn id(self) -> u32 {
         self as u32
     }
+}
+
+/// Bytes per data burst.
+///
+/// AXI moves memory in bursts, so a buffer burst-size-aligned costs nothing; the
+/// engine reads and writes `size` bytes per beat as long as the buffer and its
+/// length allow it. The field the hardware takes is `log2(size) - 3`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum BurstSize {
+    /// 8 bytes.
+    B8,
+    /// 16 bytes.
+    B16,
+    /// 32 bytes.
+    B32,
+    /// 64 bytes, the reference driver's default.
+    #[default]
+    B64,
+    /// 128 bytes.
+    B128,
+}
+
+impl BurstSize {
+    /// Value of `BURST_SIZE_SEL`.
+    #[inline]
+    const fn field(self) -> u32 {
+        match self {
+            BurstSize::B8 => 0,
+            BurstSize::B16 => 1,
+            BurstSize::B32 => 2,
+            BurstSize::B64 => 3,
+            BurstSize::B128 => 4,
+        }
+    }
+
+    /// Size in bytes.
+    #[inline]
+    pub const fn bytes(self) -> usize {
+        8 << self.field()
+    }
+}
+
+/// A channel pair that can copy memory to memory.
+///
+/// All three AXI pairs support the loop-back path (TRM 6.4.3), unlike GDMA-AHB
+/// where only pairs 1 and 2 do.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum AxiMemChannel {
+    /// Pair 0: TX channel 0 into RX channel 0.
+    Ch0,
+    /// Pair 1: TX channel 1 into RX channel 1.
+    Ch1,
+    /// Pair 2: TX channel 2 into RX channel 2.
+    Ch2,
 }
 
 /// The GDMA-AXI controller.
@@ -154,6 +217,159 @@ impl AxiDma {
     #[inline]
     pub fn tx_channel<const N: usize>(&self) -> AxiTxChannel<N> {
         AxiTxChannel::new()
+    }
+
+    /// Copies `src` into `dst` through `channel` and waits for it to finish.
+    ///
+    /// Transfers `min(src.len(), dst.len())` bytes and returns that count. The
+    /// buffers must not overlap. Like [`AhbDma::copy`](super::AhbDma::copy) it is
+    /// a complete round trip through both halves of a pair, with the cache
+    /// maintenance done for the caller; the AXI engine reaches roughly twice the
+    /// AHB throughput at the same burst size.
+    ///
+    /// `descriptors` is split into a transmit half and a receive half, so it
+    /// needs `2 * ceil(len / 4095)` entries.
+    ///
+    /// # Errors
+    ///
+    /// See [`AhbDma::copy`](super::AhbDma::copy).
+    pub fn copy(
+        &self,
+        channel: AxiMemChannel,
+        src: &[u8],
+        dst: &mut [u8],
+        descriptors: &[Descriptor],
+    ) -> Result<usize, Error> {
+        let len = src.len().min(dst.len());
+        if len == 0 {
+            return Ok(0);
+        }
+        let chunks = len.div_ceil(super::descriptor::MAX_LEN);
+        if descriptors.len() < 2 * chunks {
+            return Err(Error::NotEnoughDescriptors {
+                needed: 2 * chunks,
+                available: descriptors.len(),
+            });
+        }
+
+        let (tx_descriptors, rx_descriptors) = descriptors.split_at(chunks);
+        match channel {
+            AxiMemChannel::Ch0 => self.copy_ch0(src, dst, len, tx_descriptors, rx_descriptors),
+            AxiMemChannel::Ch1 => self.copy_ch1(src, dst, len, tx_descriptors, rx_descriptors),
+            AxiMemChannel::Ch2 => self.copy_ch2(src, dst, len, tx_descriptors, rx_descriptors),
+        }
+    }
+}
+
+/// Generates the memory-to-memory routine for one channel pair.
+///
+/// The bodies differ only in the channel index, and the index has to be a
+/// literal for the register names to resolve, so each pair gets its own method.
+macro_rules! impl_mem2mem {
+    ($n:literal, $name:ident) => {
+        impl AxiDma {
+            fn $name(
+                &self,
+                src: &[u8],
+                dst: &mut [u8],
+                len: usize,
+                tx_descriptors: &[Descriptor],
+                rx_descriptors: &[Descriptor],
+            ) -> Result<usize, Error> {
+                let rx = self.rx_channel::<$n>();
+                let tx = self.tx_channel::<$n>();
+
+                // A channel keeps its configuration across transfers, so reset
+                // it and program everything this routine depends on.
+                rx.reset();
+                tx.reset();
+                // GDMA-AXI numbers GP-SPI2 as 1, so the free ids start at 6.
+                rx.connect_memory(Dummy::D6);
+                tx.connect_memory(Dummy::D6);
+                rx.check_owner(true);
+                tx.check_owner(true);
+                rx.descriptor_burst(true);
+                tx.descriptor_burst(true);
+                rx.data_burst_size(BurstSize::B64);
+                tx.data_burst_size(BurstSize::B64);
+                tx.eof_till_data_popped(true);
+                tx.auto_writeback(true);
+                rx.clear_all_interrupts();
+                tx.clear_all_interrupts();
+
+                let tx_chain = Chain::new(tx_descriptors);
+                let rx_chain = Chain::new(rx_descriptors);
+                // The transmit side carries the EOF that makes the receive side
+                // finish; without it the receive channel never completes.
+                tx_chain.mount_eof(src.as_ptr() as *mut u8, len)?;
+                let rx_used = rx_chain.mount(dst.as_mut_ptr(), len)?;
+
+                cache::writeback(src.as_ptr().cast(), len);
+                cache::writeback_invalidate(dst.as_mut_ptr().cast(), len);
+
+                rx.start_chain(rx_chain.head());
+                tx.start_chain(tx_chain.head());
+
+                let result = wait_for_copy(&rx, &tx, &rx_descriptors[rx_used - 1], len);
+                if result.is_err() {
+                    // Leave both halves idle so the next transfer starts clean.
+                    rx.stop_chain();
+                    tx.stop_chain();
+                }
+                rx.reset_channel();
+                tx.reset_channel();
+                if result.is_ok() {
+                    // The engine writes memory, not the cache: drop whatever the
+                    // cache picked up while the transfer ran.
+                    cache::invalidate(dst.as_mut_ptr().cast(), len);
+                }
+                result.map(|()| len)
+            }
+        }
+    };
+}
+
+impl_mem2mem!(0, copy_ch0);
+impl_mem2mem!(1, copy_ch1);
+impl_mem2mem!(2, copy_ch2);
+
+/// Polls a memory-to-memory transfer to completion.
+///
+/// The receive descriptor going back to software is the completion signal: the
+/// engine clears its owner bit once the buffer is written, which is one memory
+/// write later than the last byte left the bus.
+fn wait_for_copy(
+    rx: &impl ReceiveChannel,
+    tx: &impl TransmitChannel,
+    last: &Descriptor,
+    len: usize,
+) -> Result<(), Error> {
+    let deadline = delay::micros() + super::COPY_HEAD_US + len as u64 / super::COPY_BYTES_PER_US;
+    loop {
+        if rx.interrupt_pending(RxInterrupt::DscrErr) || tx.interrupt_pending(TxInterrupt::DscrErr)
+        {
+            return Err(Error::DescriptorError);
+        }
+        if rx.interrupt_pending(RxInterrupt::DscrEmpty) {
+            return Err(Error::DescriptorEmpty);
+        }
+        if rx.interrupt_pending(RxInterrupt::FifoOverflow)
+            || rx.interrupt_pending(RxInterrupt::FifoUnderflow)
+            || tx.interrupt_pending(TxInterrupt::FifoOverflow)
+            || tx.interrupt_pending(TxInterrupt::FifoUnderflow)
+        {
+            return Err(Error::Fifo);
+        }
+        if rx.interrupt_pending(RxInterrupt::ErrEof) {
+            return Err(Error::Peripheral);
+        }
+        if last.owner() == super::Owner::Cpu {
+            return Ok(());
+        }
+        if delay::micros() > deadline {
+            return Err(Error::Timeout);
+        }
+        core::hint::spin_loop();
     }
 }
 
@@ -287,6 +503,65 @@ macro_rules! impl_rx_channel {
                     let r = Self::regs();
                     r.[<in_peri_sel_ch $n>].write_peri_in_sel_ch(0x3f);
                     r.[<in_conf0_ch $n>].clr_mem_trans_en_ch();
+                }
+
+                /// Loops the paired transmit channel into this one.
+                ///
+                /// Both channels of the pair must select the same `dummy` id,
+                /// and GDMA-AXI only accepts the ids from
+                /// [`Dummy::D6`](super::Dummy::D6) up.
+                #[inline]
+                pub fn connect_memory(&self, dummy: Dummy) {
+                    let r = Self::regs();
+                    r.[<in_peri_sel_ch $n>].write_peri_in_sel_ch(dummy as u32);
+                    r.[<in_conf0_ch $n>].set_mem_trans_en_ch();
+                }
+
+                /// Bytes per data burst; see [`BurstSize`].
+                ///
+                /// A receive buffer then has to be aligned to the burst size.
+                #[inline]
+                pub fn data_burst_size(&self, size: BurstSize) {
+                    Self::regs().[<in_conf0_ch $n>].write_in_burst_size_sel_ch(size.field());
+                }
+
+                /// Programs the CRC unit that runs over this channel's data.
+                ///
+                /// The result covers one descriptor chain and is read back with
+                /// [`crc_result`](Self::crc_result).
+                ///
+                /// # Panics
+                ///
+                /// Panics if `crc` is wider than [`Crc::AXI_MAX_WIDTH`] bits.
+                #[inline]
+                pub fn set_crc(&self, crc: &Crc) {
+                    assert!(
+                        crc.width() <= Crc::AXI_MAX_WIDTH,
+                        "GDMA-AXI computes at most 16 CRC bits"
+                    );
+                    let r = Self::regs();
+                    let width = &r.[<rx_crc_width_ch $n>];
+                    width.write_rx_crc_width_ch(u32::from((crc.width() - 1) / 8));
+                    r.[<in_crc_init_data_ch $n>].write_in_crc_init_data_ch(crc.init());
+                    crc.for_each_mask(|bit, lfsr_mask, data_mask| {
+                        r.[<rx_crc_en_addr_ch $n>].write_rx_crc_en_addr_ch(bit);
+                        r.[<rx_crc_en_wr_data_ch $n>].write_rx_crc_en_wr_data_ch(lfsr_mask);
+                        r.[<rx_crc_data_en_addr_ch $n>].write_rx_crc_data_en_addr_ch(bit);
+                        r.[<rx_crc_data_en_wr_data_ch $n>]
+                            .write_rx_crc_data_en_wr_data_ch(data_mask);
+                        // Each mask pair only takes effect once it is latched.
+                        width.set_rx_crc_lautch_flga_ch();
+                        width.clr_rx_crc_lautch_flga_ch();
+                    });
+                    let clear = &r.[<in_crc_clear_ch $n>];
+                    clear.set_in_crc_clear_ch();
+                    clear.clr_in_crc_clear_ch();
+                }
+
+                /// CRC the engine computed over the last completed chain.
+                #[inline]
+                pub fn crc_result(&self) -> u32 {
+                    Self::regs().[<in_crc_final_result_ch $n>].in_crc_final_result_ch()
                 }
 
                 /// Enables the descriptor owner check.
@@ -495,6 +770,54 @@ macro_rules! impl_tx_channel {
                 #[inline]
                 pub fn disconnect(&self) {
                     Self::regs().[<out_peri_sel_ch $n>].write_peri_out_sel_ch(0x3f);
+                }
+
+                /// Loops this channel into its receive partner; see
+                /// [`AxiRxChannel::connect_memory`].
+                #[inline]
+                pub fn connect_memory(&self, dummy: Dummy) {
+                    Self::regs().[<out_peri_sel_ch $n>].write_peri_out_sel_ch(dummy as u32);
+                }
+
+                /// Bytes per data burst; see [`BurstSize`].
+                #[inline]
+                pub fn data_burst_size(&self, size: BurstSize) {
+                    Self::regs().[<out_conf0_ch $n>].[<write_out_burst_size_sel_ch $n>](size.field());
+                }
+
+                /// Programs the CRC unit that runs over this channel's data.
+                ///
+                /// # Panics
+                ///
+                /// Panics if `crc` is wider than [`Crc::AXI_MAX_WIDTH`] bits.
+                #[inline]
+                pub fn set_crc(&self, crc: &Crc) {
+                    assert!(
+                        crc.width() <= Crc::AXI_MAX_WIDTH,
+                        "GDMA-AXI computes at most 16 CRC bits"
+                    );
+                    let r = Self::regs();
+                    let width = &r.[<tx_crc_width_ch $n>];
+                    width.write_tx_crc_width_ch(u32::from((crc.width() - 1) / 8));
+                    r.[<out_crc_init_data_ch $n>].write_out_crc_init_data_ch(crc.init());
+                    crc.for_each_mask(|bit, lfsr_mask, data_mask| {
+                        r.[<tx_crc_en_addr_ch $n>].write_tx_crc_en_addr_ch(bit);
+                        r.[<tx_crc_en_wr_data_ch $n>].write_tx_crc_en_wr_data_ch(lfsr_mask);
+                        r.[<tx_crc_data_en_addr_ch $n>].write_tx_crc_data_en_addr_ch(bit);
+                        r.[<tx_crc_data_en_wr_data_ch $n>]
+                            .write_tx_crc_data_en_wr_data_ch(data_mask);
+                        width.set_tx_crc_lautch_flga_ch();
+                        width.clr_tx_crc_lautch_flga_ch();
+                    });
+                    let clear = &r.[<out_crc_clear_ch $n>];
+                    clear.set_out_crc_clear_ch();
+                    clear.clr_out_crc_clear_ch();
+                }
+
+                /// CRC the engine computed over the last completed chain.
+                #[inline]
+                pub fn crc_result(&self) -> u32 {
+                    Self::regs().[<out_crc_final_result_ch $n>].out_crc_final_result_ch()
                 }
 
                 /// Enables the descriptor owner check; see
