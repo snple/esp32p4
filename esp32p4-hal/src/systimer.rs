@@ -539,6 +539,29 @@ impl_alarm! {
     Alarm2, 2, alarm2_isr, ALARM2_HANDLER
 }
 
+/// A comparator event the ETM can route to another peripheral.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum Event {
+    /// `COMP0` reached its target.
+    Alarm0,
+    /// `COMP1` reached its target.
+    Alarm1,
+    /// `COMP2` reached its target.
+    Alarm2,
+}
+
+impl From<Event> for crate::etm::EventId {
+    fn from(event: Event) -> Self {
+        // `SYSTIMER_EVT_CNT_CMP0`..`CMP2` in the SoC's ETM signal table.
+        Self::new(match event {
+            Event::Alarm0 => 57,
+            Event::Alarm1 => 58,
+            Event::Alarm2 => 59,
+        })
+    }
+}
+
 // ============================================================================
 // The system timer
 // ============================================================================
@@ -612,6 +635,23 @@ impl Systimer {
         this.alarm1.disarm();
         this.alarm2.disarm();
         this
+    }
+
+    /// Exposes the comparators' events to the ETM matrix.
+    ///
+    /// One bit covers all three comparators; which one fired is told apart by
+    /// the event's id. Events reach the matrix whether or not the comparator's
+    /// CPU interrupt is unmasked — this is the path a peripheral takes when it
+    /// acts on the alarm itself.
+    pub fn enable_events(&self, enable: bool) {
+        // SAFETY: `Systimer` is the only owner of the block, and this touches
+        // one bit of its `CONF` register.
+        let regs = unsafe { &*SYSTIMER::PTR };
+        if enable {
+            regs.conf.set_etm_en();
+        } else {
+            regs.conf.clr_etm_en();
+        }
     }
 
     /// Gives the peripheral back.

@@ -48,6 +48,9 @@
 //! - Continuous sampling of either unit into a descriptor ring, with a
 //!   non-blocking drain ([`Continuous::read`]) that decodes the channel per
 //!   sample
+//! - ETM integration: [`Task::StartScan`]/[`Task::Stop`] start and stop the
+//!   controller from another peripheral's event, and [`Event`] exports the
+//!   conversion, start/stop and threshold-monitor signals
 //!
 //! # Pin Mapping
 //!
@@ -918,6 +921,82 @@ impl Adc {
         scanned
     }
 
+    /// Programs a scan and hands the buffer to the engine, without starting it.
+    ///
+    /// Everything [`scan`](Self::scan) does before the first trigger happens
+    /// here: the pattern table, the stop condition, the GDMA chain and the
+    /// cache maintenance. The controller then sits idle until something starts
+    /// it — `ADC_TASK_START0` through the ETM, or [`ArmedScan::start`] — which
+    /// is how a timer or a pin edge can decide when a scan begins.
+    ///
+    /// [`ArmedScan::wait`] bounds the wait, so a trigger that never comes is a
+    /// timeout rather than a hang.
+    ///
+    /// # What the controller does after it has run once
+    ///
+    /// "Armed and waiting" only holds while the controller has not been started
+    /// yet. Once `ADC_TASK_START0` (or [`ArmedScan::start`]) has run it, a later
+    /// `arm_scan` begins converting immediately: the samples arrive without a
+    /// trigger, even though `CTRL2.TIMER_EN` reads zero, and neither
+    /// `ADC_TASK_STOP0` nor forcing the SAR supply off clears that. Only a
+    /// block-level reset (`HP_SYS_CLKRST`'s `RST_EN_ADC`, which [`Adc::init`]
+    /// pulses) puts it back. Callers that need "wait for the event" semantics
+    /// more than once per boot have to bring the block back to that state first;
+    /// callers that just want to start a scan should use [`scan`](Self::scan).
+    ///
+    /// # Panics
+    ///
+    /// Same as [`scan`](Self::scan).
+    pub fn arm_scan<'a, R: crate::dma::ReceiveChannel>(
+        &'a self,
+        unit: Unit,
+        patterns: &[Pattern],
+        rx: &'a R,
+        buffer: &'a mut [Sample],
+        descriptors: &'a mut [crate::dma::Descriptor],
+        timer_cycles: u32,
+    ) -> Result<ArmedScan<'a, R>, crate::dma::Error> {
+        assert!(
+            !patterns.is_empty() && patterns.len() <= MAX_PATTERN,
+            "a scan needs 1 to {MAX_PATTERN} pattern entries"
+        );
+        assert!(
+            !buffer.is_empty() && buffer.len() <= MAX_SAMPLES,
+            "a scan takes 1 to {MAX_SAMPLES} samples"
+        );
+        assert!(
+            (1..=MAX_TIMER_CYCLES).contains(&timer_cycles),
+            "the trigger interval is 1 to {MAX_TIMER_CYCLES} clocks of {DIGI_CLK_HZ} Hz"
+        );
+
+        let bytes = core::mem::size_of_val(buffer);
+        self.setup_digi(unit, patterns, buffer.len(), timer_cycles, true);
+
+        let start = buffer.as_mut_ptr() as *mut u8;
+        crate::cache::writeback_invalidate(start as *const _, bytes);
+
+        let chain = crate::dma::Chain::new(descriptors);
+        chain.mount_eof(start, bytes)?;
+
+        rx.connect_to(crate::dma::Peripheral::Adc);
+        rx.reset_channel();
+        rx.start_chain(chain.head());
+
+        // Twice the nominal conversion time plus a fixed grace period, the same
+        // budget `scan` uses; `wait` adds whatever the trigger still needs.
+        let expected_us =
+            (buffer.len() as u64 * u64::from(timer_cycles) * 1_000_000) / u64::from(DIGI_CLK_HZ);
+
+        Ok(ArmedScan {
+            adc: self,
+            unit,
+            rx,
+            start,
+            bytes,
+            budget_us: expected_us * 2 + 20_000,
+        })
+    }
+
     /// Programs the pattern table, the DMA frame size and the controller clock.
     ///
     /// `one_frame` stops the controller after `samples` conversions; without it
@@ -1065,6 +1144,119 @@ impl Adc {
 // ============================================================================
 // HP ADC digital controller: continuous mode into a GDMA ring
 // ============================================================================
+
+/// A signal the ADC can send to the ETM matrix.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum Event {
+    /// One conversion finished, in either unit and whatever the mode.
+    ConversionComplete,
+    /// Filtered data of threshold monitor 0 rose above its high threshold.
+    AboveThreshold0,
+    /// Filtered data of threshold monitor 1 rose above its high threshold.
+    AboveThreshold1,
+    /// Filtered data of threshold monitor 0 fell below its low threshold.
+    BelowThreshold0,
+    /// Filtered data of threshold monitor 1 fell below its low threshold.
+    BelowThreshold1,
+    /// A conversion result landed in the result register (one-shot path).
+    ResultDone,
+    /// The digital controller stopped.
+    Stopped,
+    /// The digital controller started.
+    Started,
+}
+
+impl From<Event> for crate::etm::EventId {
+    fn from(event: Event) -> Self {
+        // `ADC_EVT_*` in the SoC's ETM signal table.
+        Self::new(match event {
+            Event::ConversionComplete => 132,
+            Event::AboveThreshold0 => 133,
+            Event::AboveThreshold1 => 134,
+            Event::BelowThreshold0 => 135,
+            Event::BelowThreshold1 => 136,
+            Event::ResultDone => 137,
+            Event::Stopped => 138,
+            Event::Started => 139,
+        })
+    }
+}
+
+/// A task the ETM matrix can run on the ADC.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum Task {
+    /// Start one ADC1 one-shot conversion.
+    OneShot0,
+    /// Start one ADC2 one-shot conversion.
+    OneShot1,
+    /// Start digital-controller sampling, as `Adc::start_scan_timer` does.
+    StartScan,
+    /// Stop digital-controller sampling, as `Adc::stop_scan` does.
+    Stop,
+}
+
+impl From<Task> for crate::etm::TaskId {
+    fn from(task: Task) -> Self {
+        // `ADC_TASK_*` in the SoC's ETM signal table.
+        Self::new(match task {
+            Task::OneShot0 => 157,
+            Task::OneShot1 => 158,
+            Task::StartScan => 159,
+            Task::Stop => 160,
+        })
+    }
+}
+
+/// A scan that is programmed and handed to the engine but not started.
+///
+/// [`Adc::arm_scan`] returns this; the conversion begins when something starts
+/// the controller — `ADC_TASK_START0` through the ETM, or [`start`](Self::start).
+/// Waiting for it to fill the buffer keeps the borrow on both the buffer and
+/// the receive channel, so nothing else can touch them while the engine owns
+/// them.
+pub struct ArmedScan<'a, R: ReceiveChannel> {
+    adc: &'a Adc,
+    unit: Unit,
+    rx: &'a R,
+    start: *mut u8,
+    bytes: usize,
+    budget_us: u64,
+}
+
+impl<R: ReceiveChannel> ArmedScan<'_, R> {
+    /// Starts the trigger timer, for callers that do not go through the ETM.
+    pub fn start(&self) {
+        self.adc.start_scan_timer();
+    }
+
+    /// Waits for the scan to fill the buffer and gives it back.
+    ///
+    /// `trigger_timeout_us` bounds how long the trigger may take to arrive; the
+    /// conversion itself gets the budget [`arm_scan`](Adc::arm_scan) worked out
+    /// from the sample count and the timer period, on top. A trigger that never
+    /// comes is therefore a [`Error::Timeout`](crate::dma::Error::Timeout)
+    /// rather than a hang.
+    pub fn wait(mut self, trigger_timeout_us: u64) -> Result<(), crate::dma::Error> {
+        let deadline = crate::delay::micros() + trigger_timeout_us + self.budget_us;
+        let scanned = self.adc.wait_scan_done(self.rx, deadline);
+        self.release();
+        scanned
+    }
+
+    /// Stops the scan early and gives the buffer back.
+    pub fn abort(mut self) {
+        self.release();
+    }
+
+    fn release(&mut self) {
+        self.adc.stop_scan(self.unit);
+        self.rx.clear_interrupt(crate::dma::RxInterrupt::SucEof);
+        self.rx.detach();
+        crate::cache::invalidate(self.start as *const _, self.bytes);
+    }
+}
 
 /// A running continuous conversion.
 ///

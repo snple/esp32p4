@@ -578,7 +578,7 @@ impl SdHost {
     /// # Panics
     ///
     /// Panics unless `buf` is exactly one `block_size` block of at most
-    /// [`MAX_TRANSFER`] bytes, with a length the FIFO can take (a multiple of
+    /// `MAX_TRANSFER` bytes, with a length the FIFO can take (a multiple of
     /// four).
     pub fn read_command_data(
         &self,
@@ -1039,7 +1039,7 @@ impl SdCard {
     }
 
     /// Whether `CMD6` put the card in high-speed mode and the clock went up to
-    /// [`HIGH_SPEED_HZ`]. Cards without the switch function stay at 25 MHz.
+    /// the high-speed rate. Cards without the switch function stay at 25 MHz.
     #[inline]
     pub fn high_speed(&self) -> bool {
         self.high_speed
@@ -1147,7 +1147,7 @@ struct DecodedCsd {
 }
 
 /// Asks the card to switch to high speed with `CMD6`, and raises the clock to
-/// [`HIGH_SPEED_HZ`] if it accepted.
+/// the high-speed rate if it accepted.
 ///
 /// Mode 0 of `CMD6` reads the card's function status without changing
 /// anything; mode 1 changes it. Both answer with the same 512-bit status, whose

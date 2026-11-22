@@ -53,6 +53,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `i2c_scan` | `I2C0` 扫描 7 位地址空间，逐个探测并打印应答的从机 |
 | `i2c_slave` | `I2C0` 主机 + `I2C1` 从机：地址应答、收发、满 FIFO、寄存器访问、非阻塞接口、START/STOP 标志与时钟拉伸 |
 | `adc` | 报告 eFuse 校准是否可用，并在四档衰减下采样 13 个 ADC 焊盘 |
+| `adc_etm` | ADC 的 ETM 集成：`arm_scan` 不启动的对照、`SYSTIMER` 事件启动扫描、ADC 阈值事件与 `SYSTIMER` 各自停掉连续流 |
 | `adc2` | ADC2 的三条路径：五个焊盘的 one-shot、两通道 GDMA 扫描（内部通道 2/3 交替）、200 ms 连续采样并核对采样率 |
 | `dma_mem2mem` | GDMA-AHB 的存储到存储拷贝：单描述符 64 B 与四描述符 16 KB 两种链路，逐字节校验并打印吞吐，另用 `CRC-32/MPEG-2` 校验两个方向的 CRC 单元 |
 | `dma_axi` | GDMA-AXI 的存储到存储：三组通道对、四种突发宽度、16 位 CRC（引擎 vs 软件），打印吞吐 |
@@ -940,6 +941,44 @@ stream.stop();
   读得比采得慢时旧帧直接被覆盖（引擎不会停下来等），`read_timeout` 是带超时的版本；
 - 每帧的 4 字节样本同扫描一样：低 12 位结果、bit 13–15 通道号；
 - 采样率 = `DIGI_CLK_HZ / timer_cycles`，`DIGI_CLK_HZ` 是可导出的常量（见下）。
+
+### ETM：用外部事件启停采样
+
+[`etm`](esp32p4-hal/src/etm.rs) 把外设事件接到外设任务上，ADC 两头都在里面：
+
+| 方向 | 信号 |
+|------|------|
+| 任务（别人触发 ADC） | `Task::StartScan`（`ADC_TASK_START0`）、`Task::Stop`（`ADC_TASK_STOP0`）、`Task::OneShot0/1` |
+| 事件（ADC 触发别人） | `Event::ConversionComplete`、`Started`/`Stopped`、`ResultDone`、`AboveThreshold0/1`、`BelowThreshold0/1` |
+
+`Adc::arm_scan` 把扫描配置好、把缓冲区交给引擎，但**不启动**控制器——等什么来启动由你决定：
+
+```rust
+let mut channel = etm.free_channel().unwrap();
+channel.connect(systimer::Event::Alarm0, adc::Task::StartScan);
+let armed = adc.arm_scan(Unit::Adc1, &patterns, &rx, &mut buffer, &mut descriptors, TIMER_CYCLES)?;
+channel.enable(true);
+systimer.alarm0.set_target(systimer.unit0.now() + Duration::from_millis(10));
+armed.wait(50_000)?;          // 有超时，触发不来就报错
+```
+
+示例 [`adc_etm`](esp32p4-examples/src/adc_etm.rs) 在板上跑通四条：
+
+1. 对照：通道不使能时 `arm_scan` 之后 `wait` 超时——arming 本身不启动；
+2. `SYSTIMER` 比较器 → `START0`：56 样本在 **12.85 ms** 后到齐（10 ms 定时 + 2.8 ms 转换）；
+3. ADC 自己的 `ABOVE_THRESH0` → `STOP0`：连续流被自己的阈值事件停掉，之后不再有新帧；
+4. `SYSTIMER` → `STOP0`：外部事件同样能停流。
+
+**一个必须知道的硬件行为**：`ADC_TASK_START0` 会**锁存**。控制器被它启动过一次之后，再调用
+`arm_scan` 会**立刻开始转换**——样本在没有触发的情况下就到齐了，尽管
+`CTRL2.TIMER_EN` 读回来是 0。`ADC_TASK_STOP0` 和强制给 SAR 断电都清不掉这个状态，
+只有块级复位（`HP_SYS_CLKRST` 的 `RST_EN_ADC`，`Adc::init` 里那一对 set/clear）能恢复。
+所以「arm 之后等事件」这个语义**每次上电只能用一次**；只想启动一次扫描就用
+`Adc::scan`。这也是例程把对照组放在最前面的原因。
+
+事件方向这里用 ADC 触发 ADC 自己的任务来验证，是因为 GPIO 侧的 ETM 任务需要
+`GPIO_EXT` 块里的绑定（哪个引脚挂到哪个 task channel、以及使能位），而这个寄存器块
+不在 SVD 里，本仓库还没有实现——见 [roadmap](docs/roadmap.md)。
 
 示例 [`adc2`](esp32p4-examples/src/adc2.rs) 把 ADC2 的三条路径都跑一遍：五个可用焊盘的
 one-shot、两通道样式表扫描（内部通道 2/3 各 16 个样本）、以及 200 ms 连续采样
