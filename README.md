@@ -31,7 +31,6 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `mmu` | 把 PSRAM 物理页 0 映射到 MMU 表项 512，验证 cached/uncached 别名 |
 | `clock` | 打印时钟树与 CPLL/SPLL 状态，并对照 `SYSTIMER`（晶振）和 APB 实测 CPU 频率与 `PLL_F80M` |
 | `tcm` | 用 `#[tcmfunc]`/`#[ramfunc]` 把代码放进 8 KB scratchpad / SRAM，并打印落点 |
-| `ram_map` | 打印 `RAM`/`RAM_HIGH` 的实际范围，并用 96 KB `.bss` + 256 KB `.ram.high` 验证两段内部 SRAM 在 L2 刷洗后仍保持内容 |
 | `multicore` | 启动第二个 HP 核：两核各 10 万次加锁计数、双向互踢中断、各自读到自己的 core id、每核独立的 machine timer |
 | `psram` | 初始化封装内 PSRAM，整体作为全局堆使用 |
 | `psram_split` | 把 PSRAM 分成「cached 全局堆 + uncached DMA 池」两部分 |
@@ -2049,14 +2048,12 @@ ESP32-P4 不是“ROM 直接跳到应用”的芯片：镜像由 ESP-IDF 2nd-sta
 |----|------|------|
 | flash segment 0 (DROM) | `0x4000_0020` | `esp_app_desc_t` + `.rodata` |
 | flash segment 1 (IROM) | `0x4000_0xxx` | `.init` + `.text` + `.trap` |
-| RAM | `0x4FF0_0000` | `.ramfunc` / `.data` / `.bss` / stack |
-| RAM_HIGH | `0x4FF4_0000` | `.ram.high`（大缓冲区，`NOLOAD`） |
+| RAM | `0x4FF2_0000` | `.ramfunc` / `.data` / `.bss` / stack |
 | SPM ("TCM") | `0x3010_0000` | `.tcm.text` / `.tcm.data` |
 
-- 内部 SRAM 被 L2 cache 和 ROM 自己的数据切成两段，见下节
-  「[内部 SRAM 的两个窗口](#内部-sram-的两个窗口)」。
-- bootloader 会拷贝每个 RAM 段到镜像里写的加载地址；`_start` 清零 `.bss` 和
-  `.ram.high`。
+- `0x4FF0_0000..0x4FF1_FFFF` 预留给 bootloader 配置的 128 KB L2 cache。
+- RAM 顶端在 `0x4FFA_DFC0`，其上是 ROM 的 `.data`/`.bss`。
+- bootloader 会拷贝每个 RAM 段到镜像里写的加载地址；`_start` 只需要清零 `.bss`。
 - bootloader 在 P4 上要求恰好两个 **flash** 段，因此 `link.x` 用一个 NOLOAD
   间隙段把 DROM 和 IROM 分开；RAM 段数量不受这个限制（idf 的
   `verify_load_addresses` 明确接受 SPM 段）。
@@ -2089,35 +2086,32 @@ static SAMPLES: [u32; 64] = [0; 64];
 
 细节见 [`docs/boot.md`](docs/boot.md)。
 
-### 内部 SRAM 的两个窗口
+### 内存图随 die 版本变化
 
-768 KB HP L2MEM **不是一整块都能用**：L2 cache 和 mask ROM 自己的
-`.data`/`.bss` 都嵌在里面，位置随芯片版本变化。这块板子（v1.3 / revision 103）
-上量出来的结果是：
+768 KB HP L2MEM 里既有 L2 cache，也有 **mask ROM 自己的 `.data`/`.bss`**，两个洞
+的位置由芯片版本决定，`memory.x` 必须对得上（本仓库默认按 v3.0+ die 写）：
 
-| 地址 | 是什么 | 应用能用吗 |
-|------|--------|-----------|
-| `0x4FF0_0000`..`0x4FF2_BBD0` | L2 RAM，2nd-stage bootloader 之下 | ✅ `RAM` |
-| `0x4FF2_BBD0`..`0x4FF3_FBA4` | bootloader 镜像 + ROM 共享缓冲（运行期已废弃） | ✅ 但只放 `.bss`/栈，不放 `.data` 的装载地址 |
-| `0x4FF3_FBA4`..`0x4FF4_0000` | ROM 自己的 `.data`/`.bss` | ❌ 清零它之后下一次 ROM 调用就挂死 |
-| `0x4FF4_0000`..`0x4FFA_0000` | L2 RAM，ROM 窗口与 cache 之间 | ✅ `RAM_HIGH` |
-| `0x4FFA_0000`..`0x4FFC_0000` | L2 cache（128 KB） | ❌ 写进去的内容会被 cache 覆盖 |
+| die | L2 cache | ROM 的 `.data`/`.bss` | 应用 RAM |
+|-----|----------|----------------------|---------|
+| v3.0+（默认） | 底部 `0x4FF0_0000`..`0x4FF2_0000` | `0x4FFB_FBB0`..`0x4FFC_0000` | `0x4FF2_0000`..`0x4FFA_DFC0` 一整块 |
+| pre-v3.0（v1.x / revision < 300） | 顶部 `0x4FFA_0000`..`0x4FFC_0000` | 中间 `0x4FF3_FBA4`..`0x4FF4_0000` | 两段：`0x4FF0_0000`..`0x4FF2_BBD0` + `0x4FF4_0000`..`0x4FFA_0000` |
 
-所以 `memory.x` 给两个区：`RAM` 装 `.data`/`.bss`/栈（179 KB），`RAM_HIGH`
-装放不下的大缓冲区（384 KB）。超过 `RAM` 的静态变量要显式声明：
-
-```rust
-#[unsafe(link_section = ".ram.high")]
-static mut FRAME: [u8; 256 * 1024] = [0; 256 * 1024];
+```text
+pre-v3.0 的 768 KB L2MEM
+0x4FF0_0000 ┬─ L2 RAM（可用，止于 bootloader 起点 0x4FF2_BBD0）
+0x4FF3_FBA4 ├─ ROM 的 .data/.bss —— 清零它，下一次 ROM 调用就不返回
+0x4FF4_0000 ├─ L2 RAM（可用）
+0x4FFA_0000 └─ L2 cache 128 KB —— 写进去的内容会被 cache 覆盖
 ```
 
-这个段是 `NOLOAD`，镜像里不留副本，`_start` 负责清零；`.bss` 溢出 `RAM`
-是**链接期错误**，不会再静默踩进 ROM 窗口。例程见
-[`ram_map`](esp32p4-examples/src/ram_map.rs)：它写标记、用 1 MB PSRAM 流量刷
-一遍 L2、再读回来，验证两个窗口确实是 RAM。
+这两条都是板上实测的：ROM 窗口里有 53 个非零字（`rom_default_cache_internal_table`、
+`ets_printf_lock` 等），清零后 `Cache_WriteBack_Addr` 挂死、原样恢复即正常；
+cache 窗口里写标记再用 1 MB PSRAM 流量刷两遍 L2，标记就丢了，而
+`0x4FF9_F000` 及以下全部保持。
 
-换 die 版本（v3.0+ 把 cache 挪到底部、ROM 数据挪到顶部）时要一起改
-`memory.x` 和 bootloader，见 [`docs/boot.md`](docs/boot.md) §8。
+开发用的这块 v1.3 板子是 pre-v3.0，所以**在那块板子上** `.bss` 超过约 130 KB
+就会清掉 ROM 数据而挂死；换到那块板子调试时按
+[`docs/boot.md`](docs/boot.md) §8 改成两窗口布局。
 
 ## 双核（HP CPU0 / HP CPU1）
 

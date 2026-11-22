@@ -9,29 +9,26 @@
  *   segment 1 (RX) : `.init` + `.text` + `.trap`   (IROM, mapped from flash)
  *   RAM segments   : `.ramfunc` and `.tcm.text` / `.tcm.data` (copied by the
  *                    bootloader), `.data` (copied by the bootloader),
- *                    `.bss` (zeroed here), `.ram.high` (zeroed here)
+ *                    `.bss` (zeroed here)
  *
  * The bootloader copies a segment to whatever load address the image names, so
  * `.ramfunc` (in `RAM`) and `.tcm.text` (in `SPM`) are ordinary RAM segments:
  * `#[ramfunc]` and `#[tcmfunc]` functions live in flash in the image and run
  * from their RAM address.
  *
- * Internal SRAM is not one contiguous window: the L2 cache and the mask ROM
- * sit inside it, and where they sit depends on the chip revision. `memory.x`
- * therefore defines two RAM regions — `RAM` for `.data`/`.bss`/stack and
- * `RAM_HIGH` for `.ram.high` — next to the 8 KB HP scratchpad at 0x3010_0000,
- * which the register set calls the HP TCM:
+ * The `SPM` region is the 8 KB HP scratchpad at 0x3010_0000, which the register
+ * set calls the HP TCM. `memory.x` has to define it:
  *
  *     MEMORY
  *     {
  *         ROM : ORIGIN = 0x40000020, LENGTH = 0x4000000 - 0x20
- *         RAM : ORIGIN = 0x4FF00000, LENGTH = 0x2BBD0
- *         RAM_HIGH : ORIGIN = 0x4FF40000, LENGTH = 0x60000
+ *         RAM : ORIGIN = 0x4FF20000, LENGTH = 0x8DFC0
  *         SPM : ORIGIN = 0x30100000, LENGTH = 0x2000
  *     }
  *
- * The numbers above are for a pre-v3.0 die (ESP32-P4 v1.3, revision 103); see
- * `docs/boot.md` for the v3.0+ layout.
+ * The L2 cache and the mask ROM's own `.data`/`.bss` both live inside L2MEM, at
+ * addresses that depend on the chip revision, so `memory.x` — not this script —
+ * is what has to keep those two out of `RAM`. See `docs/boot.md` §3 and §8.
  */
 
 ENTRY(_start)
@@ -129,26 +126,7 @@ SECTIONS
         _stack_start = .;
     } > RAM
 
-    /* The second window of internal SRAM, past the ROM's own data. `.bss`
-     * cannot spill into it, so a buffer that needs more than `RAM` holds is
-     * placed here by name:
-     *
-     *     #[unsafe(link_section = ".ram.high")]
-     *     static mut FRAME_BUFFER: [u8; 256 * 1024] = [0; 256 * 1024];
-     *
-     * Marked `NOLOAD` so the image keeps no copy of it; `_start` zeroes it,
-     * which is what a static in a zero-initialised section needs. */
-    .ram.high (NOLOAD) : ALIGN(16)
-    {
-        _sramhigh = .;
-        *(.ram.high .ram.high.*)
-        . = ALIGN(16);
-        _eramhigh = .;
-    } > RAM_HIGH
-
     ASSERT(_stack_start <= ORIGIN(RAM) + LENGTH(RAM), "esp32p4-rt: stack overflows RAM")
-    ASSERT(_eramhigh <= ORIGIN(RAM_HIGH) + LENGTH(RAM_HIGH),
-           "esp32p4-rt: .ram.high overflows RAM_HIGH")
     ASSERT(_etcmdata <= ORIGIN(SPM) + LENGTH(SPM),
            "esp32p4-rt: #[tcmfunc]/#[tcmdata] overflows the 8 KB HP scratchpad")
 

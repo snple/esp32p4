@@ -177,31 +177,27 @@ ESP32-P4 由 ESP-IDF 2nd-stage bootloader 加载，不是 ROM 直跳。关键约
 - **恰好两个 flash 段**（DROM + IROM），否则 P4 bootloader 的
   `unpack_load_app()` assert 失败；
 - **第一个段必须以 `esp_app_desc_t` 开头**（magic `0xABCD5432`，≥256 字节）；
-- bootloader 拷贝 RAM 段；`_start` 清零 `.bss` 和 `.ram.high`。
+- bootloader 拷贝 RAM 段；`_start` 只清零 `.bss`。
 
 详见 [`boot.md`](boot.md)。
 
 ### 内存
 
-默认 `memory.x`：
+默认 `memory.x`（v3.0+ die）：
 
 ```ld
 MEMORY
 {
     ROM : ORIGIN = 0x40000020, LENGTH = 0x4000000 - 0x20
-    RAM : ORIGIN = 0x4FF00000, LENGTH = 0x2BBD0
-    RAM_HIGH : ORIGIN = 0x4FF40000, LENGTH = 0x60000
+    RAM : ORIGIN = 0x4FF20000, LENGTH = 0x8DFC0
 }
 ```
 
 - `0x40000020` 跳过 app image header（24 B）+ 第一个 segment header（8 B）。
-- 内部 SRAM 不是一整块：pre-v3.0 die 上 L2 cache 占顶部 128 KB
-  （`0x4FFA_0000`..`0x4FFC_0000`），ROM 的 `.data`/`.bss` 占
-  `0x4FF3_FBA4`..`0x4FF4_0000`（清零它之后 ROM 调用会挂死）。
-- `RAM` 给 `.data`/`.bss`/栈，止于 2nd-stage bootloader 起点 `0x4FF2_BBD0`。
-- `RAM_HIGH` 给 `.ram.high` 大缓冲区，止于 L2 cache 起点 `0x4FFA_0000`。
-- 换 die 版本或 bootloader 的 L2 cache 划分时必须同步改，见
-  [`boot.md`](boot.md) §3 与 §8。
+- `0x4FF20000` = L2MEM 起点 + 128 KB L2 cache。
+- `0x4FFADFC0` = 可用 RAM 顶端，其上是 ROM 的 `.data`/`.bss`。
+- 洞的位置随 die 版本变：pre-v3.0 上 cache 在顶部、ROM 数据在中间，连续单区
+  会同时踩到两者，要换成两窗口布局，见 [`boot.md`](boot.md) §3 与 §8。
 
 ### 启动初始化（`startup::init`）
 

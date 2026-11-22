@@ -40,17 +40,6 @@ _start:
     j 2b
 3:
 
-    /* Zero `.ram.high`, the second RAM window: it is `NOLOAD`, so nothing else
-       would bring a static living there to its zero-initialised value. */
-    la t0, _sramhigh
-    la t1, _eramhigh
-4:
-    bgeu t0, t1, 5f
-    sw zero, 0(t0)
-    addi t0, t0, 4
-    j 4b
-5:
-
     /* .data was copied to RAM by the 2nd-stage bootloader. */
 
     /* Direct-mode trap vector: every exception and interrupt enters through
@@ -70,8 +59,8 @@ _start:
 
     call main
 
-6:
-    j 6b
+4:
+    j 4b
 .size _start, . - _start
 
 .section .trap, "ax"
