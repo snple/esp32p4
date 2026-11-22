@@ -58,7 +58,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `dw_gdma` | DW_GDMA（`DMA`）：四种传输宽度 × 三种 burst 的 mem2mem 全部逐字节校验，实测 164 MB/s |
 | `spi` | GP-SPI2 主机对 GP-SPI3 从机（四根飞线）：时钟模式 0–3 × 1/4/32/64 字节双向校验 |
 | `spi_dma` | GDMA-AXI 驱动的 SPI 主机 DMA：MOSI→MISO 回环跑 64 B–8192 B（含多描述符、奇长度、越界检查）、对从机的半双工收发、描述符不足的拒绝 |
-| `sd` | SDHOST 上的 SD 卡：识别、读 CID/CSD 与容量、读第 0 块、双块写入后回读比对 |
+| `sd` | SDHOST 上的 SD 卡：识别、读 CID/CSD 与容量、读第 0 块、双块写入后回读比对、CMD6 高速模式与 25/40 MHz 吞吐对比 |
 | `adc_scan` | ADC1 样式表扫描：两个通道经 GDMA-AHB 交替采样 32 个样本，打印样本数与读数 |
 | `adc_continuous` | ADC1 连续采样：20 kSa/s 灌进八帧描述符环，PWM 方波（GPIO20→GPIO16 跳线）验采样率、占空比与频率 |
 | `tsens` | 温度传感器：每秒打印一次芯片温度，自动选择测量档位 |
@@ -1174,7 +1174,13 @@ DesignWare MSHC）：[`SdHost`](esp32p4-hal/src/sdhost.rs) 负责控制器（时
 - 命令支持无响应、48 位（R1/R3/R6/R7）与 136 位（R2）响应；
 - 块读写走控制器的内部 DMA（IDMAC）：驱动里有一块 2 KB 的暂存区，调用者的切片不需要对齐；
 - 多块传输用 CMD18/CMD25 加一次手发的 CMD12（原因见下）；
-- 位宽 1/4 位，卡时钟由 160 MHz PLL 分频得到（识别 400 kHz，之后 25 MHz）。
+- 位宽 1/4 位，卡时钟由 160 MHz PLL 分频得到（识别 400 kHz，之后 25 MHz）；
+- `CMD6` 切高速模式：先按功能组 1 查询卡支持哪些访问模式，支持就切到高速并升到
+  40 MHz（分频是 `160 MHz / (2n)`，50 MHz 落不到整档，40 MHz 是上限内的最高一档）；
+  卡不报 `CMD6`（CCC bit 10）或没切成就留在 25 MHz，`SdCard::high_speed()` 说明结果；
+- CSD 里的 `PERM_WRITE_PROTECT`/`TMP_WRITE_PROTECT` 会被解出来，`write_protected()`
+  报告状态，写保护时 `write_blocks` 直接返回 `WriteProtected`（这是卡自己的标志位，
+  不是卡座的写保护开关）。
 
 ```rust
 // 卡座电源：低电平通电（板上有 10K 下拉，这里显式驱动以免依赖复位默认值）。
@@ -1196,7 +1202,12 @@ card.read_blocks(&host, 0, &mut block)?;
 ```
 
 示例 [`sd`](esp32p4-examples/src/sd.rs) 识别卡（32 GB SDHC，容量 62 521 344 块）、读出
-CID/CSD、读第 0 块（`0x55AA` 引导签名），再在卡尾写两个块并回读逐字节比对，上板通过。
+CID/CSD、读第 0 块（`0x55AA` 引导签名），再在卡尾写两个块并回读逐字节比对，最后用同样
+的 4 块读对比 25 MHz 与 40 MHz 的吞吐。上板实测：`high_speed=true`、别名为 40 MHz，
+4 块读 **4435 KiB/s @ 25 MHz、5377 KiB/s @ 40 MHz**。
+
+提升只有 21%，因为每笔 2 KB 传输的固定开销（命令、IDMAC 启动、CMD12、busy 等待）比
+数据本身还长；时钟翻倍摊薄不了这部分。
 
 四个只在硬件上才暴露的点：
 

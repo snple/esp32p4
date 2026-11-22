@@ -17,6 +17,8 @@
 //! - Block reads and writes (CMD17/18/24/25) through the internal DMA, with the
 //!   controller's automatic CMD12 for multi-block transfers
 //! - Card identification (CMD0/8/2/3/9/7, ACMD41/6) and CSD decoding
+//! - CMD6 high-speed mode: 40 MHz instead of 25 MHz when the card offers it
+//! - The card's own write-protect flags from the CSD, which refuse writes
 //!
 //! # Pin Mapping
 //!
@@ -51,9 +53,13 @@
 //!
 //! # Scope
 //!
-//! Not covered yet: SDIO function access, UHS-I signalling and MMC's 8-bit bus.
-//! The P4 package routes four data lines, so [`BusWidth::Bit4`] is the widest
-//! bus the controller is used with here.
+//! Not covered yet: SDIO function access (CMD52/53 and the card interrupt),
+//! UHS-I signalling and MMC's 8-bit bus. The P4 package routes four data lines,
+//! so [`BusWidth::Bit4`] is the widest bus the controller is used with here.
+//!
+//! High speed needs nothing beyond CMD6: the card stays at 3.3 V, which the
+//! board already supplies. UHS-I would need 1.8 V switching on the card supply,
+//! which this board does not have.
 
 use core::cell::UnsafeCell;
 
@@ -80,8 +86,24 @@ const MAX_TRANSFER: usize = MAX_BLOCKS * BLOCK_SIZE;
 /// Card clock during identification: the SD specification caps it at 400 kHz.
 const IDENTIFICATION_HZ: u32 = 400_000;
 
-/// Card clock once the card is identified.
+/// Card clock once the card is identified, if it has no high-speed mode.
 const DEFAULT_SPEED_HZ: u32 = 25_000_000;
+
+/// Card clock in high-speed mode, which `CMD6` has to enable first.
+///
+/// High speed allows up to 50 MHz. The divider is `160 MHz / (2 * n)`, so the
+/// choices below that cap are 40 MHz (`n = 2`) and 80 MHz (`n = 1`), and 40 MHz
+/// is the one to ask for.
+const HIGH_SPEED_HZ: u32 = 40_000_000;
+
+/// Bytes of function status `CMD6` returns: 512 bits.
+const SWITCH_STATUS_LEN: usize = 64;
+
+/// Function group 1 is the bus "access mode", the one that selects high speed.
+const SWITCH_ACCESS_MODE: u8 = 1;
+
+/// Function 1 of the access-mode group is high speed (50 MHz, 3.3 V).
+const SWITCH_HIGH_SPEED: u8 = 1;
 
 /// How often ACMD41 may be retried. One attempt takes a good fraction of a
 /// millisecond at [`IDENTIFICATION_HZ`], so this covers the second a card may
@@ -247,6 +269,8 @@ pub enum Error {
     DescriptorUnavailable,
     /// The internal DMA engine reported a card error summary.
     CardErrorSummary,
+    /// The card's own write-protect flags are set.
+    WriteProtected,
     /// A transfer asked for a shape this driver does not implement.
     Unsupported,
     /// The card did not reach the state the sequence expects.
@@ -496,8 +520,8 @@ impl SdHost {
         let blocks = check_blocks(buf.len());
         let index = if blocks == 1 { 17 } else { 18 };
 
-        self.prepare_data_transfer(blocks);
-        self.start_data_command(index, block, blocks, false)?;
+        self.prepare_data_transfer(buf.len());
+        self.start_data_command(index, block, BLOCK_SIZE, buf.len(), false)?;
         self.finish_data_transfer()?;
         if blocks > 1 {
             self.stop_transfer()?;
@@ -521,11 +545,9 @@ impl SdHost {
         let blocks = check_blocks(buf.len());
         let index = if blocks == 1 { 24 } else { 25 };
 
-        self.prepare_data_transfer(blocks);
-        let bounce = self.bounce();
-        bounce.data_mut()[..buf.len()].copy_from_slice(buf);
-        bounce.stage(buf.len());
-        self.start_data_command(index, block, blocks, true)?;
+        self.bounce().data_mut()[..buf.len()].copy_from_slice(buf);
+        self.prepare_data_transfer(buf.len());
+        self.start_data_command(index, block, BLOCK_SIZE, buf.len(), true)?;
         self.finish_data_transfer()?;
         if blocks > 1 {
             self.stop_transfer()?;
@@ -533,16 +555,48 @@ impl SdHost {
         Ok(())
     }
 
+    /// Reads `buf.len()` bytes of command data, one block of `block_size`.
+    ///
+    /// `CMD6` is the reason this exists: it answers with 64 bytes of function
+    /// status, which is neither a memory block nor a whole 512-byte sector.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless `buf` is exactly one `block_size` block of at most
+    /// [`MAX_TRANSFER`] bytes, with a length the FIFO can take (a multiple of
+    /// four).
+    pub fn read_command_data(
+        &self,
+        index: u8,
+        argument: u32,
+        block_size: usize,
+        buf: &mut [u8],
+    ) -> Result<(), Error> {
+        assert_eq!(buf.len(), block_size, "command data is exactly one block");
+        assert!(
+            buf.len() <= MAX_TRANSFER && buf.len().is_multiple_of(4),
+            "command data is at most {MAX_TRANSFER} bytes, in whole words"
+        );
+
+        self.prepare_data_transfer(buf.len());
+        self.start_data_command(index, argument, block_size, buf.len(), false)?;
+        self.finish_data_transfer()?;
+
+        let bounce = self.bounce();
+        bounce.collect(buf.len());
+        buf.copy_from_slice(&bounce.data()[..buf.len()]);
+        Ok(())
+    }
+
     /// Points the descriptor at `blocks` blocks of the staging buffer and arms
     /// the internal DMA for it.
-    fn prepare_data_transfer(&self, blocks: usize) {
+    fn prepare_data_transfer(&self, len: usize) {
         let r = self.regs();
         reset_fifo(r);
         r.rintsts.write_int_status_raw(DATA_ERRORS);
         r.idsts.write_bits(u32::MAX);
 
         let bounce = self.bounce();
-        let len = blocks * BLOCK_SIZE;
         bounce.describe(len as u32);
         bounce.stage(len);
 
@@ -563,16 +617,17 @@ impl SdHost {
     fn start_data_command(
         &self,
         index: u8,
-        block: u32,
-        blocks: usize,
+        argument: u32,
+        block_size: usize,
+        len: usize,
         write: bool,
     ) -> Result<(), Error> {
         let r = self.regs();
         r.rintsts.write_int_status_raw(COMMAND_ERRORS);
-        r.blksiz.write_bits(BLOCK_SIZE as u32);
-        r.bytcnt.write_bits((blocks * BLOCK_SIZE) as u32);
+        r.blksiz.write_bits(block_size as u32);
+        r.bytcnt.write_bits(len as u32);
 
-        r.cmdarg.write_bits(block);
+        r.cmdarg.write_bits(argument);
         r.cmd.write_index(u32::from(index));
         r.cmd.write_card_number(0);
         r.cmd.set_use_hole();
@@ -849,6 +904,8 @@ pub struct SdCard {
     csd: [u32; 4],
     blocks: u32,
     high_capacity: bool,
+    high_speed: bool,
+    write_protected: bool,
 }
 
 impl SdCard {
@@ -908,7 +965,7 @@ impl SdCard {
         };
         host.send_command(7, u32::from(rca) << 16, ResponseKind::ShortBusy)?;
 
-        let (blocks, high_capacity) = decode_csd(csd).ok_or(Error::Unsupported)?;
+        let decoded = decode_csd(csd).ok_or(Error::Unsupported)?;
 
         // Four data lines, then the block length the driver always uses.
         host.send_command(55, u32::from(rca) << 16, ResponseKind::Short)?;
@@ -917,12 +974,18 @@ impl SdCard {
         host.set_bus_width(BusWidth::Bit4);
         host.set_clock(DEFAULT_SPEED_HZ);
 
+        // CMD6 is what unlocks 50 MHz, and only cards that advertise the switch
+        // command class answer it.
+        let high_speed = decoded.command_classes & (1 << 10) != 0 && enable_high_speed(host)?;
+
         Ok(Self {
             rca,
             cid,
             csd,
-            blocks,
-            high_capacity,
+            blocks: decoded.blocks,
+            high_capacity: decoded.high_capacity,
+            high_speed,
+            write_protected: decoded.write_protected,
         })
     }
 
@@ -957,6 +1020,22 @@ impl SdCard {
         self.high_capacity
     }
 
+    /// Whether `CMD6` put the card in high-speed mode and the clock went up to
+    /// [`HIGH_SPEED_HZ`]. Cards without the switch function stay at 25 MHz.
+    #[inline]
+    pub fn high_speed(&self) -> bool {
+        self.high_speed
+    }
+
+    /// Whether the card reads its own write-protect flags as set.
+    ///
+    /// This is the card's temporary or permanent write protection from the
+    /// CSD, not a write-protect switch on the socket.
+    #[inline]
+    pub fn write_protected(&self) -> bool {
+        self.write_protected
+    }
+
     /// Reads whole blocks starting at `block`.
     ///
     /// # Panics
@@ -973,6 +1052,9 @@ impl SdCard {
     ///
     /// See [`SdHost::write_blocks`].
     pub fn write_blocks(&self, host: &SdHost, block: u32, buf: &[u8]) -> Result<(), Error> {
+        if self.write_protected {
+            return Err(Error::WriteProtected);
+        }
         self.check_range(block, buf.len())?;
         host.write_blocks(self.address(block), buf)
     }
@@ -1002,14 +1084,14 @@ impl SdCard {
 ///
 /// The CSD arrives as four words, most significant first, so bit 127 is the top
 /// bit of `csd[0]`.
-fn decode_csd(csd: [u32; 4]) -> Option<(u32, bool)> {
+fn decode_csd(csd: [u32; 4]) -> Option<DecodedCsd> {
     let structure = csd[0] >> 30;
-    match structure {
+    let (blocks, high_capacity) = match structure {
         // Version 2.0 (SDHC/SDXC): C_SIZE counts 512 KB units, which is 1024
         // blocks each.
         1 => {
             let c_size = u64::from(((csd[1] & 0x3f) << 16) | ((csd[2] >> 16) & 0xffff));
-            Some((((c_size + 1) * 1024) as u32, true))
+            (((c_size + 1) * 1024) as u32, true)
         }
         // Version 1.0 (SDSC): capacity follows from the block count, the
         // multiplier and the read block length.
@@ -1018,10 +1100,93 @@ fn decode_csd(csd: [u32; 4]) -> Option<(u32, bool)> {
             let c_size = ((csd[1] >> 13) & 0x3ff) << 2 | (csd[2] >> 30) & 0x3;
             let c_size_mult = (csd[2] >> 15) & 0x7;
             let bytes = (u64::from(c_size) + 1) << (c_size_mult + 2 + read_bl_len);
-            Some(((bytes / BLOCK_SIZE as u64) as u32, false))
+            ((bytes / BLOCK_SIZE as u64) as u32, false)
         }
-        _ => None,
+        _ => return None,
+    };
+
+    Some(DecodedCsd {
+        blocks,
+        high_capacity,
+        // Card command classes, CSD bits 95..84; class 10 is the switch
+        // function command.
+        command_classes: ((csd[1] >> 20) & 0xfff) as u16,
+        // PERM_WRITE_PROTECT (bit 13) and TMP_WRITE_PROTECT (bit 12).
+        write_protected: csd[3] & ((1 << 13) | (1 << 12)) != 0,
+    })
+}
+
+/// The parts of the CSD the driver uses.
+struct DecodedCsd {
+    /// Capacity in 512-byte blocks.
+    blocks: u32,
+    /// Whether the card is addressed in blocks rather than bytes.
+    high_capacity: bool,
+    /// Command classes the card supports (CSD bits 95..84).
+    command_classes: u16,
+    /// Whether one of the card's own write-protect flags is set.
+    write_protected: bool,
+}
+
+/// Asks the card to switch to high speed with `CMD6`, and raises the clock to
+/// [`HIGH_SPEED_HZ`] if it accepted.
+///
+/// Mode 0 of `CMD6` reads the card's function status without changing
+/// anything; mode 1 changes it. Both answer with the same 512-bit status, whose
+/// bit numbering is the one in the specification: bit 511 is the first bit on
+/// the bus.
+fn enable_high_speed(host: &SdHost) -> Result<bool, Error> {
+    let mut status = [0u8; SWITCH_STATUS_LEN];
+
+    switch_function(host, 0, SWITCH_ACCESS_MODE, 0, &mut status)?;
+    // Group 1's support mask is status bits 400..416, one bit per function.
+    let supported = switch_field(&status, 400, 16);
+    if supported & (1 << SWITCH_HIGH_SPEED) == 0 {
+        return Ok(false);
     }
+
+    switch_function(host, 1, SWITCH_ACCESS_MODE, SWITCH_HIGH_SPEED, &mut status)?;
+    // The selection it landed on is status bits 376..380.
+    if switch_field(&status, 376, 4) != u32::from(SWITCH_HIGH_SPEED) {
+        return Ok(false);
+    }
+
+    host.set_clock(HIGH_SPEED_HZ);
+    Ok(true)
+}
+
+/// Sends `CMD6` for one function group and collects its 512-bit status.
+///
+/// `mode` is 0 to query and 1 to switch. Every group other than `group` is
+/// asked to stay as it is, which the specification spells as function `0xf`.
+fn switch_function(
+    host: &SdHost,
+    mode: u32,
+    group: u8,
+    function: u8,
+    status: &mut [u8; SWITCH_STATUS_LEN],
+) -> Result<(), Error> {
+    let shift = (group - 1) * 4;
+    let keep = 0x00ff_ffff & !(0xf << shift);
+    let argument = (mode << 31) | (u32::from(function) << shift) | keep;
+    host.read_command_data(6, argument, SWITCH_STATUS_LEN, status)
+}
+
+/// One bit of the `CMD6` status, numbered as the specification numbers it
+/// (511 is the first bit on the bus).
+fn switch_bit(status: &[u8; SWITCH_STATUS_LEN], bit: usize) -> u32 {
+    let index = SWITCH_STATUS_LEN * 8 - 1 - bit;
+    u32::from(status[index / 8] >> (7 - index % 8) & 1)
+}
+
+/// A field of the `CMD6` status: `len` bits starting at `start`, which is the
+/// field's least significant bit.
+fn switch_field(status: &[u8; SWITCH_STATUS_LEN], start: usize, len: usize) -> u32 {
+    let mut value = 0;
+    for bit in (start..start + len).rev() {
+        value = (value << 1) | switch_bit(status, bit);
+    }
+    value
 }
 
 /// Brings up the on-chip regulator that feeds the SD pads and the card.

@@ -43,6 +43,10 @@ use esp32p4_hal::usb_serial_jtag::UsbSerialJtag;
 /// Card power switch; low powers the card, high cuts it.
 const SD_POWER: u32 = 45;
 
+/// Card clock the high-speed pass asks for: `CMD6` allows up to 50 MHz, and the
+/// controller's integer divider lands on 40 MHz below that.
+const HIGH_SPEED_HZ: u32 = 40_000_000;
+
 /// Card slot pins.
 const SD_CLK: u32 = 43;
 const SD_CMD: u32 = 44;
@@ -85,10 +89,12 @@ fn main() -> ! {
 
     let cid = card.cid();
     defmt::info!(
-        "SD card: rca={:#06x} blocks={} high_capacity={} clock={} Hz",
+        "SD card: rca={:#06x} blocks={} high_capacity={} high_speed={} write_protected={} clock={} Hz",
         card.rca(),
         card.blocks(),
         card.high_capacity(),
+        card.high_speed(),
+        card.write_protected(),
         host.frequency()
     );
     defmt::info!(
@@ -140,9 +146,54 @@ fn main() -> ! {
         first + 2
     );
 
+    // What the rate is worth: the same 4-block read at the default 25 MHz and
+    // at the 50 MHz `CMD6` unlocked. A card without high-speed mode keeps
+    // 25 MHz for both passes, which makes the two numbers equal.
+    let measure_block = first - 4;
+    let default = measure_reads(&host, &card, measure_block, 25_000_000);
+    let selected = measure_reads(&host, &card, measure_block, HIGH_SPEED_HZ);
+    defmt::info!(
+        "4-block reads: {} Hz -> {} KiB/s, {} Hz -> {} KiB/s",
+        25_000_000,
+        default / 1024,
+        HIGH_SPEED_HZ,
+        selected / 1024
+    );
+    if !card.high_speed() {
+        defmt::info!("card has no high-speed mode; it stays at 25 MHz");
+    }
+
+    host.set_clock(if card.high_speed() {
+        HIGH_SPEED_HZ
+    } else {
+        25_000_000
+    });
     defmt::info!("SD card self-check passed");
 
     loop {
         delay::delay_ms(1_000);
     }
+}
+
+/// Reads four blocks `ROUNDS` times at `hz` and returns the byte rate.
+fn measure_reads(host: &SdHost, card: &SdCard, block: u32, hz: u32) -> u32 {
+    /// Four blocks per read, 256 reads: half a megabyte of traffic.
+    const ROUNDS: u32 = 256;
+
+    let mut buf = [0u8; 4 * BLOCK_SIZE];
+    host.set_clock(hz);
+    // One read outside the window: the card takes a while to answer the first
+    // command after its own programming cycle, which would otherwise land in
+    // the measurement.
+    if let Err(error) = card.read_blocks(host, block, &mut buf) {
+        panic!("read at {} Hz failed: {:?}", hz, error);
+    }
+    let start = delay::micros();
+    for _ in 0..ROUNDS {
+        if let Err(error) = card.read_blocks(host, block, &mut buf) {
+            panic!("read at {} Hz failed: {:?}", hz, error);
+        }
+    }
+    let elapsed = delay::micros() - start;
+    ((u64::from(ROUNDS) * buf.len() as u64 * 1_000_000 / elapsed) as u32).max(1)
 }

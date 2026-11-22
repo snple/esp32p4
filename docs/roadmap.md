@@ -25,7 +25,7 @@
 | `uart` | [uart.rs](../esp32p4-hal/src/uart.rs) | UART0–4 轮询 + 按源中断、流控、GPIO 矩阵路由、UHCI + GDMA 的 DMA 收发 |
 | `i2c` | [i2c.rs](../esp32p4-hal/src/i2c.rs) | I2C0/1 主机与从机 |
 | `spi` | [spi.rs](../esp32p4-hal/src/spi.rs) | SPI2/3 主机与从机（CPU 传输 64 B + GDMA-AXI 的 DMA 与半双工） |
-| `sdhost` | [sdhost.rs](../esp32p4-hal/src/sdhost.rs) | SD 卡识别、容量解码、1/4 位总线块读写 |
+| `sdhost` | [sdhost.rs](../esp32p4-hal/src/sdhost.rs) | SD 卡识别、容量解码、1/4 位总线块读写、CMD6 高速模式（40 MHz）、CSD 写保护位 |
 | `twai` | [twai.rs](../esp32p4-hal/src/twai.rs) | TWAI0/1/2 经典 CAN 2.0B（P4 无 CAN-FD） |
 | `emac` / `net` | [emac/](../esp32p4-hal/src/emac) · [net.rs](../esp32p4-hal/src/net.rs) | RMII + MDIO + DMA，smoltcp 同步栈 |
 | `usb` | [esp32p4-usb](../esp32p4-usb/) | OTG 设备/主机 DWC 驱动（slave、轮询） |
@@ -50,7 +50,7 @@
 | `i2c` | 10 位地址、双地址模式；LP I2C | —；LP 引脚 |
 | `spi` | 2/4/8 线、SCT 分段、从机 HD（DMA 与主机半双工已完成） | 2/4/8 线需先补 QIO/OCT 引脚信号 |
 | `dma` | GDMA-AXI 的加权仲裁 | v3.0+ 芯片（本仓库的 v1.3 实测：逐通道权重可写但不改变仲裁结果，打开全局 `WEIGHT_EN` 后传输不再完成） |
-| `sdhost` | SDIO（CMD52/53 + 卡中断）、UHS-I（1.8 V/SDR50/104）、MMC 8 位、卡检测/写保护引脚 | — |
+| `sdhost` | SDIO（CMD52/53 + 卡中断）；UHS-I（1.8 V/SDR50/104）、MMC 8 位、卡检测/写保护引脚这三项暂不具备条件 | SDIO 需一块 SDIO 外设卡；UHS-I 需 1.8 V 供电与电平切换，8 位 MMC 需 8 位卡与走线，检测引脚需板上有该信号（CMD6 高速模式与 CSD 写保护位已完成） |
 | `adc` | LP ADC、DAC 与 PWDET；ADC2 连续模式（errata 禁用） | LP 引脚 |
 | `psram` | AXI 同时读源与写目的（PSRAM→PSRAM 拷贝）时每 4 KB 稳定丢 32–128 字节，单向传输正常。已排除：读采样相位（`EXTRA_DUMMY_CYCLELEN` 0–7）、DQS 相位（4 档）× 每引脚 delayline（0–15）全部 64 个组合（偶发 0 错、复测又不稳定）、burst 宽度（B8–B64）、通道优先级（0/0、5/0、0/5、5/5）、长度 64 字节对齐；方向指向 AXI↔MSPI 的读写并发本身，不是采样点问题。`AxiDma::copy` 现在对两端都在 PSRAM 的传输返回 `Error::ExternalMemoryCopy`，一端在内部 RAM 的双向传输照常可用 | — |
 | `tsens` | ETM 事件/任务、LP 核唤醒路径 | — |
