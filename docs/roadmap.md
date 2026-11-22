@@ -31,7 +31,7 @@
 | `usb` | [esp32p4-usb](../esp32p4-usb/) | OTG 设备/主机 DWC 驱动（slave、轮询） |
 | `usb_serial_jtag` | [usb_serial_jtag.rs](../esp32p4-hal/src/usb_serial_jtag.rs) | USB Serial/JTAG 控制台 |
 | `adc` | [adc.rs](../esp32p4-hal/src/adc.rs) | ADC1/2 one-shot + 样式表扫描 + ADC1/2 连续采样（GDMA 环）+ IIR + 阈值监控 + ETM 启停（`START0`/`STOP0` 与阈值事件；`START0` 留下的启动条件要块复位才清） |
-| `tsens` | [tsens.rs](../esp32p4-hal/src/tsens.rs) | LP_TSENS 温度传感器 |
+| `tsens` | [tsens.rs](../esp32p4-hal/src/tsens.rs) | LP_TSENS 温度传感器：读数与五档位、硬件采样率与阈值监测、ETM（`StartSample` 取一次样、`OverLimit` 事件） |
 | `i2s` | [i2s.rs](../esp32p4-hal/src/i2s.rs) | 标准双槽/TDM + PDM 发送（PDM 接收未落地，见 2.1） |
 | `apll` | [apll.rs](../esp32p4-hal/src/apll.rs) | 音频 PLL：系数搜索、regi2c、三步标定 |
 | `ledc` / `rmt` / `pcnt` / `mcpwm` | [ledc.rs](../esp32p4-hal/src/ledc.rs) · [rmt.rs](../esp32p4-hal/src/rmt.rs) · [pcnt.rs](../esp32p4-hal/src/pcnt.rs) · [mcpwm.rs](../esp32p4-hal/src/mcpwm.rs) | PWM 家族全功能，RMT 通道 3/7 支持 GDMA，MCPWM 无剩余 |
@@ -53,7 +53,7 @@
 | `sdhost` | SDIO（CMD52/53 + 卡中断）；UHS-I（1.8 V/SDR50/104）、MMC 8 位、卡检测/写保护引脚这三项暂不具备条件 | SDIO 需一块 SDIO 外设卡（卡槽里的存储卡不算：其 CSD 命令类 `0x5b5` 无 I/O 模式类，`CMD5` 也无 I/O 电压窗口；P4 自身没有 SDIO 从设备控制器）；UHS-I 需 1.8 V 供电与电平切换，8 位 MMC 需 8 位卡与走线，检测引脚需板上有该信号（CMD6 高速模式与 CSD 写保护位已完成） |
 | `adc` | LP ADC（LP 域自己的 one-shot 与阈值唤醒；HP 侧 ADC1/ADC2 的 one-shot、扫描、连续、滤波、阈值都已实现） | LP 核与 LP 外设时钟 |
 | `psram` | 引擎**读** PSRAM 时偶发丢 16–32 字节：40 轮 4080 字节的 PSRAM→SRAM 有 10 轮错（176 字节），PSRAM→PSRAM 12–15 轮（uncached 别名复核后确认 192 字节），SRAM→PSRAM 写方向 0 错，CPU 同条件 memcpy 0 错；丢块起点都在 `64k + 2`、长度为 16 字节倍数，指向 MSPI 读数据通路。已排除：读采样相位（`EXTRA_DUMMY_CYCLELEN` 0–7）、DQS 相位（4 档）× 每引脚 delayline（0–15）64 个组合、burst 宽度（B8–B64）、通道优先级、64 字节对齐。「单向传输正常」来自一次只移动 64 字节的测量，40 轮下不成立。`AxiDma::copy` 对两端都在 PSRAM 的传输返回 `Error::ExternalMemoryCopy`；一端在内部 RAM 的传输照常可用，但读 PSRAM 的那一侧仍可能丢字节 | 按 ESP-IDF 的 DQS + delayline 校准流程重做读采样窗口，或确认这是硬件限制 |
-| `tsens` | ETM 事件/任务、LP 核唤醒路径 | — |
+| `tsens` | LP 核唤醒路径（`LP_TSENS_INTR` 送给 LP 核；`StopSample` 在这颗芯片上没有可观测效果，只能靠 `enable_sampling` 停） | — |
 | `i2s` | PDM2PCM 接收（自发自收帧边界问题，需真麦克风/同步时钟验证） | — |
 | `emac` | MII 接口（现只 RMII）、TX/RX 校验和卸载、PTP 时间戳 | — |
 | `usb` | 主机 TT（高速 HUB 后 FS/LS 拆分事务）、等时传输 | — |

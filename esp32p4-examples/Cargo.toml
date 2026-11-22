@@ -261,6 +261,11 @@ path = "src/mcpwm.rs"
 required-features = ["defmt"]
 
 [[bin]]
+name = "tsens_etm"
+path = "src/tsens_etm.rs"
+required-features = ["defmt"]
+
+[[bin]]
 name = "tsens"
 path = "src/tsens.rs"
 required-features = ["defmt"]

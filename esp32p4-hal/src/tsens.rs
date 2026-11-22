@@ -17,6 +17,8 @@
 //!   ([`TemperatureSensor::update`]) or a fixed range
 //! - Hardware monitoring: sample rate, absolute/delta wake-up mode, high and
 //!   low thresholds and the wake-up interrupt
+//! - ETM: sampling can be started and stopped by any peripheral's event, and
+//!   the over-limit signal can drive any other peripheral's task
 //!
 //! # Example
 //!
@@ -31,8 +33,8 @@
 //!
 //! # Scope
 //!
-//! The sensor's ETM tasks and events are not modelled; neither is the
-//! low-power-core side of the wake-up path.
+//! The low-power-core side of the wake-up path is not modelled; the monitor's
+//! interrupt and its ETM event are.
 
 use esp32p4_pac::{LP_PERI, LP_TSENS};
 
@@ -248,6 +250,15 @@ impl TemperatureSensor {
         }
     }
 
+    /// Whether the hardware's own sampling is running.
+    ///
+    /// The ETM's start and stop tasks write this same bit, so a caller that
+    /// hands the sensor to the matrix can watch it here.
+    #[inline]
+    pub fn sampling(&self) -> bool {
+        self.regs().ctrl.sample_en()
+    }
+
     /// Sets the monitoring thresholds, in raw sensor units.
     ///
     /// In absolute mode they are compared against the reading, in delta mode
@@ -311,6 +322,57 @@ impl TemperatureSensor {
         } else {
             self.regs().int_ena.clr_cocpu_tsens_wake_int_ena();
         }
+    }
+}
+
+/// A task the ETM matrix can run on the sensor.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum Task {
+    /// Takes one sample, which is what the monitor's thresholds and the
+    /// over-limit event react to.
+    ///
+    /// It does *not* touch `SAMPLE_EN`: measured on this chip, a start task
+    /// with a window the current reading already violates latches the
+    /// over-limit interrupt while [`sampling`](TemperatureSensor::sampling)
+    /// stays `false`. Continuous monitoring stays with
+    /// [`enable_sampling`](TemperatureSensor::enable_sampling).
+    StartSample,
+    /// Ends the sample [`StartSample`](Self::StartSample) started.
+    ///
+    /// This sensor has no state bit or continuous mode for the task to switch,
+    /// so it has no observable effect on its own: it neither clears
+    /// `SAMPLE_EN` nor stops the hardware's own sampling.
+    StopSample,
+}
+
+impl From<Task> for crate::etm::TaskId {
+    fn from(task: Task) -> Self {
+        // `TMPSNSR_TASK_*` in the SoC's ETM signal table.
+        Self::new(match task {
+            Task::StartSample => 165,
+            Task::StopSample => 166,
+        })
+    }
+}
+
+/// An event the sensor hands to the matrix.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum Event {
+    /// A monitored sample left the window, in absolute mode, or moved by more
+    /// than the thresholds between two samples, in delta mode. Needs
+    /// [`enable_monitoring`](TemperatureSensor::enable_monitoring) and
+    /// [`enable_sampling`](TemperatureSensor::enable_sampling).
+    OverLimit,
+}
+
+impl From<Event> for crate::etm::EventId {
+    fn from(event: Event) -> Self {
+        // `TMPSNSR_EVT_OVER_LIMIT`.
+        Self::new(match event {
+            Event::OverLimit => 148,
+        })
     }
 }
 

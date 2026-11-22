@@ -64,6 +64,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `adc_scan` | ADC1 样式表扫描：两个通道经 GDMA-AHB 交替采样 32 个样本，打印样本数与读数 |
 | `adc_continuous` | ADC1 连续采样：20 kSa/s 灌进八帧描述符环，PWM 方波（GPIO20→GPIO16 跳线）验采样率、占空比与频率 |
 | `tsens` | 温度传感器：每秒打印一次芯片温度，自动选择测量档位 |
+| `tsens_etm` | 温度传感器的 ETM：`SYSTIMER` 发 `StartSample` 取一次样、`OverLimit` 事件把 GPIO2 拉高 |
 | `ledc` | LEDC：GPIO2 上扫 0/25/50/75/100 % 占空比并回读波形，再用 100 步渐变拉到满占空比 |
 | `rmt` | RMT：GPIO2 上自发自收一段 WS2812 波形，逐脉冲比对电平与时长 |
 | `rmt_dma` | RMT + GDMA：4800 个编码的 WS2812 帧（48 倍于通道 RAM）经 GDMA 发、经 GDMA 收，逐编码比对 |
@@ -1338,6 +1339,28 @@ loop {
 并且五个档位各自换算出的温度互相吻合（24.0 / 24.0 / 23.8 / 24.4 / 24.6 °C），说明档位
 的 DAC 值与 offset 表是对的；把窗口设成永远越界时监测中断能正确置位并报告是「超过上限」。
 
+### ETM：采样与越界信号
+
+传感器在事件任务矩阵里只有三个信号，两个方向各占一部分：
+
+| 方向 | 信号 |
+|------|------|
+| 任务（别人触发传感器） | `Task::StartSample`（`TMPSNSR_TASK_START_SAMPLE`）、`Task::StopSample`（`TMPSNSR_TASK_STOP_SAMPLE`） |
+| 事件（传感器触发别人） | `Event::OverLimit`（`TMPSNSR_EVT_OVER_LIMIT`） |
+
+上板实测的行为与手册的字面描述不完全一致，两条都值得记下来：
+
+- **`StartSample` 只取一次样**，不碰 `SAMPLE_EN`。把窗口设成当前读数已经越界、连续采样
+  关掉，再用 `SYSTIMER` 发一次 `StartSample`，越界中断随即置位，而 `sampling()` 仍是
+  `false`。想开连续监测还是得走 `enable_sampling()`。
+- **`StopSample` 没有任何可观测效果**：既不清 `SAMPLE_EN`，也不停连续监测（发完 20 ms 后中断
+  仍照常置位）。它大概只结束 `StartSample` 启的那一次采样，而这次采样在微秒级就完成了。
+- **`OverLimit` 事件正常**：接 `EtmTask::Set(pin)` 后，连续监测一越界引脚就抬起来，
+  中断也同时 latched，两者是同一个触发源。
+
+示例 [`tsens_etm`](esp32p4-examples/src/tsens_etm.rs) 把任务与事件两个方向都跑一遍；
+LP 核唤醒路径（`LP_TSENS_INTR` 送到 LP 核）还没做，见 [roadmap](docs/roadmap.md)。
+
 ## LED PWM（LEDC）
 
 [`ledc`](esp32p4-hal/src/ledc.rs) 是 LEDC：4 个定时器（`XTAL_40M` / `FOSC_20M` / `REF_80M`
@@ -2410,7 +2433,7 @@ espflash save-image --chip esp32p4 \
 - SPI2/SPI3 主机与从机（四种时钟模式、64 字节 CPU 缓冲、GDMA-AXI 驱动的主机 DMA 与半双工
   单向传输）、SD 卡主机（识别、容量、DMA 块读写）、
   ADC1/2 单次转换、HP 数字控制器扫描与 ADC1 连续采样（GDMA 描述符环、IIR 滤波、阈值监控）、
-  温度传感器
+  温度传感器（读数与档位、监测阈值、ETM 采样任务与越界事件）
 - GDMA-AHB 与 GDMA-AXI 双控制器（描述符链/环、按源中断、优先级与突发宽度、owner 检查、
   存储到存储拷贝、双方向硬件 CRC）
 - PWM 家族：LEDC（4 定时器 × 8 通道、渐变）、RMT（4 发 4 收脉冲波形）、PCNT（4 单元计数）、
