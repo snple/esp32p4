@@ -997,9 +997,10 @@ if let Some(bound) = adc.monitor_state(MonitorIndex::Zero) {
 [`dma`](esp32p4-hal/src/dma/mod.rs) 覆盖两套 GDMA 控制器：GDMA-AHB（`AHB_DMA`，基址
 `0x5008_5000`）与 GDMA-AXI（`AXI_DMA`，`0x5008_a000`）。两者共用描述符格式、通道模型与
 中断位，所以外设驱动只认 [`TransmitChannel`]/[`ReceiveChannel`] 两个 trait——UART 与 I2S
-用 AHB 通道，SPI 用 AXI 通道，驱动代码没有差别。P4 上还有第三套独立引擎：DesignWare
-`DMA`（[`DwGdma`](esp32p4-hal/src/dma/dw.rs)，CSI 摄像头的搬运主力），走自己的块/链表格式，
-见下面的「DW_GDMA」。
+用 AHB 通道，SPI 用 AXI 通道，驱动代码没有差别。P4 上还有第三套独立引擎 DesignWare
+`DMA`（[`DwGdma`](esp32p4-hal/src/dma/dw.rs)）：它的主场是 MIPI CSI/DSI 与 ISP，那些外设本身
+不在本仓库范围内（见 roadmap 第 6 节），所以这里只实现与图像无关的通用部分——LLI 块传输与
+存储到存储拷贝，作为需要高带宽时的可选路径，见下面的「DW_GDMA」。
 
 - 每个控制器 3 组发送/接收通道：AHB 是 `TxChannel<0..2>`/`RxChannel<0..2>`（可选接
   I3C / UHCI（UART0/1 的 DMA 前端）/ I2S0–2 / ADC / RMT，或用 `Dummy-n` 与配对的另一个
@@ -1069,7 +1070,11 @@ dma.copy(MemChannel::Ch1, &src, &mut dst, &descriptors).unwrap();
 
 第三套引擎 `DMA`（[`DwGdma`](esp32p4-hal/src/dma/dw.rs)）是 DesignWare AHB DMA：4 个通道，
 一次传输是"一个块"，寄存器只有 SAR/DAR/BLOCK_TS/CTL 四个，没有描述符链——**但数据实际由
-内存里的链表项（LLI，64 字节）驱动**：
+内存里的链表项（LLI，64 字节）驱动**。
+
+范围说明：这套引擎主要服务 MIPI CSI/DSI 与 ISP，而这三个外设属于 roadmap 第 6 节的排除项，
+所以驱动只覆盖通用部分（mem2mem + LLI 块），**不做**外设握手角色（CSI/DSI/ISP）与多块类型；
+它不是"没有它写不出固件"的模块，GDMA-AHB/AXI 已有 mem2mem，这里提供的是带宽高五倍的选项：
 
 ```rust
 let dma = DwGdma::init(dp.DMA, &clkrst);
