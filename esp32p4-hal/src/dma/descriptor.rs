@@ -9,6 +9,13 @@
 //!   word 2   next descriptor address, 0 to end the list
 //! ```
 //!
+//! GDMA-AXI fetches a descriptor as two 64-bit words, so it needs each one to be
+//! 8-byte aligned; the reference driver uses a 16-byte descriptor for that
+//! engine. [`Descriptor`] is padded to 16 bytes and carries `align(8)` so the
+//! same array works with both controllers — the extra word is never read, and
+//! the list is always walked through the `next` pointers, so the wider stride
+//! changes nothing for GDMA-AHB.
+//!
 //! `owner` flips between CPU and engine: software sets it to [`Owner::Dma`]
 //! before mounting a descriptor and the engine clears it when it is done.
 //!
@@ -99,11 +106,13 @@ impl Word {
 /// The words are accessed through `&self`: the engine changes `length`, `owner`
 /// and the EOF flags behind the core's back, so a [`Chain`] can hand out shared
 /// references to a caller-owned array.
-#[repr(C, align(4))]
+#[repr(C, align(8))]
 pub struct Descriptor {
     word0: Word,
     buffer: Word,
     next: Word,
+    /// Padding to the 16-byte descriptor GDMA-AXI fetches; never touched.
+    _reserved: Word,
 }
 
 impl Descriptor {
@@ -113,6 +122,7 @@ impl Descriptor {
             word0: Word::new(0),
             buffer: Word::new(0),
             next: Word::new(0),
+            _reserved: Word::new(0),
         }
     }
 

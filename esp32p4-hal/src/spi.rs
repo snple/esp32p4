@@ -2,9 +2,19 @@
 //!
 //! GP-SPI2 and GP-SPI3 are the two SPI controllers the application can use;
 //! SPI0/SPI1 and the PSRAM controllers belong to the flash/PSRAM interface.
-//! Both are driven here with **CPU transfers**: the core fills and drains the
-//! controller's 64-byte buffer (`SPI_W0`..`SPI_W15`) and starts each transaction
-//! itself. DMA transfers need GDMA-AXI, which this HAL does not model yet.
+//!
+//! Two transfer paths are available:
+//!
+//! - **CPU transfers** ([`Spi2::transfer`] and friends): the core fills and
+//!   drains the controller's 64-byte buffer (`SPI_W0`..`SPI_W15`) and starts
+//!   each transaction itself. No DMA channel is needed, and the length is
+//!   limited to [`MAX_TRANSFER`] per chunk.
+//! - **DMA transfers** ([`Spi2::transfer_dma`], [`Spi2::write_dma`],
+//!   [`Spi2::read_dma`]): GDMA-AXI moves the data, so the length is bounded
+//!   only by the descriptor chain, and the CPU is free while the bytes shift.
+//!   The master still drives the transaction and CS; the channels have to be
+//!   connected to [`AxiPeripheral::Spi2`] / [`AxiPeripheral::Spi3`] by the
+//!   driver, so callers only supply the channels and their descriptors.
 //!
 //! # Features
 //!
@@ -17,6 +27,8 @@
 //!   the 64-byte chunks of one transfer
 //! - Slave: full-duplex CPU transactions, with the length the master clocked
 //!   reported back
+//! - Master DMA in both directions, or one direction at a time in half-duplex
+//!   mode (RX-only then gets its clock without a `0xFF` transmit phase)
 //!
 //! # Pin Mapping
 //!
@@ -44,16 +56,26 @@
 //! spi.transfer(&[0x9f, 0, 0, 0], &mut rx);
 //! ```
 //!
+//! # DMA Buffers
+//!
+//! Buffers handed to the DMA path have to live in internal SRAM and be word
+//! aligned, because GDMA-AXI moves memory in 8-byte bursts. The byte count
+//! itself is honoured — a 1001-byte receive left the bytes behind the buffer
+//! untouched in the tests — so no slack has to be reserved. Descriptors use the
+//! same format and rules as the rest of [`crate::dma`]: one `Descriptor` covers
+//! up to 4095 bytes, and the array has to stay put while the transfer runs.
+//!
 //! # Scope
 //!
-//! Not covered yet: DMA transfers (they go through GDMA-AXI), the 2/4/8-bit
-//! data modes, half duplex and the slave's segmented (DMA) mode. The clock
-//! source is `XTAL`; the PLL source would raise the ceiling from 40 to 80 MHz.
+//! Not covered yet: the 2/4/8-bit data modes, SCT (segmented-configure) and the
+//! slave's DMA/segmented mode. The clock source is `XTAL`; the PLL source would
+//! raise the ceiling from 40 to 80 MHz.
 
 use esp32p4_pac::{HP_SYS_CLKRST, SPI2, SPI3};
 
+use crate::dma::{self, AxiPeripheral, Chain, Descriptor, Owner, ReceiveChannel, TransmitChannel};
 use crate::gpio::{InputSignal, OutputSignal, PinOps};
-use crate::spin;
+use crate::{cache, delay, spin};
 
 /// Bytes the controller's CPU buffer holds, and therefore the longest single
 /// transaction in this driver.
@@ -210,11 +232,26 @@ impl Divider {
     }
 }
 
+/// Waits until `descriptor` is back with software, i.e. the engine stored or
+/// sent the buffer it describes.
+///
+/// The owner bit is the only completion signal that does not depend on which
+/// interrupt bit a direction uses, and it is written back by the engine itself.
+fn wait_for_descriptor(descriptor: &Descriptor, deadline: u64) -> Result<(), dma::Error> {
+    while descriptor.owner() == Owner::Dma {
+        if delay::micros() > deadline {
+            return Err(dma::Error::Timeout);
+        }
+        core::hint::spin_loop();
+    }
+    Ok(())
+}
+
 /// Generates a master type from the shared register layout.
 macro_rules! impl_spi_master {
     (
         $Name:ident, $PAC:ident, $mod:ident, $NUM:literal,
-        clock: $clock:ident,
+        clock: $clock:ident, axi: $axi:ident,
         ck_out: $ck_out:ident, mosi_out: $mosi_out:ident, miso_in: $miso_in:ident, cs_out: $cs_out:ident
     ) => {
         /// SPI master owning the PAC peripheral.
@@ -259,16 +296,7 @@ macro_rules! impl_spi_master {
                     r.spi_clock.write_spi_clkdiv_pre(divider.pre - 1);
                 }
 
-                match config.bit_order {
-                    BitOrder::MsbFirst => {
-                        r.spi_ctrl.write_spi_wr_bit_order(0);
-                        r.spi_ctrl.write_spi_rd_bit_order(0);
-                    }
-                    BitOrder::LsbFirst => {
-                        r.spi_ctrl.write_spi_wr_bit_order(1);
-                        r.spi_ctrl.write_spi_rd_bit_order(1);
-                    }
-                }
+                Self::apply_bit_order(&spi, config.bit_order);
 
                 // Full duplex, CS timing, clock phase.
                 r.spi_user.set_spi_doutdin();
@@ -327,6 +355,12 @@ macro_rules! impl_spi_master {
             /// Switches the clock mode of a configured master.
             pub fn set_mode(&self, mode: Mode) {
                 Self::apply_mode(&self.spi, mode);
+                Self::apply_config(&self.spi);
+            }
+
+            /// Switches the bit order of a configured master.
+            pub fn set_bit_order(&self, order: BitOrder) {
+                Self::apply_bit_order(&self.spi, order);
                 Self::apply_config(&self.spi);
             }
 
@@ -390,6 +424,298 @@ macro_rules! impl_spi_master {
                 });
             }
 
+            // ================================================================
+            // DMA transfers (GDMA-AXI)
+            // ================================================================
+
+            /// Full-duplex DMA transfer of `tx.len()` bytes.
+            ///
+            /// `tx` is clocked out while the master clocks `rx` in, exactly like
+            /// [`transfer`](Self::transfer) but without the 64-byte limit: the
+            /// descriptors carry the data, and one descriptor covers up to 4095
+            /// bytes. `descriptors` is split into a transmit half and a receive
+            /// half, so it needs `2 * ceil(tx.len() / 4095)` entries.
+            ///
+            /// The channels are connected to this SPI instance, and configured
+            /// for descriptor write-back, by this call, so they can be handed
+            /// over without any preparation. They have to belong to
+            /// [`AxiDma`](crate::dma::AxiDma); SPI is not on the AHB controller.
+            ///
+            /// Returns the number of bytes exchanged. `rx` is invalidated in the
+            /// cache after the transfer, so the caller reads what the engine
+            /// stored.
+            ///
+            /// # Errors
+            ///
+            /// [`dma::Error::NotEnoughDescriptors`] if the array is too small,
+            /// the descriptor/FIFO variants if the engine rejects a descriptor,
+            /// and [`dma::Error::Timeout`] if the transaction does not finish
+            /// within `timeout_us`.
+            ///
+            /// # Panics
+            ///
+            /// Panics if the buffers differ in length; use
+            /// [`write_dma`](Self::write_dma) or [`read_dma`](Self::read_dma)
+            /// for a one-way transfer.
+            pub fn transfer_dma(
+                &self,
+                tx_dma: &impl TransmitChannel,
+                rx_dma: &impl ReceiveChannel,
+                tx: &[u8],
+                rx: &mut [u8],
+                descriptors: &[Descriptor],
+                timeout_us: u64,
+            ) -> Result<usize, dma::Error> {
+                assert_eq!(
+                    tx.len(),
+                    rx.len(),
+                    "a full-duplex DMA transfer needs equally long buffers"
+                );
+                let len = tx.len();
+                if len == 0 {
+                    return Ok(0);
+                }
+                let chunks = len.div_ceil(dma::descriptor::MAX_LEN);
+                if descriptors.len() < 2 * chunks {
+                    return Err(dma::Error::NotEnoughDescriptors {
+                        needed: 2 * chunks,
+                        available: descriptors.len(),
+                    });
+                }
+
+                let (tx_descriptors, rx_descriptors) = descriptors.split_at(chunks);
+                let tx_chain = Chain::new(tx_descriptors);
+                let rx_chain = Chain::new(rx_descriptors);
+                let tx_used = tx_chain.mount_eof(tx.as_ptr() as *mut u8, len)?;
+                let rx_used = rx_chain.mount(rx.as_mut_ptr(), len)?;
+
+                self.dma_setup(true, true, len as u32 * 8);
+                Self::prepare_tx_dma(tx_dma, AxiPeripheral::$axi);
+                Self::prepare_rx_dma(rx_dma, AxiPeripheral::$axi);
+                cache::writeback(tx.as_ptr().cast(), len);
+                cache::writeback_invalidate(rx.as_mut_ptr().cast(), len);
+
+                let deadline = delay::micros() + timeout_us;
+                rx_dma.start_chain(rx_chain.head());
+                tx_dma.start_chain(tx_chain.head());
+
+                let result = self
+                    .run_dma(deadline)
+                    .and_then(|()| wait_for_descriptor(&tx_descriptors[tx_used - 1], deadline))
+                    .and_then(|()| wait_for_descriptor(&rx_descriptors[rx_used - 1], deadline));
+                if result.is_err() {
+                    tx_dma.stop_chain();
+                    tx_dma.reset_channel();
+                    rx_dma.stop_chain();
+                    rx_dma.reset_channel();
+                }
+                self.end_dma();
+                if result.is_ok() {
+                    cache::invalidate(rx.as_mut_ptr().cast(), len);
+                }
+                result.map(|()| len)
+            }
+
+            /// Sends `tx` through the DMA engine and returns once it is out.
+            ///
+            /// Half duplex: only the transmit phase runs, so the controller
+            /// needs no receive descriptor and the clock stops after
+            /// `tx.len()` bytes. `descriptors` needs `ceil(tx.len() / 4095)`
+            /// entries.
+            ///
+            /// # Errors
+            ///
+            /// See [`transfer_dma`](Self::transfer_dma).
+            pub fn write_dma(
+                &self,
+                dma: &impl TransmitChannel,
+                tx: &[u8],
+                descriptors: &[Descriptor],
+                timeout_us: u64,
+            ) -> Result<(), dma::Error> {
+                if tx.is_empty() {
+                    return Ok(());
+                }
+                let chain = Chain::new(descriptors);
+                let used = chain.mount_eof(tx.as_ptr() as *mut u8, tx.len())?;
+
+                self.dma_setup(true, false, tx.len() as u32 * 8);
+                Self::prepare_tx_dma(dma, AxiPeripheral::$axi);
+                cache::writeback(tx.as_ptr().cast(), tx.len());
+
+                let deadline = delay::micros() + timeout_us;
+                dma.start_chain(chain.head());
+
+                let result = self
+                    .run_dma(deadline)
+                    .and_then(|()| wait_for_descriptor(&descriptors[used - 1], deadline));
+                if result.is_err() {
+                    dma.stop_chain();
+                    dma.reset_channel();
+                }
+                self.end_dma();
+                result
+            }
+
+            /// Clocks `rx.len()` bytes in through the DMA engine.
+            ///
+            /// Half duplex: only the receive phase runs, so nothing has to be
+            /// sent as padding and `descriptors` needs
+            /// `ceil(rx.len() / 4095)` entries.
+            ///
+            /// The buffer has to be word aligned; see the
+            /// [module docs](self#dma-buffers).
+            ///
+            /// # Errors
+            ///
+            /// See [`transfer_dma`](Self::transfer_dma).
+            pub fn read_dma(
+                &self,
+                dma: &impl ReceiveChannel,
+                rx: &mut [u8],
+                descriptors: &[Descriptor],
+                timeout_us: u64,
+            ) -> Result<(), dma::Error> {
+                let len = rx.len();
+                if len == 0 {
+                    return Ok(());
+                }
+                let chain = Chain::new(descriptors);
+                let used = chain.mount(rx.as_mut_ptr(), len)?;
+
+                self.dma_setup(false, true, len as u32 * 8);
+                Self::prepare_rx_dma(dma, AxiPeripheral::$axi);
+                cache::writeback_invalidate(rx.as_mut_ptr().cast(), len);
+
+                let deadline = delay::micros() + timeout_us;
+                dma.start_chain(chain.head());
+
+                let result = self
+                    .run_dma(deadline)
+                    .and_then(|()| wait_for_descriptor(&descriptors[used - 1], deadline));
+                if result.is_err() {
+                    dma.stop_chain();
+                    dma.reset_channel();
+                }
+                self.end_dma();
+                if result.is_ok() {
+                    cache::invalidate(rx.as_mut_ptr().cast(), len);
+                }
+                result
+            }
+
+            /// Programs the controller for one DMA transaction.
+            ///
+            /// `bits` is the length of the enabled phases, `tx`/`rx` select
+            /// them. The registers are shadowed, so the caller still has to
+            /// apply them through [`apply_config`](Self::apply_config) before
+            /// starting the transaction.
+            fn dma_setup(&self, tx: bool, rx: bool, bits: u32) {
+                let r = self.regs();
+                // A DMA transfer is one transaction: there is no chunk boundary
+                // the select line would have to stay low across.
+                r.spi_misc.clr_spi_cs_keep_active();
+
+                // Full duplex shifts both ways at once. A one-way transfer has
+                // to switch to half duplex: in full duplex the clock waits for
+                // a transmit byte that a receive-only transfer never provides.
+                if tx && rx {
+                    r.spi_user.set_spi_doutdin();
+                } else {
+                    r.spi_user.clr_spi_doutdin();
+                }
+                if tx {
+                    r.spi_user.set_spi_usr_mosi();
+                    // Do not start the clock before the engine delivered the
+                    // first byte.
+                    r.spi_slave.set_spi_mst_fd_wait_dma_tx_data();
+                } else {
+                    r.spi_user.clr_spi_usr_mosi();
+                    r.spi_slave.clr_spi_mst_fd_wait_dma_tx_data();
+                }
+                if rx {
+                    r.spi_user.set_spi_usr_miso();
+                } else {
+                    r.spi_user.clr_spi_usr_miso();
+                }
+                r.spi_ms_dlen.write_spi_ms_data_bitlen(bits - 1);
+
+                // Both DMA FIFOs keep their pointers across transactions.
+                r.spi_dma_conf.trigger_spi_dma_afifo_rst();
+                r.spi_dma_conf.trigger_spi_rx_afifo_rst();
+                // The engine's EOF comes from the end of the transaction, not
+                // from a byte counter, and the master never segments.
+                r.spi_dma_conf.clr_spi_rx_eof_en();
+                r.spi_dma_conf.clr_spi_dma_slv_seg_trans_en();
+                if tx {
+                    r.spi_dma_conf.set_spi_dma_tx_ena();
+                } else {
+                    r.spi_dma_conf.clr_spi_dma_tx_ena();
+                }
+                if rx {
+                    r.spi_dma_conf.set_spi_dma_rx_ena();
+                } else {
+                    r.spi_dma_conf.clr_spi_dma_rx_ena();
+                }
+                r.spi_dma_int_clr.write_bits(u32::MAX);
+            }
+
+            /// Connects and configures a transmit channel for SPI traffic.
+            fn prepare_tx_dma(dma: &impl TransmitChannel, peripheral: AxiPeripheral) {
+                dma.connect_to(peripheral);
+                dma.check_owner(true);
+                dma.descriptor_burst(true);
+                // Hand each descriptor back once its buffer is out, and report
+                // EOF only after the controller shifted the last byte.
+                dma.auto_writeback(true);
+                dma.eof_till_data_popped(true);
+                dma.clear_all_interrupts();
+                dma.reset_channel();
+            }
+
+            /// Connects and configures a receive channel for SPI traffic.
+            fn prepare_rx_dma(dma: &impl ReceiveChannel, peripheral: AxiPeripheral) {
+                dma.connect_to(peripheral);
+                dma.check_owner(true);
+                dma.descriptor_burst(true);
+                dma.clear_all_interrupts();
+                dma.reset_channel();
+            }
+
+            /// Applies the configuration, starts the transaction and waits for
+            /// the controller to finish shifting.
+            fn run_dma(&self, deadline: u64) -> Result<(), dma::Error> {
+                let r = self.regs();
+                Self::apply_config(&self.spi);
+                r.spi_cmd.set_spi_usr();
+                while !r.spi_dma_int_raw.spi_trans_done_int_raw() {
+                    if delay::micros() > deadline {
+                        return Err(dma::Error::Timeout);
+                    }
+                    core::hint::spin_loop();
+                }
+                Ok(())
+            }
+
+            /// Disables the DMA paths again, so the next CPU transfer sees an
+            /// idle controller.
+            fn end_dma(&self) {
+                let r = self.regs();
+                r.spi_dma_conf.clr_spi_dma_tx_ena();
+                r.spi_dma_conf.clr_spi_dma_rx_ena();
+                r.spi_dma_int_clr.write_bits(u32::MAX);
+            }
+
+            /// Programs the bit order of both directions.
+            fn apply_bit_order(spi: &$PAC, order: BitOrder) {
+                let bits = match order {
+                    BitOrder::MsbFirst => 0,
+                    BitOrder::LsbFirst => 1,
+                };
+                spi.spi_ctrl.write_spi_wr_bit_order(bits);
+                spi.spi_ctrl.write_spi_rd_bit_order(bits);
+            }
+
             /// Programs the clock mode.
             fn apply_mode(spi: &$PAC, mode: Mode) {
                 match mode {
@@ -439,6 +765,15 @@ macro_rules! impl_spi_master {
                     None => tx.len(),
                 };
                 let r = self.regs();
+
+                // The CPU path fills and drains the same FIFOs a DMA transfer
+                // would, so make sure no DMA path is still attached to them.
+                r.spi_dma_conf.clr_spi_dma_tx_ena();
+                r.spi_dma_conf.clr_spi_dma_rx_ena();
+
+                // Full duplex again: a half-duplex DMA transfer leaves the
+                // controller in the one-way mode.
+                r.spi_user.set_spi_doutdin();
 
                 // The clock only runs while data is available to shift out, so
                 // the transmit phase stays enabled even for a read: those bytes
@@ -560,7 +895,7 @@ impl_spi_master!(
     SPI2,
     spi2,
     2,
-    clock: clock_spi2,
+    clock: clock_spi2, axi: Spi2,
     ck_out: SPI2_CK_PAD_OUT,
     mosi_out: SPI2_D_PAD_OUT,
     miso_in: SPI2_Q_PAD_IN,
@@ -572,7 +907,7 @@ impl_spi_master!(
     SPI3,
     spi3,
     3,
-    clock: clock_spi3,
+    clock: clock_spi3, axi: Spi3,
     ck_out: SPI3_CK_PAD_OUT,
     mosi_out: SPI3_D_PAD_OUT,
     miso_in: SPI3_Q_PAD_IN,

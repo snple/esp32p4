@@ -9,6 +9,7 @@
 //! # Features
 //!
 //! - Polled transmit and receive, blocking or not
+//! - DMA transmit and receive through the UHCI and the GDMA-AHB ([`Uhci`])
 //! - 5-8 data bits, 1 / 1.5 / 2 stop bits, even/odd parity
 //! - Baud rates from a selectable clock source: crystal (40 MHz),
 //!   `RC_FAST` (17.5 MHz) or `PLL_F80M` (80 MHz, the reset default and the one
@@ -50,15 +51,58 @@
 //!     }
 //! }
 //! ```
+//!
+//! # DMA
+//!
+//! All five UARTs reach the GDMA through one [`Uhci`], the packet engine that
+//! sits between the GDMA-AHB channels and the UART FIFOs. Its
+//! `CONF0.UART_SEL` picks the port, so one UART at a time moves data by DMA; a
+//! program that uses two takes the same handle to both, and every transfer
+//! re-attaches it.
+//!
+//! ```ignore
+//! use esp32p4_hal::dma::{AhbDma, Descriptor};
+//! use esp32p4_hal::uart::Uhci;
+//!
+//! let dma = AhbDma::init(dp.AHB_DMA, &dp.HP_SYS_CLKRST);
+//! let uhci = Uhci::init(dp.UHCI0, &dp.HP_SYS_CLKRST);
+//! let descriptors = [const { Descriptor::new() }; 2];
+//!
+//! uart.write_dma(&uhci, &dma.tx_channel::<0>(), b"hello", &descriptors, 10_000)?;
+//!
+//! let mut buffer = [0u8; 5];
+//! uart.read_dma(&uhci, &dma.rx_channel::<0>(), &mut buffer, &descriptors, 10_000)?;
+//! ```
+//!
+//! The engine is packet oriented: it only hands bytes to the DMA when a packet
+//! ends, and the end has to come from one of its framing conditions. This
+//! module frames receives by length, the only byte-exact one, which makes
+//! [`Uart1::read_dma`] the DMA twin of [`Uart1::read_timeout`]: exactly
+//! `buffer.len()` bytes, or [`Error::Timeout`]. One receive is therefore at
+//! most [`DMA_MAX_PACKET`] bytes; split longer transfers.
+//!
+//! Descriptors and buffers have to live in memory the engine reaches — internal
+//! SRAM for now, see [`crate::dma`] — and one descriptor covers 4095 bytes.
+//! [`Uart1::rx_begin_dma`] / [`Uart1::tx_begin_dma`] arming one direction and
+//! waiting later is what lets a receive run while the transmit is still going:
+//! with a 128-byte FIFO, draining after a large transmission would lose it.
 
-use esp32p4_pac::{HP_SYS_CLKRST, UART0, UART1, UART2, UART3, UART4};
+use esp32p4_pac::{HP_SYS_CLKRST, UART0, UART1, UART2, UART3, UART4, UHCI0, uhci0};
 use pastey::paste;
 
+use crate::dma::{self, Descriptor, Peripheral, ReceiveChannel, TransmitChannel};
 use crate::gpio::{InputSignal, OutputSignal, PinOps};
 use crate::spin;
 
 /// Number of entries in the TX and RX FIFOs.
 const FIFO_DEPTH: u32 = 128;
+
+/// Largest buffer one DMA receive can describe.
+///
+/// The decoder ends a packet after `UHCI_PKT_THRES` bytes, and that field is 13
+/// bits wide. Longer transfers are split by the caller.
+pub const DMA_MAX_PACKET: usize = 0x1fff;
+
 /// Width of the `clkdiv_sync.clkdiv` field, in bits: the largest integer
 /// divisor the fractional divider supports.
 const CLKDIV_MAX: u64 = 0xfff;
@@ -261,6 +305,13 @@ pub enum Error {
     Break,
     /// The caller's time limit expired before the transfer finished.
     Timeout,
+    /// A DMA transfer failed; see [`crate::dma::Error`].
+    Dma(dma::Error),
+    /// A DMA receive asked for a buffer the decoder cannot frame.
+    ///
+    /// Its packet counter is 13 bits wide, so one receive is at most
+    /// [`DMA_MAX_PACKET`] bytes; split larger transfers.
+    BufferTooLong,
 }
 
 /// Interrupt sources.
@@ -342,6 +393,181 @@ impl BaudDivider {
         let divisor = u64::from(self.predivider) * u64::from(self.integer * 16 + self.fraction);
         ((u64::from(source_hz) << 4) / divisor) as u32
     }
+}
+
+/// The UHCI: the DMA front-end the five UARTs share.
+///
+/// `UHCI0` sits between a GDMA-AHB channel pair and the UART FIFOs: the
+/// transmit channel feeds the TX FIFO, the receive channel drains the RX FIFO
+/// into memory, and `CONF0.UART_SEL` decides which of UART0-UART4 is connected.
+/// One UART at a time can move data by DMA, and it needs one transmit and one
+/// receive channel from [`crate::dma::AhbDma`].
+///
+/// The handle only owns the UHCI registers; the channels stay with whoever
+/// called [`AhbDma::tx_channel`](crate::dma::AhbDma::tx_channel) /
+/// [`rx_channel`](crate::dma::AhbDma::rx_channel), and are passed to the
+/// transfers below. Reattaching to another UART is part of every transfer, so a
+/// program that uses two UARTs only has to wave the handle around.
+///
+/// # Example
+///
+/// ```ignore
+/// use esp32p4_hal::dma::{AhbDma, Descriptor};
+/// use esp32p4_hal::uart::{Uart1, Uhci};
+///
+/// let dma = AhbDma::init(dp.AHB_DMA, &dp.HP_SYS_CLKRST);
+/// let uhci = Uhci::init(dp.UHCI0, &dp.HP_SYS_CLKRST);
+/// let descriptors = [const { Descriptor::new() }; 2];
+///
+/// let mut buffer = [0u8; 64];
+/// uart.write_dma(&uhci, &dma.tx_channel::<0>(), b"hello", &descriptors, 10_000)?;
+/// let received = uart.read_dma(&uhci, &dma.rx_channel::<0>(), &mut buffer, &descriptors, 10_000)?;
+/// ```
+pub struct Uhci {
+    uhci: UHCI0,
+}
+
+impl Uhci {
+    /// Takes ownership of the UHCI and brings it up for raw byte streaming.
+    ///
+    /// Enables the bus and register clocks, pulses the reset and clears the
+    /// HCI framing controls: no separator characters, no packet headers, no
+    /// CRC. Both the encoder and the decoder then pass bytes through unchanged.
+    pub fn init(uhci: UHCI0, clkrst: &HP_SYS_CLKRST) -> Self {
+        clkrst.soc_clk_ctrl1.set_reg_uhci_sys_clk_en();
+        clkrst.soc_clk_ctrl2.set_reg_uhci_apb_clk_en();
+        clkrst.hp_rst_en1.set_reg_rst_en_uhci();
+        clkrst.hp_rst_en1.clr_reg_rst_en_uhci();
+
+        let this = Self { uhci };
+        this.configure();
+        this
+    }
+
+    /// Resets the whole controller and brings it back to the [`init`](Self::init)
+    /// state.
+    ///
+    /// Drops the encoder and decoder state, including the bytes a receive had
+    /// already taken out of the UART FIFO; the port selection goes back to
+    /// UART0. [`rx_wait_dma`](Uart1::rx_wait_dma) calls this when a receive
+    /// gives up mid-packet.
+    pub fn reset(&self) {
+        // SAFETY: the reset line is a single write-only bit that nothing else
+        // in this HAL takes ownership of, and the clock gate is already open.
+        let clkrst = unsafe { HP_SYS_CLKRST::steal() };
+        clkrst.hp_rst_en1.set_reg_rst_en_uhci();
+        clkrst.hp_rst_en1.clr_reg_rst_en_uhci();
+        self.configure();
+    }
+
+    /// Programs the framing controls for a raw byte stream.
+    fn configure(&self) {
+        let r = self.regs();
+        // The register file needs its clock even when no transfer runs.
+        r.conf0.write_bits(0);
+        r.conf0.set_clk_en();
+        r.conf1.write_bits(0);
+        // A separator character would make the decoder drop bytes; the
+        // reference driver disables all escaping for the same reason.
+        r.escape_conf.write_bits(0);
+        r.esc_conf0.write_bits(0);
+    }
+
+    /// Obtains a handle without ownership checks.
+    ///
+    /// # Safety
+    ///
+    /// The UHCI must have been initialised with [`init`](Self::init), and the
+    /// caller must not start a transfer concurrently with the owner.
+    #[inline]
+    pub unsafe fn steal() -> crate::Steal<Self> {
+        crate::Steal(Self {
+            uhci: unsafe { UHCI0::steal() },
+        })
+    }
+
+    /// The underlying register block.
+    #[inline]
+    pub fn regs(&self) -> &uhci0::RegisterBlock {
+        &self.uhci
+    }
+
+    /// Returns the PAC peripheral.
+    #[inline]
+    pub fn release(self) -> UHCI0 {
+        self.uhci
+    }
+
+    /// The UART number the UHCI is attached to, `0` to `4`.
+    #[inline]
+    pub fn attached_uart(&self) -> u8 {
+        self.regs().conf0.uart_sel() as u8
+    }
+
+    /// Points the UHCI at `uart`.
+    ///
+    /// Nothing is reset here: a receive armed on this UART has to survive the
+    /// transmit call that follows it. Each direction resets its own state
+    /// machine when it is armed.
+    fn attach(&self, uart: u8) {
+        assert!(uart <= 4, "the UHCI only drives UART0-UART4");
+        let r = self.regs();
+        if r.conf0.uart_sel() == u32::from(uart) {
+            return;
+        }
+        r.conf0.write_uart_sel(u32::from(uart));
+    }
+
+    /// Restarts the decoder, dropping a half-received packet.
+    ///
+    /// A receive that timed out mid-packet leaves its byte counter loaded;
+    /// without this the next packet would be assembled from the old bytes.
+    #[inline]
+    fn reset_decoder(&self) {
+        let conf0 = &self.regs().conf0;
+        conf0.set_rx_rst();
+        conf0.clr_rx_rst();
+    }
+
+    /// Restarts the encoder.
+    #[inline]
+    fn reset_encoder(&self) {
+        let conf0 = &self.regs().conf0;
+        conf0.set_tx_rst();
+        conf0.clr_tx_rst();
+    }
+
+    /// Makes the decoder end a receive packet after exactly `len` bytes.
+    ///
+    /// The decoder is packet oriented: it only hands bytes to the DMA when a
+    /// packet ends, and the end comes from one of its EOF conditions. A length
+    /// is the only one that is byte-exact — the idle detector can close a packet
+    /// one byte early — so receives are framed by `len`, and `HEAD_EN` stays off
+    /// so the configured value is used rather than a header.
+    #[inline]
+    fn set_rx_packet_length(&self, len: usize) {
+        let r = self.regs();
+        r.pkt_thres.write_pkt_thrs(len as u32);
+        r.conf0.set_len_eof_en();
+        r.conf0.clr_uart_idle_eof_en();
+    }
+}
+
+/// Bytes the receive engine stored, up to and including the descriptor that
+/// carries the EOF flag.
+///
+/// The engine writes the byte count into each finished descriptor's length
+/// field, so the sum is what arrived; descriptors past the EOF are still
+/// mounted with their capacity and must not be counted.
+fn received_bytes(chain: &dma::Chain<'_>) -> usize {
+    let mut total = 0;
+    for descriptor in chain.descriptors() {
+        total += descriptor.length();
+        if descriptor.eof() {
+            break;
+        }
+    }
+    total
 }
 
 /// Generates one UART type from the shared register layout.
@@ -633,6 +859,259 @@ macro_rules! impl_uart {
                 Ok(())
             }
 
+            /// Drops whatever sits in the receive FIFO.
+            ///
+            /// Used after a DMA receive gave up: those bytes belong to a packet
+            /// the caller will never see, and leaving them would prepend them to
+            /// the next one.
+            fn reset_rx_fifo(&self) {
+                let conf0 = &self.regs().conf0_sync;
+                // `conf0_sync` is shadowed and the reset line is level
+                // sensitive: the pulse only happens if each edge is applied.
+                conf0.set_rxfifo_rst();
+                self.sync();
+                conf0.clr_rxfifo_rst();
+                self.sync();
+            }
+
+            // ================================================================
+            // DMA transfers (UHCI + GDMA)
+            // ================================================================
+
+            /// Points the UHCI's transmit channel at `buffer` and starts it.
+            ///
+            /// Paired with [`tx_wait_dma`](Self::tx_wait_dma); most callers
+            /// want [`write_dma`](Self::write_dma) instead. The buffer belongs
+            /// to the engine until the wait returns, and needs
+            /// [`descriptors`](Self::write_dma) for its `4095`-byte chunks.
+            pub fn tx_begin_dma(
+                &self,
+                uhci: &Uhci,
+                dma: &impl TransmitChannel,
+                buffer: &[u8],
+                descriptors: &[Descriptor],
+            ) -> Result<(), Error> {
+                if buffer.is_empty() {
+                    return Ok(());
+                }
+                uhci.attach(Self::NUM);
+                uhci.reset_encoder();
+
+                let chain = dma::Chain::new(descriptors);
+                // The trailing EOF is what tells the engine the phase ended.
+                chain
+                    .mount_eof(buffer.as_ptr() as *mut u8, buffer.len())
+                    .map_err(Error::Dma)?;
+
+                dma.connect_to(Peripheral::Uhci);
+                dma.reset_channel();
+                dma.clear_all_interrupts();
+                crate::cache::writeback(buffer.as_ptr().cast(), buffer.len());
+                dma.start_chain(chain.head());
+                Ok(())
+            }
+
+            /// Waits for the transmission started by
+            /// [`tx_begin_dma`](Self::tx_begin_dma) to leave the wire.
+            ///
+            /// The engine reports the end of the chain once it handed every
+            /// byte to the UART, so this also waits for the transmitter to
+            /// drain its FIFO and shift register.
+            pub fn tx_wait_dma(
+                &self,
+                dma: &impl TransmitChannel,
+                timeout_us: u64,
+            ) -> Result<(), Error> {
+                let deadline = crate::delay::micros() + timeout_us;
+                loop {
+                    if dma.interrupt_pending(dma::TxInterrupt::DscrErr) {
+                        dma.stop_chain();
+                        dma.clear_all_interrupts();
+                        return Err(Error::Dma(dma::Error::DescriptorError));
+                    }
+                    if dma.interrupt_pending(dma::TxInterrupt::FifoOverflow)
+                        || dma.interrupt_pending(dma::TxInterrupt::FifoUnderflow)
+                    {
+                        dma.stop_chain();
+                        dma.clear_all_interrupts();
+                        return Err(Error::Dma(dma::Error::Fifo));
+                    }
+                    // `TotalEof` marks the last descriptor of the chain, the
+                    // one that carries the EOF flag the mount added.
+                    if dma.interrupt_pending(dma::TxInterrupt::TotalEof) {
+                        break;
+                    }
+                    if crate::delay::micros() > deadline {
+                        dma.reset_channel();
+                        dma.clear_all_interrupts();
+                        return Err(Error::Timeout);
+                    }
+                    core::hint::spin_loop();
+                }
+
+                while !self.is_tx_idle() {
+                    if crate::delay::micros() > deadline {
+                        dma.reset_channel();
+                        dma.clear_all_interrupts();
+                        return Err(Error::Timeout);
+                    }
+                    core::hint::spin_loop();
+                }
+                dma.stop_chain();
+                dma.clear_all_interrupts();
+                Ok(())
+            }
+
+            /// Sends `buffer` through the UHCI and the GDMA and waits until it
+            /// left the transmitter.
+            ///
+            /// `descriptors` needs `ceil(buffer.len() / 4095)` entries, and the
+            /// buffer has to live in memory the engine reaches (internal SRAM
+            /// for now, see [`crate::dma`]). `timeout_us` bounds the whole
+            /// transfer, which is one bit time per bit plus the engine's
+            /// start-up.
+            pub fn write_dma(
+                &self,
+                uhci: &Uhci,
+                dma: &impl TransmitChannel,
+                buffer: &[u8],
+                descriptors: &[Descriptor],
+                timeout_us: u64,
+            ) -> Result<(), Error> {
+                self.tx_begin_dma(uhci, dma, buffer, descriptors)?;
+                self.tx_wait_dma(dma, timeout_us)
+            }
+
+            /// Points the UHCI's receive channel at `buffer` and starts it.
+            ///
+            /// The decoder is told to end the packet after `buffer.len()`
+            /// bytes, so the engine stops once exactly that many arrived.
+            /// Paired with [`rx_wait_dma`](Self::rx_wait_dma).
+            ///
+            /// A receive may be armed before the first byte arrives, and it
+            /// survives a [`write_dma`](Self::write_dma) on the same UART: only
+            /// a transfer that attaches the UHCI to a *different* UART resets
+            /// the decoder, so do not overlap those.
+            ///
+            /// # Errors
+            ///
+            /// [`Error::BufferTooLong`] when `buffer` is longer than
+            /// [`DMA_MAX_PACKET`].
+            pub fn rx_begin_dma(
+                &self,
+                uhci: &Uhci,
+                dma: &impl ReceiveChannel,
+                buffer: &mut [u8],
+                descriptors: &[Descriptor],
+            ) -> Result<(), Error> {
+                if buffer.is_empty() {
+                    return Ok(());
+                }
+                if buffer.len() > DMA_MAX_PACKET {
+                    return Err(Error::BufferTooLong);
+                }
+                uhci.attach(Self::NUM);
+                uhci.reset_decoder();
+                uhci.set_rx_packet_length(buffer.len());
+
+                let chain = dma::Chain::new(descriptors);
+                chain
+                    .mount(buffer.as_mut_ptr(), buffer.len())
+                    .map_err(Error::Dma)?;
+
+                dma.connect_to(Peripheral::Uhci);
+                dma.reset_channel();
+                dma.clear_all_interrupts();
+                // The engine writes memory, not the cache: drop whatever the
+                // core put there so no stale line comes back later.
+                crate::cache::writeback_invalidate(buffer.as_mut_ptr().cast(), buffer.len());
+                dma.start_chain(chain.head());
+                Ok(())
+            }
+
+            /// Waits for the receive started by
+            /// [`rx_begin_dma`](Self::rx_begin_dma) and makes `buffer`
+            /// readable.
+            ///
+            /// Returns the number of bytes the engine stored, which is
+            /// `buffer.len()` once the packet the decoder was told to expect
+            /// arrived.
+            ///
+            /// A shorter transmission keeps the decoder from closing its
+            /// packet, so this reports [`Error::Timeout`] when the deadline
+            /// passes and gives the receive path a clean restart: the channel,
+            /// the decoder and the receive FIFO are dropped, so the next packet
+            /// starts from the first byte. Part of the missing packet may
+            /// already be in `buffer` — with no packet end there is no length to
+            /// report, so those bytes are the caller's to discard.
+            pub fn rx_wait_dma(
+                &self,
+                uhci: &Uhci,
+                dma: &impl ReceiveChannel,
+                buffer: &mut [u8],
+                descriptors: &[Descriptor],
+                timeout_us: u64,
+            ) -> Result<usize, Error> {
+                let deadline = crate::delay::micros() + timeout_us;
+                let count = loop {
+                    if dma.interrupt_pending(dma::RxInterrupt::ErrEof) {
+                        dma.stop_chain();
+                        dma.clear_all_interrupts();
+                        crate::cache::invalidate(buffer.as_mut_ptr().cast(), buffer.len());
+                        return Err(Error::Dma(dma::Error::Peripheral));
+                    }
+                    if dma.interrupt_pending(dma::RxInterrupt::DscrErr) {
+                        dma.stop_chain();
+                        dma.clear_all_interrupts();
+                        crate::cache::invalidate(buffer.as_mut_ptr().cast(), buffer.len());
+                        return Err(Error::Dma(dma::Error::DescriptorError));
+                    }
+                    if dma.interrupt_pending(dma::RxInterrupt::SucEof) {
+                        break received_bytes(&dma::Chain::new(descriptors));
+                    }
+                    if dma.interrupt_pending(dma::RxInterrupt::DscrEmpty) {
+                        // Every descriptor filled: the whole buffer is data.
+                        break buffer.len();
+                    }
+                    if crate::delay::micros() > deadline {
+                        dma.clear_all_interrupts();
+                        // A plain stop leaves the channel's write offset where
+                        // the aborted packet got to, so the next buffer would be
+                        // filled from the middle. Reset the channel and drop the
+                        // bytes the decoder has not handed over, or they would
+                        // lead the next packet.
+                        dma.reset_channel();
+                        uhci.reset();
+                        self.reset_rx_fifo();
+                        crate::cache::invalidate(buffer.as_mut_ptr().cast(), buffer.len());
+                        return Err(Error::Timeout);
+                    }
+                    core::hint::spin_loop();
+                };
+
+                dma.stop_chain();
+                dma.clear_all_interrupts();
+                crate::cache::invalidate(buffer.as_mut_ptr().cast(), buffer.len());
+                Ok(count)
+            }
+
+            /// Receives exactly `buffer.len()` bytes through the UHCI.
+            ///
+            /// The DMA twin of [`read_timeout`](Self::read_timeout): returns
+            /// once the whole buffer was filled, or [`Error::Timeout`] when the
+            /// deadline passes first.
+            pub fn read_dma(
+                &self,
+                uhci: &Uhci,
+                dma: &impl ReceiveChannel,
+                buffer: &mut [u8],
+                descriptors: &[Descriptor],
+                timeout_us: u64,
+            ) -> Result<usize, Error> {
+                self.rx_begin_dma(uhci, dma, buffer, descriptors)?;
+                self.rx_wait_dma(uhci, dma, buffer, descriptors, timeout_us)
+            }
+
             /// Returns and clears the first latched receive error.
             ///
             /// Errors are sticky until cleared, so a byte that follows a lost
@@ -745,11 +1224,6 @@ macro_rules! impl_uart {
             fn apply(&self, config: &UartConfig) {
                 let r = self.regs();
 
-                r.conf0_sync.set_rxfifo_rst();
-                r.conf0_sync.set_txfifo_rst();
-                r.conf0_sync.clr_rxfifo_rst();
-                r.conf0_sync.clr_txfifo_rst();
-
                 r.conf0_sync.write_bit_num(config.data_bits as u32);
                 r.conf0_sync.write_stop_bit_num(config.stop_bits as u32);
                 match config.parity {
@@ -802,6 +1276,18 @@ macro_rules! impl_uart {
 
                 r.clk_conf.set_tx_sclk_en();
                 r.clk_conf.set_rx_sclk_en();
+                self.sync();
+
+                // Empty the FIFOs last: enabling loopback or inversion can put a
+                // glitch byte into the receiver, and that one would otherwise
+                // sit in front of the first real frame. The reset line lives in
+                // a shadowed register and is level sensitive, so it takes an
+                // update for each edge.
+                r.conf0_sync.set_rxfifo_rst();
+                r.conf0_sync.set_txfifo_rst();
+                self.sync();
+                r.conf0_sync.clr_rxfifo_rst();
+                r.conf0_sync.clr_txfifo_rst();
                 self.sync();
             }
         }

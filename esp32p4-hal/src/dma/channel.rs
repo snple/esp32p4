@@ -17,8 +17,8 @@ use core::marker::PhantomData;
 use esp32p4_pac::{AHB_DMA, ahb_dma};
 use pastey::paste;
 
-use super::Peripheral;
 use super::descriptor::Descriptor;
+use super::{Peripheral, PeripheralId};
 use crate::Steal;
 
 /// A `Dummy-n` peripheral id.
@@ -395,8 +395,10 @@ macro_rules! impl_rx_channel {
             }
 
             impl ReceiveChannel for RxChannel<$n> {
-                fn connect_to(&self, peripheral: Peripheral) {
-                    self.connect(peripheral);
+                fn connect_to(&self, peripheral: impl PeripheralId) {
+                    let r = Self::regs();
+                    r.[<in_peri_sel_ch $n>].write_peri_in_sel_ch(peripheral.id());
+                    r.[<in_conf0_ch $n>].clr_mem_trans_en_ch();
                 }
 
                 fn reset_channel(&self) {
@@ -411,6 +413,14 @@ macro_rules! impl_rx_channel {
                     self.disconnect();
                 }
 
+                fn check_owner(&self, enable: bool) {
+                    RxChannel::<$n>::check_owner(self, enable);
+                }
+
+                fn descriptor_burst(&self, enable: bool) {
+                    RxChannel::<$n>::descriptor_burst(self, enable);
+                }
+
                 fn idle(&self) -> bool {
                     self.is_idle()
                 }
@@ -421,6 +431,10 @@ macro_rules! impl_rx_channel {
 
                 fn clear_interrupt(&self, interrupt: RxInterrupt) {
                     RxChannel::<$n>::clear_interrupt(self, interrupt);
+                }
+
+                fn clear_all_interrupts(&self) {
+                    RxChannel::<$n>::clear_all_interrupts(self);
                 }
 
                 fn stop_chain(&self) {
@@ -438,7 +452,9 @@ macro_rules! impl_rx_channel {
 /// instead of naming one.
 pub trait TransmitChannel {
     /// Connects the channel to a peripheral's transmit handshake.
-    fn connect_to(&self, peripheral: Peripheral);
+    ///
+    /// See [`ReceiveChannel::connect_to`].
+    fn connect_to(&self, peripheral: impl PeripheralId);
 
     /// Resets the channel's engine state.
     fn reset_channel(&self);
@@ -449,8 +465,29 @@ pub trait TransmitChannel {
     /// Disconnects the channel from every peripheral.
     fn detach(&self);
 
+    /// Enables the descriptor owner check; see [`TxChannel::check_owner`].
+    fn check_owner(&self, enable: bool);
+
+    /// Enables burst reads of the descriptors; see
+    /// [`TxChannel::descriptor_burst`].
+    fn descriptor_burst(&self, enable: bool);
+
+    /// Hands a finished descriptor back to software; see
+    /// [`TxChannel::auto_writeback`].
+    fn auto_writeback(&self, enable: bool);
+
+    /// Reports EOF only once the peripheral consumed the data; see
+    /// [`TxChannel::eof_till_data_popped`].
+    fn eof_till_data_popped(&self, enable: bool);
+
     /// Whether the engine has no descriptor left to process.
     fn idle(&self) -> bool;
+
+    /// Whether `interrupt` is latched.
+    fn interrupt_pending(&self, interrupt: TxInterrupt) -> bool;
+
+    /// Acknowledges `interrupt`.
+    fn clear_interrupt(&self, interrupt: TxInterrupt);
 
     /// Stops after the descriptor the engine is working on.
     fn stop_chain(&self);
@@ -466,7 +503,11 @@ pub trait TransmitChannel {
 /// instead of naming one.
 pub trait ReceiveChannel {
     /// Connects the channel to a peripheral's receive handshake.
-    fn connect_to(&self, peripheral: Peripheral);
+    ///
+    /// Takes [`Peripheral`] for this controller and
+    /// [`AxiPeripheral`](super::AxiPeripheral) for GDMA-AXI; the two are not
+    /// interchangeable.
+    fn connect_to(&self, peripheral: impl PeripheralId);
 
     /// Resets the channel's engine state.
     fn reset_channel(&self);
@@ -477,6 +518,13 @@ pub trait ReceiveChannel {
     /// Disconnects the channel from every peripheral.
     fn detach(&self);
 
+    /// Enables the descriptor owner check; see [`RxChannel::check_owner`].
+    fn check_owner(&self, enable: bool);
+
+    /// Enables burst reads of the descriptors; see
+    /// [`RxChannel::descriptor_burst`].
+    fn descriptor_burst(&self, enable: bool);
+
     /// Whether the engine has no descriptor left to process.
     fn idle(&self) -> bool;
 
@@ -485,6 +533,9 @@ pub trait ReceiveChannel {
 
     /// Acknowledges `interrupt`.
     fn clear_interrupt(&self, interrupt: RxInterrupt);
+
+    /// Acknowledges every interrupt source.
+    fn clear_all_interrupts(&self);
 
     /// Stops after the descriptor the engine is working on.
     fn stop_chain(&self);
@@ -707,8 +758,8 @@ macro_rules! impl_tx_channel {
             }
 
             impl TransmitChannel for TxChannel<$n> {
-                fn connect_to(&self, peripheral: Peripheral) {
-                    self.connect(peripheral);
+                fn connect_to(&self, peripheral: impl PeripheralId) {
+                    Self::regs().[<out_peri_sel_ch $n>].write_peri_out_sel_ch(peripheral.id());
                 }
 
                 fn reset_channel(&self) {
@@ -723,8 +774,32 @@ macro_rules! impl_tx_channel {
                     self.disconnect();
                 }
 
+                fn check_owner(&self, enable: bool) {
+                    TxChannel::<$n>::check_owner(self, enable);
+                }
+
+                fn descriptor_burst(&self, enable: bool) {
+                    TxChannel::<$n>::descriptor_burst(self, enable);
+                }
+
+                fn auto_writeback(&self, enable: bool) {
+                    TxChannel::<$n>::auto_writeback(self, enable);
+                }
+
+                fn eof_till_data_popped(&self, enable: bool) {
+                    TxChannel::<$n>::eof_till_data_popped(self, enable);
+                }
+
                 fn idle(&self) -> bool {
                     self.is_idle()
+                }
+
+                fn interrupt_pending(&self, interrupt: TxInterrupt) -> bool {
+                    TxChannel::<$n>::interrupt_pending(self, interrupt)
+                }
+
+                fn clear_interrupt(&self, interrupt: TxInterrupt) {
+                    TxChannel::<$n>::clear_interrupt(self, interrupt);
                 }
 
                 fn stop_chain(&self) {

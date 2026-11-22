@@ -162,6 +162,16 @@ path = "src/uart.rs"
 required-features = ["defmt"]
 
 [[bin]]
+name = "uart_dma"
+path = "src/uart_dma.rs"
+required-features = ["defmt"]
+
+[[bin]]
+name = "spi_dma"
+path = "src/spi_dma.rs"
+required-features = ["defmt"]
+
+[[bin]]
 name = "i2c_scan"
 path = "src/i2c_scan.rs"
 

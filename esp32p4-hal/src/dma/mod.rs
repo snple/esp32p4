@@ -1,17 +1,22 @@
-//! GDMA (General Direct Memory Access), the `AHB_DMA` controller.
+//! GDMA (General Direct Memory Access), the `AHB_DMA` and `AXI_DMA` controllers.
 //!
 //! GDMA moves data between peripherals and memory, or between two memory
 //! regions, without involving the core. Software hands it a list of
 //! [`Descriptor`]s, the engine walks that list, and interrupts report progress.
-//! On the ESP32-P4 the `AHB_DMA` instance has three transmit/receive pairs; each
-//! channel can be wired to any GDMA-capable peripheral.
+//! Each ESP32-P4 controller has three transmit/receive pairs, and every channel
+//! can be wired to any peripheral that sits on its bus.
 //!
 //! # Features
 //!
-//! - Three transmit and three receive channels, assigned to peripherals by
-//!   software ([`RxChannel::connect`], [`TxChannel::connect`])
+//! - Both controllers: GDMA-AHB ([`AhbDma`]) for I3C/UHCI/I2S/ADC/RMT and
+//!   GDMA-AXI ([`AxiDma`]) for LCD/CAM, GP-SPI2/3, PARLIO, AES, SHA
+//! - Three transmit and three receive channels per controller, assigned to
+//!   peripherals by software ([`RxChannel::connect`], [`AxiRxChannel::connect`])
 //! - Descriptor chains and rings built on caller-owned arrays ([`Chain`])
-//! - Memory-to-memory copies on channel pairs 1 and 2 ([`AhbDma::copy`])
+//! - One driver interface for both engines ([`ReceiveChannel`],
+//!   [`TransmitChannel`]), so a peripheral driver does not care which
+//!   controller its channels come from
+//! - Memory-to-memory copies on AHB channel pairs 1 and 2 ([`AhbDma::copy`])
 //! - Per-source interrupts, arbitration priority and burst settings
 //! - Cache maintenance for buffers behind the cache: [`AhbDma::copy`] does it,
 //!   a peripheral driver does it where it hands buffers over
@@ -41,10 +46,11 @@
 //! for PSRAM) are *not* reachable, the engine rejects those descriptors with
 //! [`Error::DescriptorError`].
 //!
-//! Descriptors must be word aligned and stay put while mounted. They are
-//! reached through their direct alias by the core, because this chip caches
-//! internal SRAM and PSRAM at their normal addresses and a descriptor written by
-//! the core is otherwise invisible to the engine — verified on hardware.
+//! Descriptors carry their own 8-byte alignment and have to stay put while
+//! mounted. They are reached through their direct alias by the core, because
+//! this chip caches internal SRAM and PSRAM at their normal addresses and a
+//! descriptor written by the core is otherwise invisible to the engine —
+//! verified on hardware.
 //! [`Chain::mount`] handles that translation, so callers just put descriptors in
 //! ordinary memory (a `static`, an array on the stack).
 //!
@@ -65,7 +71,7 @@
 //! | Pac peripheral | Base | Role |
 //! |----------------|------|------|
 //! | `AHB_DMA` | `0x5008_5000` | this module: I3C/UHCI/I2S/ADC/RMT, internal + cached external memory |
-//! | `AXI_DMA` | `0x5008_a000` | GDMA-AXI: LCD/CAM, SPI2/3, PARLIO, AES, SHA; not implemented |
+//! | `AXI_DMA` | `0x5008_a000` | this module: LCD/CAM, SPI2/3, PARLIO, AES, SHA |
 //! | `DMA` | `0x5008_1000` | `DW_GDMA`, a plain memory-to-memory engine used by JPEG/camera; not implemented |
 //!
 //! # Example
@@ -97,24 +103,51 @@
 //! rx.enable_interrupt(RxInterrupt::SucEof, true);
 //! rx.start(chain.head());
 //! ```
+//!
+//! GDMA-AXI looks the same, only the peripheral enum differs:
+//!
+//! ```ignore
+//! use esp32p4_hal::dma::{AxiDma, AxiPeripheral};
+//!
+//! let dma = AxiDma::init(dp.AXI_DMA, &dp.HP_SYS_CLKRST);
+//! let tx = dma.tx_channel::<0>();
+//! tx.connect(AxiPeripheral::Spi2);
+//! tx.check_owner(true);
+//! tx.auto_writeback(true);
+//! ```
 
 use esp32p4_pac::{AHB_DMA, HP_SYS_CLKRST, ahb_dma};
 
 use crate::{cache, delay};
 
+pub mod axi;
 pub mod channel;
 pub mod descriptor;
 
+pub use axi::{AxiDma, AxiPeripheral, AxiRxChannel, AxiTxChannel};
 pub use channel::{
     Dummy, ReceiveChannel, RxChannel, RxInterrupt, TransmitChannel, TxChannel, TxInterrupt,
 };
 pub use descriptor::{Chain, Descriptor, Owner};
 
-/// A peripheral whose handshake a channel can use.
+/// A peripheral a channel can be connected to.
+///
+/// Implemented by [`Peripheral`] (the GDMA-AHB ids of TRM table 6.4-1) and
+/// [`AxiPeripheral`] (the GDMA-AXI ids of table 6.4-2). The two controllers
+/// number their peripherals differently, so a value from the wrong enum
+/// selects the wrong peripheral — pass the one that matches the controller
+/// the channel belongs to.
+pub trait PeripheralId: Copy {
+    /// Value written to `PERI_IN_SEL_CHn` / `PERI_OUT_SEL_CHn`.
+    fn id(self) -> u32;
+}
+
+/// A peripheral whose handshake a GDMA-AHB channel can use.
 ///
 /// Values are `PERI_IN_SEL_CHn` / `PERI_OUT_SEL_CHn` from TRM table 6.4-1. A
 /// peripheral can feed one channel at a time; two channels selecting the same
 /// value hand the same data to two engines, which is never what you want.
+/// The GDMA-AXI ids are in [`AxiPeripheral`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u32)]
@@ -133,6 +166,13 @@ pub enum Peripheral {
     Adc = 8,
     /// RMT (remote control transceiver).
     Rmt = 10,
+}
+
+impl PeripheralId for Peripheral {
+    #[inline]
+    fn id(self) -> u32 {
+        self as u32
+    }
 }
 
 /// A channel pair that can copy memory to memory.
@@ -269,8 +309,9 @@ impl AhbDma {
     /// a peripheral driver exercises.
     ///
     /// `descriptors` is split into a transmit half and a receive half, so it
-    /// needs `2 * ceil(len / 4095)` entries. Descriptors must be word aligned and
-    /// in memory the engine can reach (see the [module docs](self#memory)).
+    /// needs `2 * ceil(len / 4095)` entries. The array's alignment is part of
+    /// [`Descriptor`], so only its placement is the caller's business: it has to
+    /// be in memory the engine can reach (see the [module docs](self#memory)).
     ///
     /// The destination is invalidated after the transfer, so the core reads
     /// what the engine stored; the source is written back before it. See the

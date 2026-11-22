@@ -13,9 +13,9 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | [`esp32p4-pac`](esp32p4-pac/) | **PAC**：由 `esp32p4.svd` 生成，提供寄存器块、字段常量和访问器。勿手改 |
 | [`esp32p4-rt`](esp32p4-rt/) | **运行时**：`_start`、trap 入口、`link.x`、CSR/汇编封装 |
 | [`esp32p4-macro`](esp32p4-macro/) | **过程宏**：`#[main]` |
-| [`esp32p4-hal`](esp32p4-hal/) | **HAL**：时钟树、GPIO / IO MUX、UART、I2C 主机/从机、SPI 主机/从机（GPSPI2/3）、SD 卡主机（SDHOST）、ADC、温度传感器、GDMA（GDMA-AHB）与描述符链、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
+| [`esp32p4-hal`](esp32p4-hal/) | **HAL**：时钟树、GPIO / IO MUX、UART（含 UHCI DMA）、I2C 主机/从机、SPI 主机/从机（GPSPI2/3，含 GDMA-AXI 收发）、SD 卡主机（SDHOST）、ADC、温度传感器、GDMA（GDMA-AHB 与 GDMA-AXI）与描述符链、SYSTIMER 延时/单调时钟/闹钟、定时器组与看门狗、复位、封装内 PSRAM、USB Serial/JTAG、以太网 MAC、同步 TCP/IP |
 | [`esp32p4-usb`](esp32p4-usb/) | **USB 栈**：DWC OTG 全速/高速控制器的设备模式与主机模式驱动（slave 模式、轮询）；协议层全部在跨仓库共享的 [`usb-stack`](../../rp2350/usb-stack)（设备状态机、标准请求、class、主机枚举与控制/bulk/interrupt 传输、HID 键盘） |
-| [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、UART 回环、I2C 扫描、SPI 主机/从机自检、SD 卡读写、ADC 单次与扫描采样、GDMA 存储到存储拷贝、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC、USB HID 主机 |
+| [`esp32p4-examples`](esp32p4-examples/) | 示例：GPIO2 blink、UART 回环、I2C 扫描、SPI 主机/从机自检与 SPI DMA、SD 卡读写、ADC 单次与扫描采样、GDMA 存储到存储拷贝、PSRAM 初始化与分区、USB Serial/JTAG、USB CDC、USB HID 主机 |
 | [`xtask`](xtask/) | 构建辅助：`cargo xtask gen-pac` |
 
 依赖方向是单向的：`macro` / `rt` → `pac` → `esp32p4` / `esp32p4-usb` → `examples`。
@@ -29,7 +29,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `gpio_pads` | 打印若干焊盘的直接 IO MUX 功能，演示 `set_mux_function`/`mux_function` 往返 |
 | `efuse` | 打印芯片版本、MAC、Flash/PSRAM 参数，并用版本号配置时钟树 |
 | `mmu` | 把 PSRAM 物理页 0 映射到 MMU 表项 512，验证 cached/uncached 别名 |
-| `clock` | 打印时钟树的根/CPU/MEM/SYS/APB 频率与参考时钟状态 |
+| `clock` | 打印时钟树与 CPLL/SPLL 状态，并对照 `SYSTIMER`（晶振）和 APB 实测 CPU 频率与 `PLL_F80M` |
 | `tcm` | 用 `#[tcmfunc]`/`#[ramfunc]` 把代码放进 8 KB scratchpad / SRAM，并打印落点 |
 | `multicore` | 启动第二个 HP 核：两核各 10 万次加锁计数、双向互踢中断、各自读到自己的 core id、每核独立的 machine timer |
 | `psram` | 初始化封装内 PSRAM，整体作为全局堆使用 |
@@ -48,11 +48,13 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `emac` | 初始化 RMII 以太网（P4 Function-EV 板的 IP101）、扫描 MDIO、自动协商、打印链路状态并收发 ARP 帧 |
 | `net_tcp_echo` | DHCP + TCP echo 服务器（需 `--features net`，无堆、无 async） |
 | `uart` | `UART1` 内部回环自检：三组数据原样收发，并打印波特率与帧格式 |
+| `uart_dma` | UHCI + GDMA-AHB 的 UART DMA：单/多描述符往返、短包超时恢复、换串口重挂、描述符不足与超长接收 |
 | `i2c_scan` | `I2C0` 扫描 7 位地址空间，逐个探测并打印应答的从机 |
 | `i2c_slave` | `I2C0` 主机 + `I2C1` 从机：地址应答、收发、满 FIFO、寄存器访问、非阻塞接口、START/STOP 标志与时钟拉伸 |
 | `adc` | 报告 eFuse 校准是否可用，并在四档衰减下采样 13 个 ADC 焊盘 |
 | `dma_mem2mem` | GDMA-AHB 的存储到存储拷贝：单描述符 64 B 与四描述符 16 KB 两种链路，逐字节校验并打印吞吐 |
 | `spi` | GP-SPI2 主机对 GP-SPI3 从机（四根飞线）：时钟模式 0–3 × 1/4/32/64 字节双向校验 |
+| `spi_dma` | GDMA-AXI 驱动的 SPI 主机 DMA：MOSI→MISO 回环跑 64 B–8192 B（含多描述符、奇长度、越界检查）、对从机的半双工收发、描述符不足的拒绝 |
 | `sd` | SDHOST 上的 SD 卡：识别、读 CID/CSD 与容量、读第 0 块、双块写入后回读比对 |
 | `adc_scan` | ADC1 样式表扫描：两个通道经 GDMA-AHB 交替采样 32 个样本，打印样本数与读数 |
 | `tsens` | 温度传感器：每秒打印一次芯片温度，自动选择测量档位 |
@@ -737,6 +739,52 @@ uart.flush();
 示例 [`uart`](esp32p4-examples/src/uart.rs) 用内部回环自检，三组数据（含 64 字节递增序列）
 原样收回；实测 115200 配置下硬件给出 115201，属正常的分频舍入。
 
+### DMA 收发（UHCI + GDMA-AHB）
+
+五个 UART 共用**一个** UHCI（`UHCI0`）和 GDMA-AHB 的一对通道：`CONF0.UART_SEL` 选串口，
+发送通道把内存喂进 TX FIFO，接收通道把 RX FIFO 搬进内存。所以同一时刻只有一个 UART 走 DMA，
+换串口由每次传输的 `attach` 完成。
+
+```rust
+use esp32p4_hal::dma::{AhbDma, Descriptor};
+use esp32p4_hal::uart::Uhci;
+
+let dma = AhbDma::init(dp.AHB_DMA, &dp.HP_SYS_CLKRST);
+let uhci = Uhci::init(dp.UHCI0, &dp.HP_SYS_CLKRST);
+let descriptors = [const { Descriptor::new() }; 2];
+
+uart.write_dma(&uhci, &dma.tx_channel::<0>(), b"hello", &descriptors, 10_000)?;
+let mut buffer = [0u8; 5];
+uart.read_dma(&uhci, &dma.rx_channel::<0>(), &mut buffer, &descriptors, 10_000)?;
+```
+
+- **接收按长度成帧**：UHCI 解码器是面向数据包的，只有包结束时才把字节交给 DMA。三种结束条件
+  里 `LEN_EOF`（`UHCI_PKT_THRES`）是唯一逐字节精确的，所以 `read_dma` 就是 `read_timeout` 的
+  DMA 版——**恰好** `buffer.len()` 字节，否则 `Timeout`。一次接收上限 `DMA_MAX_PACKET`
+  （8191 字节，13 位计数器），更长的由调用方分段。
+- **先挂接收再发**：`rx_begin_dma` + `write_dma` + `rx_wait_dma`。128 字节 FIFO 装不下大块
+  数据，发完再收必然丢；示例里 4096 字节（两个描述符）就是这么测的。
+- **超时即丢弃**：包没结束就没有长度可报，`rx_wait_dma` 超时后复位通道、解码器和 RX FIFO，
+  下一包从第一个字节开始（已被搬进内存的半包内容由调用方丢弃）。
+- 描述符/缓冲区必须在引擎能访问的内存里（目前用内部 SRAM），一个描述符 4095 字节。
+- `write_dma` 用发送链的 `TotalEof` 判定链路结束，再等 UART 发送器真正排空才返回。
+
+| 检查（示例 `uart_dma`，2 Mbaud 内部回环） | 实测 |
+|------|------|
+| 64 字节往返（各一个描述符） | 发送 983 µs（含引擎启动），351 µs 后收到 64 字节，逐字节一致 |
+| 4096 字节（两个描述符，先挂接收） | 全部收回，逐字节一致 |
+| 只发 10 字节再等 64 字节 | `Timeout`；随后 64 字节完整到达，半包已被丢弃 |
+| 同一个 UHCI 换到 `UART2` | 正确往返，`attached_uart()` 随之改变 |
+| 4096 字节只给 1 个描述符 / 接收 8192 字节 | `NotEnoughDescriptors` / `BufferTooLong` |
+
+踩过的坑：
+
+- **`CONF0` 的 FIFO 复位位在影子寄存器里，而且电平有效**：先写 1、再写 0，最后一次性
+  `REG_UPDATE` 只会把最终的 0 写进影子寄存器，复位根本没发生。必须 1 → `sync()` → 0 → `sync()`。
+  之前那次「初始化后 RX FIFO 里莫名多一个 0x00」就是这个原因（回环使能时的毛刺没被清掉）。
+- **中止 DMA 接收必须 `reset_channel()`**，只 `stop_chain()` 时通道的写偏移留在半包位置，
+  下一包会从缓冲区中间开始写。
+
 ## I2C
 
 [`i2c`](esp32p4-hal/src/i2c.rs) 是 `I2C0`/`I2C1` 的主机模式驱动：
@@ -897,13 +945,16 @@ if let Some(bound) = adc.monitor_state(MonitorIndex::Zero) {
 
 ## GDMA
 
-[`dma`](esp32p4-hal/src/dma/mod.rs) 是 GDMA-AHB（PAC 里的 `AHB_DMA`，基址 `0x5008_5000`）。
-P4 上还有两套 DMA 不在本模块范围：GDMA-AXI（`AXI_DMA`，LCD/CAM、SPI2/3、PARLIO、AES、SHA）
-和 DesignWare 的 `DMA`（JPEG/摄像头用的纯存储搬运引擎）。
+[`dma`](esp32p4-hal/src/dma/mod.rs) 覆盖两套 GDMA 控制器：GDMA-AHB（`AHB_DMA`，基址
+`0x5008_5000`）与 GDMA-AXI（`AXI_DMA`，`0x5008_a000`）。两者共用描述符格式、通道模型与
+中断位，所以外设驱动只认 [`TransmitChannel`]/[`ReceiveChannel`] 两个 trait——UART 与 I2S
+用 AHB 通道，SPI 用 AXI 通道，驱动代码没有差别。P4 上还有一套不属于 GDMA 的 DesignWare
+`DMA`（JPEG/摄像头用的纯存储搬运引擎），未实现。
 
-- 3 组发送/接收通道：`TxChannel<0..2>` / `RxChannel<0..2>`，每个通道可选接
+- 每个控制器 3 组发送/接收通道：AHB 是 `TxChannel<0..2>`/`RxChannel<0..2>`（可选接
   I3C / UHCI（UART0/1 的 DMA 前端）/ I2S0–2 / ADC / RMT，或用 `Dummy-n` 与配对的另一个
-  通道做存储到存储；
+  通道做存储到存储）；AXI 是 `AxiTxChannel<0..2>`/`AxiRxChannel<0..2>`（可选接
+  LCD/CAM / SPI2 / SPI3 / PARLIO / AES / SHA，外设编号见 `AxiPeripheral`）；
 - 描述符 3 个字（`size`/`length`/EOF/owner + buffer + next）；[`Chain`] 把一个缓冲区按
   4095 字节切成描述符链或环（`mount` / `mount_eof` / `mount_ring`），
   `Descriptor::length()` 读回引擎写入的有效字节数；
@@ -924,8 +975,14 @@ dma.copy(MemChannel::Ch1, &src, &mut dst, &descriptors).unwrap();
 四描述符 16380 B，逐字节校验。硬件实测 200 轮无描述符错误、无数据不符，未开突发时约
 23 MB/s。
 
-两个只在硬件上才暴露的点：
+四个只在硬件上才暴露的点：
 
+- **描述符必须 8 字节对齐**：GDMA-AXI 把一个描述符当两个 64 位字抓取，只有 4 字节对齐的
+  12 字节描述符在奇数下标（`+12`）上会被引擎判成 `DSCR_ERR`——SPI 收发的第一个测试就是这样
+  挂住的。`Descriptor` 因此带 `align(8)` 并补到 16 字节（第 4 个字不用），同一条描述符链
+  两个控制器都能跑；AHB 侧回归通过（`uart_dma`、`dma_mem2mem` 逐字节校验，`i2s` 的
+  DMA 数据校验也通过；`i2s` 示例里 `stream` 那一项是早就存在的时基问题，见
+  [roadmap](docs/roadmap.md)）；
 - **描述符要用非缓存别名访问**：P4 的片内 SRAM（`0x4FF0_0000`）和 PSRAM
   （`0x4800_0000`）都过 cache，CPU 写进缓存里的描述符引擎读不到 —— 实测引擎直接回
   `DescriptorError`。`Chain::mount` 因此用 `+0x4000_0000` 的直通别名（
@@ -936,17 +993,29 @@ dma.copy(MemChannel::Ch1, &src, &mut dst, &descriptors).unwrap();
   引擎会拒绝，所以 DMA 缓冲区放片内 SRAM 或 cached PSRAM 窗口。片内 SRAM 的读写
   `copy` 已经处理好 cache；cached PSRAM 虽然引擎能写对，但本仓库的 `cache` 维护还回读不到
   引擎写的数据（见 [roadmap](docs/roadmap.md)），暂按片内 SRAM 使用。
+- **AXI 侧有两个窗口**：`AXI_DMA` 分别校验片内（`0x4FC0_0000..0x4FFC_0000`）与片外
+  （`0x4000_0000..0x4C00_0000`）两段地址，`AxiDma::init` 按参考驱动的值写好；另外
+  `MISC_CONF.CLK_EN` 必须置位，否则总线时钟开着、通道寄存器仍读回全 0；
+- **中断编码与 AHB 不同**：AXI 的 FIFO 分三级，每个方向有 3 个溢出位和 3 个下溢位，
+  `RxInterrupt::FifoOverflow` 这类“一位”语义在 AXI 侧对应一组位（见 `dma/axi.rs` 的
+  `rx_mask`/`tx_mask`），低位的 `DONE`/`SUC_EOF`/`DSCR_ERR` 与 AHB 完全一致。
 
 ## SPI
 
-[`spi`](esp32p4-hal/src/spi.rs) 覆盖 GP-SPI2 与 GP-SPI3 的 **CPU 传输**：CPU 填/读控制器
-里 64 字节的数据缓冲（`SPI_W0..W15`），自己触发每次事务。没有任何 DMA 依赖
-（SPI2/3 的 DMA 走 GDMA-AXI，见 [roadmap](docs/roadmap.md)），所以它也是本仓库里唯一
-不碰描述符的高速外设。
+[`spi`](esp32p4-hal/src/spi.rs) 覆盖 GP-SPI2 与 GP-SPI3，两条传输通路：
+
+- **CPU 传输**：CPU 填/读控制器里 64 字节的数据缓冲（`SPI_W0..W15`），自己触发每次事务，
+  不依赖任何 DMA；
+- **DMA 传输**：数据由 GDMA-AXI 搬运（SPI2 = `AxiPeripheral::Spi2`，SPI3 = `Spi3`），
+  长度只受描述符链限制，一个描述符 4095 字节。主机仍然自己控制事务与 CS。
 
 - 主机 `Spi2`/`Spi3`：`init` 里配好时钟分频（源为 XTAL 40 MHz）、时钟模式 0–3、位序、
   CS 建立/保持时间；`transfer` 做全双工，`write`/`read` 是它的两个退化情形
   （读的时候 MOSI 输出 `0xFF`，因为时钟只在有数据可发时才转）；
+  `set_mode`/`set_bit_order` 可在配置后切换；
+- 主机 DMA：`transfer_dma`（全双工，收发等长）、`write_dma` / `read_dma`（半双工，单向）。
+  三者自己把通道接到本实例、开好 owner 检查与描述符写回，调用者只给通道和描述符数组；
+  完成判据是最后一个描述符的 owner 位回到 CPU；
 - 从机 `SpiSlave2`/`SpiSlave3`：`start` 先武装（填 TX、设长度），`finish` 等主机把时钟
   打完后取回数据，并回报主机实际打了多少位；
 - 引脚全部经 GPIO 矩阵，任意焊盘都能当 SCK/MOSI/MISO/CS；`set_cs` 可选，用硬件 CS 时
@@ -965,11 +1034,26 @@ let mut id = [0u8; 3];
 spi.transfer(&[0x9f, 0x00, 0x00], &mut id);
 ```
 
+DMA 的形态（通道来自 `AxiDma`，描述符数组按 TX 半段 + RX 半段排布）：
+
+```rust
+let dma = AxiDma::init(dp.AXI_DMA, &dp.HP_SYS_CLKRST);
+let tx = dma.tx_channel::<0>();
+let rx = dma.rx_channel::<0>();
+
+let mut received = [0u8; 8192];
+spi.transfer_dma(&tx, &rx, &sent, &mut received, &descriptors, 400_000).unwrap();
+```
+
 示例 [`spi`](esp32p4-examples/src/spi.rs) 把 SPI2 主机和 SPI3 从机用四根线连起来
 （`SCK 20↔16`、`MOSI 21↔17`、`MISO 22↔18`、`CS 23↔19`），跑 4 种时钟模式 × 4 种长度，
-两个方向各自校验，上板全部通过。
+两个方向各自校验，上板全部通过。示例 [`spi_dma`](esp32p4-examples/src/spi_dma.rs) 用两组
+接线验证 DMA：把主机 MISO 从焊盘 17（与 MOSI 21 跳线相连）采样做回环，64/1001/4095/8192
+字节 × 2 种模式 × 2 种位序逐字节比对，并在接收缓冲后面放了 8 字节哨兵检查引擎有没有写越界
+（没有）；再用 SPI3 从机验证两个半双工方向。1 MHz 下 8192 字节实测 65.8 ms，与理论值
+（65.5 ms）相差不到 0.5 %。
 
-三个只在硬件上才暴露的点：
+四个只在硬件上才暴露的点：
 
 - **每次传输前必须写 `SPI_CMD.SPI_UPDATE`**：`SPI_MS_DLEN` 等寄存器有影子副本，不触发
   更新的话从机只收到 1 bit；写完要等 `SPI_UPDATE` 自己清零；
@@ -977,7 +1061,10 @@ spi.transfer(&[0x9f, 0x00, 0x00], &mut id);
   `SPI_RX_AFIFO_RST`（接收）必须在每次事务前各打一拍。否则第二次事务的读写指针停在上一次
   结束的位置 —— 表现是主机读回自己的 TX（RX 落到了下一个字），从机干脆不再驱动 MISO；
 - **`SPI_USR_MOSI` 同时管发送和时钟**：只置 `SPI_USR_MISO` 的话 SCK 不动，读操作也必须
-  把 `SPI_USR_MOSI` 打开（用 `0xFF` 填充）。
+  把 `SPI_USR_MOSI` 打开（用 `0xFF` 填充）。DMA 的单向传输因此改走半双工
+  （`SPI_DOUTDIN=0`），此时时钟按启用的那一段长度来打，不需要 `0xFF` 填充；
+- **AXI DMA 的描述符要 8 字节对齐**：见 [GDMA](#gdma)。SPI 的收发描述符是同一条链，
+  12 字节描述符会让奇数下标直接报 `DSCR_ERR`，接收侧表现为事务永远不结束。
 
 ## SD 卡
 
@@ -1739,10 +1826,25 @@ Duration::from_secs(1))` 配合 `set_stage_action(stage, MwdtStageAction::ResetS
 - **LP 时钟**：`lp_slow_hz()`（RC_SLOW / XTAL32K / OSC_SLOW）、`lp_fast_hz`（RC_FAST / XTAL /
   PLL_LP）、`lp_peri_hz()` 及对应设置函数。
 - **源门控**：`source_enabled()` / `set_source_enabled()`（XTAL / RC_FAST / CPLL / SPLL / MPLL）。
+- **CPLL / SPLL 的模拟侧**：`Pll::{Cpll,Spll}` + `set_pll_frequency()` 在 regi2c 上写分频、
+  跑自校准（等 `ANA_PLL_CTRL0` 的 `*_CAL_END`）并回填 `Sources`；`pll_multiplier()` 直接读
+  模拟寄存器，`enable_pll()` / `disable_pll()` 管 PMU 的上电 tie 与输出门控。分频编码按
+  eFuse 版本选（v0.x 写 `倍频-4`，v1.0 起直接写倍频）。
 
-PLL 的模拟配置（分频、校准）不在这里：CPLL 由 bootloader 拉起，MPLL 由 PSRAM 初始化提供。
-树按 [`Sources`](esp32p4-hal/src/clock.rs) 表报告频率，`init_with(..., Sources { cpll_hz: CPLL_400M_HZ, .. })`
-可以覆盖 400 MHz 的情况。
+MPLL 不在这里（由 PSRAM 初始化提供），APLL 在 [`apll`](esp32p4-hal/src/apll.rs)。树按
+[`Sources`](esp32p4-hal/src/clock.rs) 表报告频率：`init_from_efuse` 按版本填 CPLL，
+`set_pll_frequency` 之后表里的对应项随之更新。
+
+| 检查（示例 `clock`，v1.3 板） | 实测 |
+|------|------|
+| 启动时 CPU（CPLL 90 MHz） | 90038377 Hz |
+| CPLL 下电再上电 | 输出门控关闭，分频回落到 x8；重写后 x9 |
+| 重写 CPLL 360 MHz 分频并标定后 | 360020338 Hz |
+| CPU 分频链 180 / 90 / 360 MHz | 180013578 / 90012856 / 36001… |
+| `PLL_F80M`（SPLL/6）经 LEDC 输出、PCNT 以 APB 计数 | 80008000 Hz（树报 80 MHz） |
+
+PLL 只有在 `ROOT_CLK` 不在它上面时才能重调（`set_pll_frequency` 会 assert）；SPLL 还供着
+USB Serial/JTAG 的 48 MHz，重调它会让 USB 连接瞬断。
 
 ### `SYSTIMER` 比较器闹钟
 
@@ -2015,13 +2117,15 @@ espflash save-image --chip esp32p4 \
 - 以太网 MAC（RMII + MDIO + DMA 描述符环），含 L1/L2 cache 维护
 - 同步 TCP/IP（smoltcp）：DHCP 客户端、TCP/UDP/ICMP、可选 IPv6，无 async、堆可选
 - UART0–UART4：轮询收发、5–8 数据位/奇偶/停止位、信号反相与回环、CTS/RTS 流控、
-  可选中钟源、按源中断；引脚经 GPIO 矩阵任意路由
+  可选中钟源、按源中断；引脚经 GPIO 矩阵任意路由；UHCI + GDMA-AHB 的 DMA 收发
 - I2C0/I2C1 从机：7 位地址与广播地址、32 字节 FIFO 收发、时钟拉伸、START/STOP 与地址状态、
   按源中断
 - I2C0/I2C1 主机：100/400 kHz 及任意 SCL、7 位地址、写/读/写读、总线恢复、
   NACK/仲裁/超时错误与按源中断
-- SPI2/SPI3 主机与从机（四种时钟模式、64 字节缓冲）、SD 卡主机（识别、容量、DMA 块读写）、
+- SPI2/SPI3 主机与从机（四种时钟模式、64 字节 CPU 缓冲、GDMA-AXI 驱动的主机 DMA 与半双工
+  单向传输）、SD 卡主机（识别、容量、DMA 块读写）、
   ADC1/2 单次转换与 HP 数字控制器扫描（含 IIR 滤波与阈值监控器）、温度传感器
+- GDMA-AHB 与 GDMA-AXI 双控制器（描述符链/环、按源中断、优先级与突发、owner 检查）
 - PWM 家族：LEDC（4 定时器 × 8 通道、渐变）、RMT（4 发 4 收脉冲波形）、PCNT（4 单元计数）、
   MCPWM（定时器/比较器/发生器/死区/强制电平/同步/故障/捕获/载波/事件比较器/中断/ETM，上板验证）
 - CLIC 中断框架（direct 模式、按 CPU 线分发、trap 保存 FPU 上下文）与 EMAC/SYSTIMER
@@ -2035,8 +2139,7 @@ espflash save-image --chip esp32p4 \
 尚未实现：
 
 - 中断嵌套与优先级分级、其它外设中断
-- PLL 的模拟配置（CPLL/SPLL/APLL 的分频与校准；时钟树本身见 `clock::ClockTree`）
-- LP UART 与 LP I2C（需先补 LP GPIO 矩阵/焊盘模型）、SPI、DMA、RMT、WS2812 等驱动
+- LP UART / LP I2C / LP SPI / LP RMT（需先补 LP GPIO 矩阵/焊盘模型；LP DMA 也在这条线上）
 - EMAC 中断驱动、TX/RX 校验和卸载、PTP 时间戳、MII/RGMII 接口
 - 阻塞式 socket API（当前是 smoltcp 的事件/轮询风格）、DHCP 服务端
 - USB OTG FS/HS 主机与设备栈
