@@ -177,6 +177,11 @@ path = "src/dma_axi.rs"
 required-features = ["defmt"]
 
 [[bin]]
+name = "dw_gdma"
+path = "src/dw_gdma.rs"
+required-features = ["defmt"]
+
+[[bin]]
 name = "psram_dma"
 path = "src/psram_dma.rs"
 required-features = ["defmt"]

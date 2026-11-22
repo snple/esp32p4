@@ -55,6 +55,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `adc` | 报告 eFuse 校准是否可用，并在四档衰减下采样 13 个 ADC 焊盘 |
 | `dma_mem2mem` | GDMA-AHB 的存储到存储拷贝：单描述符 64 B 与四描述符 16 KB 两种链路，逐字节校验并打印吞吐，另用 `CRC-32/MPEG-2` 校验两个方向的 CRC 单元 |
 | `dma_axi` | GDMA-AXI 的存储到存储：三组通道对、四种突发宽度、16 位 CRC（引擎 vs 软件），打印吞吐 |
+| `dw_gdma` | DW_GDMA（`DMA`）：四种传输宽度 × 三种 burst 的 mem2mem 全部逐字节校验，实测 164 MB/s |
 | `spi` | GP-SPI2 主机对 GP-SPI3 从机（四根飞线）：时钟模式 0–3 × 1/4/32/64 字节双向校验 |
 | `spi_dma` | GDMA-AXI 驱动的 SPI 主机 DMA：MOSI→MISO 回环跑 64 B–8192 B（含多描述符、奇长度、越界检查）、对从机的半双工收发、描述符不足的拒绝 |
 | `sd` | SDHOST 上的 SD 卡：识别、读 CID/CSD 与容量、读第 0 块、双块写入后回读比对 |
@@ -996,8 +997,9 @@ if let Some(bound) = adc.monitor_state(MonitorIndex::Zero) {
 [`dma`](esp32p4-hal/src/dma/mod.rs) 覆盖两套 GDMA 控制器：GDMA-AHB（`AHB_DMA`，基址
 `0x5008_5000`）与 GDMA-AXI（`AXI_DMA`，`0x5008_a000`）。两者共用描述符格式、通道模型与
 中断位，所以外设驱动只认 [`TransmitChannel`]/[`ReceiveChannel`] 两个 trait——UART 与 I2S
-用 AHB 通道，SPI 用 AXI 通道，驱动代码没有差别。P4 上还有一套不属于 GDMA 的 DesignWare
-`DMA`（JPEG/摄像头用的纯存储搬运引擎），未实现。
+用 AHB 通道，SPI 用 AXI 通道，驱动代码没有差别。P4 上还有第三套独立引擎：DesignWare
+`DMA`（[`DwGdma`](esp32p4-hal/src/dma/dw.rs)，CSI 摄像头的搬运主力），走自己的块/链表格式，
+见下面的「DW_GDMA」。
 
 - 每个控制器 3 组发送/接收通道：AHB 是 `TxChannel<0..2>`/`RxChannel<0..2>`（可选接
   I3C / UHCI（UART0/1 的 DMA 前端）/ I2S0–2 / ADC / RMT，或用 `Dummy-n` 与配对的另一个
@@ -1062,6 +1064,34 @@ dma.copy(MemChannel::Ch1, &src, &mut dst, &descriptors).unwrap();
 - **手写链要自己做 cache 维护**：`copy` 内部做了，自己 `mount` 的链必须
   `cache::writeback(src)` + `cache::writeback_invalidate(dst)`，否则引擎读到的是缓存里
   还没落盘的旧数据 —— 上板表现是数据与 CRC 都“慢一拍”，看着像引擎少算了一次。
+
+### DW_GDMA
+
+第三套引擎 `DMA`（[`DwGdma`](esp32p4-hal/src/dma/dw.rs)）是 DesignWare AHB DMA：4 个通道，
+一次传输是"一个块"，寄存器只有 SAR/DAR/BLOCK_TS/CTL 四个，没有描述符链——**但数据实际由
+内存里的链表项（LLI，64 字节）驱动**：
+
+```rust
+let dma = DwGdma::init(dp.DMA, &clkrst);
+let channel = dma.channel::<0>();
+channel.configure(&TransferConfig { width: Width::Bits32, ..TransferConfig::default() });
+channel.copy(src, dst, &mut item, 100_000)?;   // item: &mut LinkListItem
+```
+
+四个只有上板才暴露的点（都已在驱动里处理）：
+
+- **只写通道寄存器不行**：`SAR`/`DAR`/`BLOCK_TS` 直接写、`LLP` 留 0，硬件报
+  `SHADOWREG_OR_LLI_INVALID` 且一个字节都不搬；必须挂一个 LLI 并把 `CTL1` 的
+  `LLI_VALID`/`LLI_LAST` 置上；
+- **`CFG0` 的 `SRC/DST_MULTBLK_TYPE` 必须是 3（list）**，复位值 0（contiguous）时引擎不看
+  `LLP`，传输卡住；
+- **`CFG1` 里 `SRC/DST_OSR_LMT` 复位为 0，会把通道憋死**，必须给一个非零的在途请求上限；
+  同一个寄存器里还有流控（M2M）与软件握手；
+- **LLI 的内存布局不是寄存器顺序**：本案的寄存器把 `CTL` 放在 `LLP` 之前，而 DW 的链表项是
+  `sar/dar/block_ts/llp/ctl/...`，照抄寄存器顺序会读到错位的字段。
+
+示例 [`dw_gdma`](esp32p4-examples/src/dw_gdma.rs) 把 4 种传输宽度 × 3 种 burst 的 12 个组合
+全部逐字节校验（各 0 错），并测 16 KB 拷贝：**164 MB/s**，是 GDMA-AHB/AXI 的 33 MB/s 的五倍。
 
 ## SPI
 

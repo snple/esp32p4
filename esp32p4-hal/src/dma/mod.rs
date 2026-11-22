@@ -1,4 +1,5 @@
-//! GDMA (General Direct Memory Access), the `AHB_DMA` and `AXI_DMA` controllers.
+//! GDMA (General Direct Memory Access): the `AHB_DMA`, `AXI_DMA` and `DMA`
+//! controllers.
 //!
 //! GDMA moves data between peripherals and memory, or between two memory
 //! regions, without involving the core. Software hands it a list of
@@ -17,6 +18,8 @@
 //!   [`TransmitChannel`]), so a peripheral driver does not care which
 //!   controller its channels come from
 //! - Memory-to-memory copies on AHB channel pairs 1 and 2 ([`AhbDma::copy`])
+//! - A third, independent engine ([`DwGdma`]) with four channels of its own,
+//!   one block per transfer described by a link-list item
 //! - Per-source interrupts, arbitration priority and burst settings
 //! - Cache maintenance for buffers behind the cache: [`AhbDma::copy`] does it,
 //!   a peripheral driver does it where it hands buffers over
@@ -124,6 +127,7 @@ pub mod axi;
 pub mod channel;
 pub mod crc;
 pub mod descriptor;
+pub mod dw;
 
 pub use axi::{AxiDma, AxiMemChannel, AxiPeripheral, AxiRxChannel, AxiTxChannel, BurstSize};
 pub use channel::{
@@ -131,6 +135,7 @@ pub use channel::{
 };
 pub use crc::Crc;
 pub use descriptor::{Chain, Descriptor, Owner};
+pub use dw::{Burst, Channel, DwGdma, LinkListItem, TransferConfig, Width};
 
 /// A peripheral a channel can be connected to.
 ///
@@ -213,6 +218,9 @@ pub enum Error {
     Peripheral,
     /// The transfer did not finish before the driver's deadline.
     Timeout,
+    /// The buffer does not fit what the engine can express: empty, longer than
+    /// one block, or not a whole number of items.
+    BufferSize,
     /// Both ends of a memory-to-memory transfer sit in PSRAM.
     ///
     /// One AXI channel reading the die while the other writes it loses bytes,
