@@ -52,7 +52,7 @@
 | `dma` | DW_GDMA（`DMA`）、GDMA-AXI 的加权仲裁 | — |
 | `sdhost` | SDIO（CMD52/53 + 卡中断）、UHS-I（1.8 V/SDR50/104）、MMC 8 位、卡检测/写保护引脚 | — |
 | `adc` | LP ADC、DAC 与 PWDET；ADC2 连续模式（errata 禁用） | LP 引脚 |
-| `psram` | AXI 同时读源与写目的（PSRAM→PSRAM 拷贝）时每 4 KB 稳定丢 32–128 字节，单向传输正常；疑为 AXI↔MSPI 读写切换时序，需补 SPI timing tuning | — |
+| `psram` | AXI 同时读源与写目的（PSRAM→PSRAM 拷贝）时每 4 KB 稳定丢 32–128 字节，单向传输正常。已排除：读采样相位（`SPI_MEM_EXTRA_DUMMY_CYCLELEN` 0–7 全错）、burst 宽度（B8–B64）、通道优先级（0/0、5/0、0/5、5/5）、长度 64 字节对齐；方向指向 AXI↔MSPI 的读写并发本身，下一步要照 IDF 的 DQS 相位 + delayline 扫描做完整 tuning | — |
 | `tsens` | ETM 事件/任务、LP 核唤醒路径 | — |
 | `i2s` | PDM2PCM 接收（自发自收帧边界问题，需真麦克风/同步时钟验证） | — |
 | `emac` | MII 接口（现只 RMII）、TX/RX 校验和卸载、PTP 时间戳 | — |
