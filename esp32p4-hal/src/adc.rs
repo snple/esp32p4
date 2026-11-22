@@ -581,6 +581,26 @@ impl Adc {
         }
     }
 
+    /// Pulses the ADC block's reset.
+    ///
+    /// This is the only way back to "armed and waiting for a trigger" once the
+    /// ETM's start task has run the controller: from then on `arm_scan`
+    /// converts immediately, whatever `CTRL2.TIMER_EN` says (see
+    /// [`arm_scan`](Self::arm_scan)). Everything inside the block is lost —
+    /// pattern tables, filters, monitors, DMA configuration — while the clock
+    /// setup, the analogue bus and the factory calibration are untouched, so
+    /// the driver is usable again right away.
+    pub fn reset(&self) {
+        // SAFETY: this handle owns the ADC, and these reset bits belong to it;
+        // both blocks are touched again only through `self` afterwards.
+        let clkrst = unsafe { &*HP_SYS_CLKRST::PTR };
+        let lp_peri = unsafe { &*LP_PERI::PTR };
+        clkrst.hp_rst_en2.set_reg_rst_en_adc();
+        lp_peri.reset_en.set_rst_en_lp_adc();
+        clkrst.hp_rst_en2.clr_reg_rst_en_adc();
+        lp_peri.reset_en.clr_rst_en_lp_adc();
+    }
+
     /// Obtain a handle without ownership checks.
     ///
     /// # Safety
@@ -903,6 +923,9 @@ impl Adc {
 
         rx.connect_to(crate::dma::Peripheral::Adc);
         rx.reset_channel();
+        // A finished transfer leaves its end-of-frame bit set, and `wait` would
+        // take that for this scan's completion.
+        rx.clear_interrupt(crate::dma::RxInterrupt::SucEof);
         rx.start_chain(chain.head());
 
         // Samples arrive `timer_cycles` controller clocks apart; allow twice
@@ -932,17 +955,20 @@ impl Adc {
     /// [`ArmedScan::wait`] bounds the wait, so a trigger that never comes is a
     /// timeout rather than a hang.
     ///
-    /// # What the controller does after it has run once
+    /// # What the controller does after a start task has run it
     ///
-    /// "Armed and waiting" only holds while the controller has not been started
-    /// yet. Once `ADC_TASK_START0` (or [`ArmedScan::start`]) has run it, a later
-    /// `arm_scan` begins converting immediately: the samples arrive without a
-    /// trigger, even though `CTRL2.TIMER_EN` reads zero, and neither
-    /// `ADC_TASK_STOP0` nor forcing the SAR supply off clears that. Only a
-    /// block-level reset (`HP_SYS_CLKRST`'s `RST_EN_ADC`, which [`Adc::init`]
-    /// pulses) puts it back. Callers that need "wait for the event" semantics
-    /// more than once per boot have to bring the block back to that state first;
-    /// callers that just want to start a scan should use [`scan`](Self::scan).
+    /// "Armed and waiting" only holds until `ADC_TASK_START0` has started the
+    /// controller once. The measurement limit stops the conversions when the
+    /// buffer is full, but the controller keeps the start condition: the next
+    /// `arm_scan` reprograms the FSM and it converts again on its own, at the
+    /// trigger interval and into the new buffer, without anything triggering it.
+    /// Neither stopping the timer (`CTRL2.TIMER_EN` already reads zero) nor
+    /// disabling the ETM channel and unbinding the GPIO event behind the task
+    /// changes that, and it does not happen after a [`scan`](Self::scan), which
+    /// starts the controller from software. Only [`Adc::reset`], which pulses
+    /// the block's reset, returns it to "armed and waiting"; that is why the
+    /// `adc_etm` example resets between an ETM-started scan and the control
+    /// that expects silence.
     ///
     /// # Panics
     ///
@@ -980,6 +1006,9 @@ impl Adc {
 
         rx.connect_to(crate::dma::Peripheral::Adc);
         rx.reset_channel();
+        // A finished transfer leaves its end-of-frame bit set, and `wait` would
+        // take that for this scan's completion.
+        rx.clear_interrupt(crate::dma::RxInterrupt::SucEof);
         rx.start_chain(chain.head());
 
         // Twice the nominal conversion time plus a fixed grace period, the same

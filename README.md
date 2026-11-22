@@ -53,7 +53,7 @@ rt 只做启动，HAL 是唯一手写的用户接口层。
 | `i2c_scan` | `I2C0` 扫描 7 位地址空间，逐个探测并打印应答的从机 |
 | `i2c_slave` | `I2C0` 主机 + `I2C1` 从机：地址应答、收发、满 FIFO、寄存器访问、非阻塞接口、START/STOP 标志与时钟拉伸 |
 | `adc` | 报告 eFuse 校准是否可用，并在四档衰减下采样 13 个 ADC 焊盘 |
-| `adc_etm` | ADC 的 ETM 集成：`arm_scan` 不启动的对照、`SYSTIMER` 事件启动扫描、ADC 阈值事件与 `SYSTIMER` 各自停掉连续流 |
+| `adc_etm` | ADC 的 ETM 集成：`SYSTIMER` 启动扫描、ADC 阈值事件与 `SYSTIMER` 停流、ADC 事件驱动 GPIO、GPIO 边沿启动扫描、`arm_scan` 不启动的对照 |
 | `adc2` | ADC2 的三条路径：五个焊盘的 one-shot、两通道 GDMA 扫描（内部通道 2/3 交替）、200 ms 连续采样并核对采样率 |
 | `dma_mem2mem` | GDMA-AHB 的存储到存储拷贝：单描述符 64 B 与四描述符 16 KB 两种链路，逐字节校验并打印吞吐，另用 `CRC-32/MPEG-2` 校验两个方向的 CRC 单元 |
 | `dma_axi` | GDMA-AXI 的存储到存储：三组通道对、四种突发宽度、16 位 CRC（引擎 vs 软件），打印吞吐 |
@@ -962,23 +962,41 @@ systimer.alarm0.set_target(systimer.unit0.now() + Duration::from_millis(10));
 armed.wait(50_000)?;          // 有超时，触发不来就报错
 ```
 
-示例 [`adc_etm`](esp32p4-examples/src/adc_etm.rs) 在板上跑通四条：
+示例 [`adc_etm`](esp32p4-examples/src/adc_etm.rs) 在板上跑通七段：
 
-1. 对照：通道不使能时 `arm_scan` 之后 `wait` 超时——arming 本身不启动；
-2. `SYSTIMER` 比较器 → `START0`：56 样本在 **12.85 ms** 后到齐（10 ms 定时 + 2.8 ms 转换）；
-3. ADC 自己的 `ABOVE_THRESH0` → `STOP0`：连续流被自己的阈值事件停掉，之后不再有新帧；
-4. `SYSTIMER` → `STOP0`：外部事件同样能停流。
+1. `SYSTIMER` 比较器 → `START0`：56 个样本在 **12.87 ms** 后到齐（10 ms 定时 + 2.8 ms 转换）；
+2. ADC 自己的 `ABOVE_THRESH0` → `STOP0`：连续流被自己的阈值事件停掉，之后不再有新帧；
+3. `SYSTIMER` → `STOP0`：外部事件同样能停流；
+4. `Adc::reset` 之后普通扫描照常填满 56 个样本；
+5. ADC 的 `Started` → `GPIO_TASK_CH2_SET`：GPIO2 在控制器开始转换时被硬件拉高；
+6. `GPIO_EVT_CH0_RISE_EDGE`（GPIO3 上升沿）→ `START0`：自己拨一下引脚就起一次扫描；
+7. 对照：块复位之后 arm 但不给触发 → `wait` 超时，样本一个都没到。
 
-**一个必须知道的硬件行为**：`ADC_TASK_START0` 会**锁存**。控制器被它启动过一次之后，再调用
-`arm_scan` 会**立刻开始转换**——样本在没有触发的情况下就到齐了，尽管
-`CTRL2.TIMER_EN` 读回来是 0。`ADC_TASK_STOP0` 和强制给 SAR 断电都清不掉这个状态，
-只有块级复位（`HP_SYS_CLKRST` 的 `RST_EN_ADC`，`Adc::init` 里那一对 set/clear）能恢复。
-所以「arm 之后等事件」这个语义**每次上电只能用一次**；只想启动一次扫描就用
-`Adc::scan`。这也是例程把对照组放在最前面的原因。
+**一个必须知道的硬件行为**：`ADC_TASK_START0` 留下的启动条件不会自己消失。控制器被它
+启动过一次之后，测量上限只停住转换；下一次 `arm_scan` 重置 FSM 重新编程，它就**又自己转
+起来**——样本按触发间隔到齐，没有任何事件再触发过，尽管 `CTRL2.TIMER_EN` 读回来是 0。
+把所有 ETM 通道关掉、把 GPIO 事件通道解绑都改变不了（实测），而软件启动的
+`Adc::scan` 不会留下这个状态。只有块级复位 `Adc::reset`（`RST_EN_ADC` + `RST_EN_LP_ADC`）
+能把控制器放回「armed、等触发」。所以「arm 之后等事件」如果要在同一次上电里做第二遍，
+中间必须复位——例程第 7 段就是这么做的。
 
-事件方向这里用 ADC 触发 ADC 自己的任务来验证，是因为 GPIO 侧的 ETM 任务需要
-`GPIO_EXT` 块里的绑定（哪个引脚挂到哪个 task channel、以及使能位），而这个寄存器块
-不在 SVD 里，本仓库还没有实现——见 [roadmap](docs/roadmap.md)。
+### GPIO 的 ETM 绑定
+
+GPIO 侧的事件与任务绑定在 `GPIO_EXT` 块里（`0x500e_0f00`，不在 SVD/PAC 中，驱动按
+技术手册手写布局）：
+
+| 寄存器 | 偏移 | 字段 |
+|------|------|------|
+| `GPIO_EXT_ETM_EVENT_CHn_CFG`（n = 0..7） | `+0x60 + 4n` | bits 5:0 引脚号，bit 7 使能 |
+| `GPIO_EXT_ETM_TASK_Pm_CFG`（m = 0..13） | `+0xa0 + 4m` | 每字 4 个引脚、每引脚 1 字节：bit 0 使能，bits 3:1 通道号 |
+
+句柄是 `Pin::bind_etm_event(channel)` / `Pin::bind_etm_task(channel)` 配上
+`EtmEvent::Rising/Falling/Either(channel)` 与 `EtmTask::Set/Clear/Toggle(channel)`
+（信号 id = 1/9/17 + 通道号）。只有 GPIO0–GPIO7 在矩阵里有 id。两个坑：
+
+- 引脚必须先 `init_pad()`：IO_MUX 要切到 GPIO 功能，只 `set_direction_out` 的话输入通路
+  看不到跳变，事件根本不会产生；
+- 事件方向还要 `set_interrupt_type(PositiveEdge)`（或 `NegativeEdge`/`AnyEdge`）选边沿。
 
 示例 [`adc2`](esp32p4-examples/src/adc2.rs) 把 ADC2 的三条路径都跑一遍：五个可用焊盘的
 one-shot、两通道样式表扫描（内部通道 2/3 各 16 个样本）、以及 200 ms 连续采样

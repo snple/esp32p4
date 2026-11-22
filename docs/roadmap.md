@@ -18,7 +18,7 @@
 | `systimer` | [systimer.rs](../esp32p4-hal/src/systimer.rs) | COMP1/COMP2 闹钟 |
 | `machine_timer` | [machine_timer.rs](../esp32p4-hal/src/machine_timer.rs) | 每核 CLINT 64 位比较器 + CLIC id 7 |
 | `interrupt` | [interrupt.rs](../esp32p4-hal/src/interrupt.rs) | CLIC 线与矩阵、`claim`/`InterruptHandler` |
-| `gpio` | [gpio/](../esp32p4-hal/src/gpio) | 电气配置、四路中断、完整 HP 交换矩阵路由、IO MUX 功能表；ETM 事件/任务尚未接（缺 `GPIO_EXT` 寄存器块，SVD 里没有） |
+| `gpio` | [gpio/](../esp32p4-hal/src/gpio) | 电气配置、四路中断、完整 HP 交换矩阵路由、IO MUX 功能表、ETM 事件与任务（`GPIO_EXT` 手写布局，限 GPIO0–GPIO7） |
 | `cache` / `mmu` / `tcm` | [cache.rs](../esp32p4-hal/src/cache.rs) · [mmu.rs](../esp32p4-hal/src/mmu.rs) · [tcm.rs](../esp32p4-hal/src/tcm.rs) | cache 维护、外部内存映射、8 KB HP SPM 代码放置；内部 SRAM 的 ROM 数据窗口与 L2 cache 位置随 die 版本变化，`memory.x` 按版本给（见 [boot.md §3](boot.md)） |
 | `efuse` | [efuse.rs](../esp32p4-hal/src/efuse.rs) | 只读：芯片/块版本、MAC、Flash/PSRAM 参数 |
 | `psram` | [psram/](../esp32p4-hal/src/psram) | MPLL、MSPI、MMU 映射、分配器（DMA 一致性语义与双向拷贝限制见 2.1） |
@@ -30,7 +30,7 @@
 | `emac` / `net` | [emac/](../esp32p4-hal/src/emac) · [net.rs](../esp32p4-hal/src/net.rs) | RMII + MDIO + DMA，smoltcp 同步栈 |
 | `usb` | [esp32p4-usb](../esp32p4-usb/) | OTG 设备/主机 DWC 驱动（slave、轮询） |
 | `usb_serial_jtag` | [usb_serial_jtag.rs](../esp32p4-hal/src/usb_serial_jtag.rs) | USB Serial/JTAG 控制台 |
-| `adc` | [adc.rs](../esp32p4-hal/src/adc.rs) | ADC1/2 one-shot + 样式表扫描 + ADC1/2 连续采样（GDMA 环）+ IIR + 阈值监控 + ETM 启停（`START0`/`STOP0` 与阈值事件；`START0` 会锁存，块复位后才会重新「等触发」） |
+| `adc` | [adc.rs](../esp32p4-hal/src/adc.rs) | ADC1/2 one-shot + 样式表扫描 + ADC1/2 连续采样（GDMA 环）+ IIR + 阈值监控 + ETM 启停（`START0`/`STOP0` 与阈值事件；`START0` 留下的启动条件要块复位才清） |
 | `tsens` | [tsens.rs](../esp32p4-hal/src/tsens.rs) | LP_TSENS 温度传感器 |
 | `i2s` | [i2s.rs](../esp32p4-hal/src/i2s.rs) | 标准双槽/TDM + PDM 发送（PDM 接收未落地，见 2.1） |
 | `apll` | [apll.rs](../esp32p4-hal/src/apll.rs) | 音频 PLL：系数搜索、regi2c、三步标定 |
