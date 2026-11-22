@@ -49,7 +49,7 @@
 | `uart` | LP UART | LP 引脚 |
 | `i2c` | 10 位地址、双地址模式；LP I2C | —；LP 引脚 |
 | `spi` | 2/4/8 线、SCT 分段、从机 HD（DMA 与主机半双工已完成） | 2/4/8 线需先补 QIO/OCT 引脚信号 |
-| `dma` | GDMA-AXI 的加权仲裁 | — |
+| `dma` | GDMA-AXI 的加权仲裁 | v3.0+ 芯片（本仓库的 v1.3 实测：逐通道权重可写但不改变仲裁结果，打开全局 `WEIGHT_EN` 后传输不再完成） |
 | `sdhost` | SDIO（CMD52/53 + 卡中断）、UHS-I（1.8 V/SDR50/104）、MMC 8 位、卡检测/写保护引脚 | — |
 | `adc` | LP ADC、DAC 与 PWDET；ADC2 连续模式（errata 禁用） | LP 引脚 |
 | `psram` | AXI 同时读源与写目的（PSRAM→PSRAM 拷贝）时每 4 KB 稳定丢 32–128 字节，单向传输正常。已排除：读采样相位（`EXTRA_DUMMY_CYCLELEN` 0–7）、DQS 相位（4 档）× 每引脚 delayline（0–15）全部 64 个组合（偶发 0 错、复测又不稳定）、burst 宽度（B8–B64）、通道优先级（0/0、5/0、0/5、5/5）、长度 64 字节对齐；方向指向 AXI↔MSPI 的读写并发本身，不是采样点问题。`AxiDma::copy` 现在对两端都在 PSRAM 的传输返回 `Error::ExternalMemoryCopy`，一端在内部 RAM 的双向传输照常可用 | — |
